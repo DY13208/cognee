@@ -1,6 +1,10 @@
 import { readRuntimeConfig, stripTrailingSlash } from "@/modules/config/runtimeConfig";
 
-const DEFAULT_LOCAL_API_PORT = "8000";
+// This project publishes the local API on host port 8320 (the container
+// continues to listen on 8000 internally). Keep the browser fallback aligned
+// with that published port so a missing runtime-config script cannot send the
+// UI to an unrelated/closed localhost:8000.
+const DEFAULT_LOCAL_API_PORT = "8320";
 
 export function getLocalApiUrl(): string {
   // Runtime config wins for an explicit absolute backend URL: it is the only
@@ -26,8 +30,8 @@ export function getLocalApiUrl(): string {
   ) {
     console.warn(
       "[cognee] backendPort missing from runtime config; falling back to " +
-        `${DEFAULT_LOCAL_API_PORT}. If the API is published on another host ` +
-        "port (e.g. 8320), set COGNEE_BACKEND_PORT on the UI container.",
+        `${DEFAULT_LOCAL_API_PORT}. If the API is published on a different host ` +
+        "port, set COGNEE_BACKEND_PORT on the UI container.",
     );
   }
 

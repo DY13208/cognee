@@ -33,7 +33,7 @@ describe("getLocalApiUrl", () => {
   it("uses the browser host for the local API by default", () => {
     window.history.replaceState({}, "", "http://127.0.0.1:3000/local-login");
 
-    expect(getLocalApiUrl()).toBe("http://127.0.0.1:8000");
+    expect(getLocalApiUrl()).toBe("http://127.0.0.1:8320");
   });
 
   it("uses the runtime backendPort with the browser hostname when no URL is set", () => {
