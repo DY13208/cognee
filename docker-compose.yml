@@ -123,7 +123,14 @@ services:
   frontend:
     container_name: frontend
     restart: always
-    image: cognee/cognee-ui:${COGNEE_UI_TAG:-latest}
+    # Build the production UI from this checkout so self-hosted fixes pulled
+    # from git are actually included instead of silently using the published
+    # cognee/cognee-ui image.
+    image: cognee-ui-local:${COGNEE_UI_TAG:-latest}
+    build:
+      context: ./cognee-frontend
+      dockerfile: Dockerfile
+      target: runner
     profiles:
       - ui
     environment:
