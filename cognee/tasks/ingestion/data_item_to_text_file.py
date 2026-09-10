@@ -1,6 +1,6 @@
 import os
 from urllib.parse import urlparse
-from typing import Any, List, Tuple
+from typing import Any, Tuple
 from pathlib import Path
 import tempfile
 
@@ -11,18 +11,7 @@ from cognee.shared.logging_utils import get_logger
 from cognee.infrastructure.files.utils.open_data_file import open_data_file
 from cognee.infrastructure.utils.run_async import run_async
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
 logger = get_logger(__name__)
-
-
-class SaveDataSettings(BaseSettings):
-    accept_local_file_path: bool = True
-
-    model_config = SettingsConfigDict(env_file=".env", extra="allow")
-
-
-settings = SaveDataSettings()
 
 
 # Bytes copied per iteration when pulling a stored object down to a temp file.
@@ -55,6 +44,12 @@ async def data_item_to_text_file(
     ``loader_kwargs`` (ingestion context: dataset_name, dataset_id, user,
     original_file_name) is forwarded to the selected loader's ``load()``;
     loaders that don't need it ignore it via ``**kwargs``.
+
+    ``ACCEPT_LOCAL_FILE_PATH`` is enforced in ``save_data_item_to_storage`` when
+    the caller supplies a filesystem path as *input*. Paths that reach this
+    function are already resolved storage locations (UI uploads land under
+    DATA_ROOT_DIRECTORY as absolute / file:// paths), so blocking them here
+    would reject every multipart upload when that flag is false.
     """
     if isinstance(data_item_path, str):
         parsed_url = urlparse(data_item_path)
@@ -88,27 +83,13 @@ async def data_item_to_text_file(
                 except OSError:
                     pass
 
-        # data is local file path
-        elif parsed_url.scheme == "file":
-            if settings.accept_local_file_path:
-                loader = get_loader_engine()
-                return await loader.load_file(
-                    data_item_path, preferred_loaders, **loader_kwargs
-                ), loader.get_loader(data_item_path, preferred_loaders)
-            else:
-                raise IngestionError(message="Local files are not accepted.")
-
-        # data is an absolute file path
-        elif data_item_path.startswith("/") or (
+        # data is a file:// URI or an absolute filesystem path already in storage
+        elif parsed_url.scheme == "file" or data_item_path.startswith("/") or (
             os.name == "nt" and len(data_item_path) > 1 and data_item_path[1] == ":"
         ):
-            # Handle both Unix absolute paths (/path) and Windows absolute paths (C:\path)
-            if settings.accept_local_file_path:
-                loader = get_loader_engine()
-                return await loader.load_file(
-                    data_item_path, preferred_loaders, **loader_kwargs
-                ), loader.get_loader(data_item_path, preferred_loaders)
-            else:
-                raise IngestionError(message="Local files are not accepted.")
+            loader = get_loader_engine()
+            return await loader.load_file(
+                data_item_path, preferred_loaders, **loader_kwargs
+            ), loader.get_loader(data_item_path, preferred_loaders)
     # data is not a supported type
     raise IngestionError(message=f"Data type not supported: {type(data_item_path)}")

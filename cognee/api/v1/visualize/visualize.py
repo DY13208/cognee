@@ -500,9 +500,15 @@ def _event_time(event: Dict[str, Any]) -> Optional[datetime]:
     if not raw:
         return None
     try:
-        return datetime.fromisoformat(raw)
-    except ValueError:
+        parsed = datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
         return None
+    # Session stamps used to be naive UTC (`datetime.utcnow().isoformat()`);
+    # newer writers emit aware ISO (`…+00:00`). Normalize both to naive UTC
+    # so the `since` filter never raises TypeError comparing mixed kinds —
+    # that bubbled out as HTTP 409 and left the Memory tab's live poll
+    # stuck reconnecting (frontend overlay spam on every 1.5s tick).
+    return _as_naive_utc(parsed)
 
 
 async def get_live_events(
@@ -567,8 +573,12 @@ async def get_live_events(
 
     if events:
         cursor = events[-1]["time"]
+    elif since is not None:
+        # Echo a naive-UTC cursor so the next poll's `since` stays comparable
+        # to both legacy naive and aware event stamps after `_event_time`.
+        cursor = _as_naive_utc(since).isoformat()
     else:
-        cursor = since.isoformat() if since is not None else None
+        cursor = None
 
     return {"events": events, "cursor": cursor}
 

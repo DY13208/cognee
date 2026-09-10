@@ -105,6 +105,35 @@ async def test_timezone_aware_since_is_normalized_before_comparing():
 
 
 @pytest.mark.asyncio
+async def test_timezone_aware_event_times_compare_against_naive_since():
+    """Newer session writers stamp `…+00:00`; comparing those to a naive
+    `since` used to raise TypeError and surface as HTTP 409 on /live-events."""
+    events = [_event("2026-08-03T09:00:10.000000+00:00")]
+    since = datetime(2026, 8, 3, 9, 0, 5)
+
+    ctx_a, ctx_b = _patches(events)
+    with ctx_a, ctx_b:
+        result = await visualize_module.get_live_events(DATASET_ID, since=since)
+
+    assert result["events"] == events
+    assert result["cursor"] == "2026-08-03T09:00:10.000000+00:00"
+
+
+@pytest.mark.asyncio
+async def test_empty_delta_echoes_a_naive_cursor_for_aware_since():
+    events = [_event("2026-08-03T09:00:00.000000+00:00")]
+    aware_since = datetime(2026, 8, 3, 9, 30, 0, tzinfo=timezone.utc)
+
+    ctx_a, ctx_b = _patches(events)
+    with ctx_a, ctx_b:
+        result = await visualize_module.get_live_events(DATASET_ID, since=aware_since)
+
+    assert result["events"] == []
+    assert result["cursor"] == "2026-08-03T09:30:00"
+    assert "+" not in result["cursor"]
+
+
+@pytest.mark.asyncio
 async def test_unauthorized_dataset_raises_permission_denied():
     ctx_a, ctx_b = _patches([], authorized=False)
     with ctx_a, ctx_b:

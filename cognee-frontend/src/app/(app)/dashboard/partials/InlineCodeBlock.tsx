@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { trackEvent } from "@/modules/analytics";
+import { copyTextToClipboard } from "@/utils";
 import type { AciAgentKey } from "./agentConnectionSteps";
 
 interface InlineCodeBlockProps {
@@ -18,9 +19,14 @@ export function InlineCodeBlock({ code, toCopy, loading, card, block }: InlineCo
   function doCopy() {
     if (loading) return;
     trackEvent({ pageName: "Dashboard", eventName: "agent_config_copied", additionalProperties: { card: card ?? "unknown", block: block ?? "code" } });
-    navigator.clipboard.writeText(toCopy ?? code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    void copyTextToClipboard(toCopy ?? code)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
   }
 
   return (

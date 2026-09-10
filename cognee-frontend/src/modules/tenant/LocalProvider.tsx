@@ -19,7 +19,9 @@ const LOCAL_AVAILABLE_TENANTS: AvailableTenant[] = [
 ];
 
 export function LocalProvider({ children }: { children: React.ReactNode }) {
-  const localApiUrl = getLocalApiUrl();
+  // Resolve the API URL only after mount so we read the runtime-config <script>
+  // (and its session cache) in the browser — never the SSR default :8000.
+  const [localApiUrl, setLocalApiUrl] = useState<string | null>(null);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,12 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    setLocalApiUrl(getLocalApiUrl());
+  }, []);
+
+  useEffect(() => {
+    if (!localApiUrl) return;
+
     let cancelled = false;
 
     async function init() {
@@ -53,10 +61,16 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Bound the auth probe so a wrong COGNEE_BACKEND_URL / dead port cannot
+      // leave every page on the Brain spinner forever.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
       try {
         // Check if we're authenticated with the local backend
         const meResponse = await global.fetch(`${localApiUrl}/api/v1/users/me`, {
           credentials: "include",
+          signal: controller.signal,
         });
 
         if (meResponse.status === 401 || meResponse.status === 403) {
@@ -76,14 +90,19 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         if (cancelled) return;
 
-        // Network error — backend probably not running
-        if (err instanceof TypeError) {
-          setError("Cannot connect to local Cognee backend at " + localApiUrl + ". Is it running?");
+        // Network error — backend probably not running / wrong URL / timed out
+        if (err instanceof TypeError || (err instanceof Error && err.name === "AbortError")) {
+          setError(
+            "Cannot connect to local Cognee backend at " +
+              localApiUrl +
+              ". Check the API is up and that you open the UI and API on the same hostname (both IP or both localhost).",
+          );
         } else {
           const message = err instanceof Error ? err.message : "Failed to connect to local backend";
           setError(message);
         }
       } finally {
+        clearTimeout(timeoutId);
         if (!cancelled) {
           setIsInitializing(false);
         }
@@ -95,7 +114,7 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [localApiUrl]);
 
   if (error && !isInitializing) {
     return (
@@ -113,9 +132,9 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
         tenant,
         cogniInstance: localInstance,
         localInstance,
-        serviceUrl: localApiUrl,
+        serviceUrl: localApiUrl ?? "",
         apiKey: "",
-        isInitializing,
+        isInitializing: isInitializing || !localApiUrl,
         tenantReady: true,
         podUnreachable: false,
         error,

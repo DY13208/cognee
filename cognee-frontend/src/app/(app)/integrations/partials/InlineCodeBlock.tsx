@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, type ReactElement } from "react";
+import { copyTextToClipboard } from "@/utils";
 
 interface InlineCodeBlockProps {
   code: string;
@@ -13,9 +14,14 @@ export default function InlineCodeBlock({ code, toCopy, loading }: InlineCodeBlo
 
   const doCopy = useCallback(() => {
     if (loading) return;
-    navigator.clipboard.writeText(toCopy ?? code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    void copyTextToClipboard(toCopy ?? code)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
   }, [loading, toCopy, code]);
 
   return (

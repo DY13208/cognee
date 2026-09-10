@@ -4,7 +4,11 @@
 // empty mock, so tests are unaffected.
 import "server-only";
 
-import { normalizeBackendUrl, type RuntimeConfig } from "./runtimeConfig";
+import {
+  normalizeBackendPort,
+  normalizeBackendUrl,
+  type RuntimeConfig,
+} from "./runtimeConfig";
 
 /**
  * Read at request time, which is what lets one published image serve any
@@ -12,6 +16,7 @@ import { normalizeBackendUrl, type RuntimeConfig } from "./runtimeConfig";
  * this at build time", the exact behaviour this variable exists to avoid.
  */
 const BACKEND_URL_ENV = "COGNEE_BACKEND_URL";
+const BACKEND_PORT_ENV = "COGNEE_BACKEND_PORT";
 
 /** Still honoured so builds that baked in a URL keep working. */
 const BUILD_TIME_ENV = "NEXT_PUBLIC_LOCAL_API_URL";
@@ -30,14 +35,15 @@ export function getServerBackendUrl(): string {
 /**
  * The config advertised to the browser.
  *
- * Only COGNEE_BACKEND_URL is published: NEXT_PUBLIC_LOCAL_API_URL is already
- * inlined in the client bundle, and the localhost default is deliberately left
- * out so the browser keeps its own smarter fallback: deriving the backend
- * host from window.location, which also works when the UI is reached from
- * another machine.
+ * Prefer leaving COGNEE_BACKEND_URL unset and setting COGNEE_BACKEND_PORT to
+ * the host-mapped API port. The browser then derives
+ * `{page-protocol}//{page-hostname}:{backendPort}`, so the same container
+ * works when opened via localhost or via a LAN/public IP. An explicit
+ * COGNEE_BACKEND_URL still wins when you need a fixed absolute origin.
  */
 export function collectRuntimeConfig(): RuntimeConfig {
   return {
     backendUrl: normalizeBackendUrl(process.env.COGNEE_BACKEND_URL, BACKEND_URL_ENV),
+    backendPort: normalizeBackendPort(process.env.COGNEE_BACKEND_PORT, BACKEND_PORT_ENV),
   };
 }

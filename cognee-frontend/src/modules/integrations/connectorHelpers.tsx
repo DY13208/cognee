@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { CLAUDE_DESKTOP_MCP_ENTRY, fillTemplate } from "@/data/prompts";
+import { copyTextToClipboard } from "@/utils";
 
 const MONO_FONT = 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace';
 
@@ -76,9 +77,14 @@ export function ConfigPreview({ baseUrl, apiKey, loading }: { baseUrl: string; a
   const [copied, setCopied] = useState(false);
   function doCopy() {
     if (loading) return;
-    navigator.clipboard.writeText(fillTemplate(CLAUDE_DESKTOP_MCP_ENTRY, baseUrl, apiKey) + ",");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    void copyTextToClipboard(fillTemplate(CLAUDE_DESKTOP_MCP_ENTRY, baseUrl, apiKey) + ",")
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
   }
   const inserted = [
     '  "mcpServers": {',
@@ -129,9 +135,14 @@ export function CursorConfigPreview({ baseUrl, apiKey, loading }: { baseUrl: str
   ];
   function doCopy() {
     if (loading) return;
-    navigator.clipboard.writeText(cogneeBlock.join("\n"));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    void copyTextToClipboard(cogneeBlock.join("\n"))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
   }
   const dim = "rgba(237,236,234,0.4)";
   return (
@@ -180,9 +191,14 @@ export function GeminiConfigPreview({ baseUrl, apiKey, loading }: { baseUrl: str
   const isEntry = (i: number): boolean => i >= 2 && i <= 9;
   function doCopy() {
     if (loading) return;
-    navigator.clipboard.writeText(fullBlock.join("\n"));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+    void copyTextToClipboard(fullBlock.join("\n"))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
   }
   return (
     <div style={{ position: "relative", background: "#18181B", borderRadius: 8, marginBottom: 4 }}>

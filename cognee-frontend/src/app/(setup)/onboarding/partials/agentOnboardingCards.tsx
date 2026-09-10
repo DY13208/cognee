@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CLAUDE_MARKETPLACE_ADD, CLAUDE_PLUGIN_INSTALL, CODEX_HOOKS_ENABLE, CODEX_MARKETPLACE_ADD, CODEX_PLUGIN_INSTALL, UPLOAD_MEMORY_PROMPT, UPLOAD_SAMPLE_PROMPT, RECALL_SAMPLE_PROMPT } from "@/data/prompts";
 import { exportEnvVar } from "@/utils/osCommands";
+import { copyTextToClipboard } from "@/utils";
 import type { PreferredOs } from "@/ui/layout/OsPreferenceContext";
 import { useOnboardingTrackEvent } from "../useOnboardingTrackEvent";
 
@@ -35,10 +36,15 @@ export function OnboardingInlineCode({ code, toCopy, loading, placeholder = "Pre
   const track = useOnboardingTrackEvent();
   const copy = () => {
     if (loading) return;
-    navigator.clipboard.writeText(toCopy ?? code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    track({ pageName: "Onboarding", eventName: "onboarding_creds_copied", additionalProperties: { copy_target: copyTarget, ...(agent ? { agent } : {}) } });
+    void copyTextToClipboard(toCopy ?? code)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        track({ pageName: "Onboarding", eventName: "onboarding_creds_copied", additionalProperties: { copy_target: copyTarget, ...(agent ? { agent } : {}) } });
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
   };
   return (
     <div

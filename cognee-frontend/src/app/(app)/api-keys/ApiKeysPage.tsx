@@ -10,7 +10,7 @@ import createApiKey from "@/modules/apiKeys/createAPIKey";
 import deleteApiKey from "@/modules/apiKeys/deleteAPIKey";
 import getMyUserId from "@/modules/apiKeys/getMyUserId";
 import { TrackPageView, trackEvent } from "@/modules/analytics";
-import { isCloudEnvironment } from "@/utils";
+import { isCloudEnvironment, copyTextToClipboard } from "@/utils";
 import { notifications } from "@mantine/notifications";
 
 function StatusDot({ label, ready }: { label: string; ready: boolean }) {
@@ -118,8 +118,28 @@ export default function ApiKeysPage() {
       const created = result.key;
       if (created) {
         // Surface the full key once — this is the only time the server returns
-        // it in clear text.
-        setKeys((prev) => prev.map((k) => (k.id === created.id ? { ...k, key: created.key, isNew: true } : k)));
+        // it in clear text. If the list refresh missed the new row, insert it.
+        setKeys((prev) => {
+          const exists = prev.some((k) => k.id === created.id);
+          if (exists) {
+            return prev.map((k) => (k.id === created.id ? { ...k, key: created.key, isNew: true } : k));
+          }
+          return [
+            {
+              id: created.id,
+              key: created.key,
+              name,
+              label: `${created.key.slice(0, 8)}****`,
+              isNew: true,
+            },
+            ...prev,
+          ];
+        });
+        notifications.show({
+          title: "API key created",
+          message: "Copy and save this key now — it will only be shown once.",
+          color: "green",
+        });
       } else {
         // The key was created but the response carried no clear-text key, so
         // there is nothing to reveal. Say so rather than silently listing a
@@ -141,11 +161,13 @@ export default function ApiKeysPage() {
       setKeys((prev) => prev.filter((k) => k.id !== id));
     } catch (err) {
       console.error("Failed to revoke key:", err);
+      const message = err instanceof Error ? err.message : "Could not revoke the API key. Please try again.";
+      notifications.show({ title: "Could not revoke API key", message, color: "red" });
     }
   }
 
   function handleCopy(id: string, key: string) {
-    navigator.clipboard.writeText(key).then(() => {
+    void copyTextToClipboard(key).then(() => {
       trackEvent({ pageName: "API Keys", eventName: "api_key_copied" });
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 1500);
@@ -421,7 +443,16 @@ function CopyBtn({ id, text, copiedField, setCopiedField, light }: { id: string;
   const isCopied = copiedField === id;
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(text); trackEvent({ pageName: "API Keys", eventName: "api_connection_detail_copied", additionalProperties: { field: COPY_FIELD_MAP[id] || id } }); setCopiedField(id); setTimeout(() => setCopiedField(null), 1500); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        void copyTextToClipboard(text).then(() => {
+          trackEvent({ pageName: "API Keys", eventName: "api_connection_detail_copied", additionalProperties: { field: COPY_FIELD_MAP[id] || id } });
+          setCopiedField(id);
+          setTimeout(() => setCopiedField(null), 1500);
+        }).catch((err) => {
+          console.error("Failed to copy:", err);
+        });
+      }}
       className="cursor-pointer hover:opacity-80 rounded p-1 active:scale-90 transition-all"
       style={{ background: "none", border: "none", flexShrink: 0, display: "flex" }}
       title="Copy"

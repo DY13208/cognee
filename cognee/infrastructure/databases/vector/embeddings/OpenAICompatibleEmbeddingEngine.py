@@ -161,6 +161,13 @@ class OpenAICompatibleEmbeddingEngine(EmbeddingEngine):
                 "input": sanitized_text,
                 "encoding_format": "float",
             }
+            # OpenAI-compatible servers that support output size control
+            # (e.g. DashScope text-embedding-v4) accept this; others ignore or
+            # reject it — callers that hit a reject should leave dimensions
+            # unset or switch models. Prefer sending it when configured so the
+            # vector store size matches EMBEDDING_DIMENSIONS.
+            if self.dimensions is not None:
+                create_kwargs["dimensions"] = self.dimensions
             if self.input_type:
                 create_kwargs["extra_body"] = {"input_type": self.input_type}
 

@@ -128,10 +128,10 @@ services:
       - ui
     environment:
       # Empty means "derive it from the address the browser used", which is
-      # correct for the default localhost setup. The browser talks to the
-      # backend directly, so when you do set this it must be the address as
-      # seen from the browser, not the `cognee` service name.
+      # correct for localhost AND LAN-IP access. Set COGNEE_BACKEND_PORT to the
+      # host-mapped API port (this compose publishes 8320:8000).
       - COGNEE_BACKEND_URL=${COGNEE_BACKEND_URL:-}
+      - COGNEE_BACKEND_PORT=${COGNEE_BACKEND_PORT:-8320}
     depends_on:
       cognee:
         condition: service_healthy
@@ -151,6 +151,7 @@ services:
       target: dev
     environment:
       - COGNEE_BACKEND_URL=${COGNEE_BACKEND_URL:-}
+      - COGNEE_BACKEND_PORT=${COGNEE_BACKEND_PORT:-8320}
     volumes:
       - ./cognee-frontend/src:/app/src
       - ./cognee-frontend/public:/app/public

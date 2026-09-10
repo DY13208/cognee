@@ -4,6 +4,7 @@ import { createContext, useContext } from "react";
 import { CogneeInstance } from "@/modules/instances/types";
 import { Tenant } from "./types";
 import localFetch from "@/modules/instances/localFetch";
+import { localUploadWithRetry } from "@/services/http/localUpload";
 import { useUser, type AvailableTenant } from "@/modules/users/UserContext";
 
 // Open-source override — identical to the SaaS TenantContext except PlanType,
@@ -53,6 +54,10 @@ export const localInstance: CogneeInstance = {
   name: "LocalCognee",
   instanceId: "local",
   fetch: localFetch,
+  // XHR + cookies: fetch cannot report upload-byte progress, so without this
+  // the DOCUMENTS bar stays at 0% for the whole transfer (and never times out
+  // cleanly when the backend is down — localFetch ignores timeoutMs).
+  upload: (path, makeBody, opts) => localUploadWithRetry(path, makeBody, opts),
 };
 
 export const TenantContext = createContext<TenantContextValue>({

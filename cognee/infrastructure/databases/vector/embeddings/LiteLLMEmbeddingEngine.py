@@ -232,8 +232,17 @@ class LiteLLMEmbeddingEngine(EmbeddingEngine):
                     # Pass through target embedding dimensions when supported.
                     # Some providers (e.g. NVIDIA NIM) reject this param outright,
                     # so it's omitted for those rather than sent and rejected.
+                    #
+                    # litellm's OpenAI embedding path only allows `dimensions` for
+                    # model names containing "text-embedding-3". OpenAI-compatible
+                    # gateways (DashScope/Bailian text-embedding-v4, etc.) often
+                    # support dimensions on other names — without this opt-in,
+                    # litellm raises UnsupportedParamsError before the request
+                    # leaves the client (message wrongly says text-embedding-3).
                     if self.dimensions is not None and not self._uses_nvidia_nim:
                         embedding_kwargs["dimensions"] = self.dimensions
+                        if "text-embedding-3" not in (self.model or ""):
+                            embedding_kwargs["allowed_openai_params"] = ["dimensions"]
 
                     # NVIDIA NIM (and similar providers) require an input_type
                     # field ("query" / "passage") that OpenAI's API doesn't have.

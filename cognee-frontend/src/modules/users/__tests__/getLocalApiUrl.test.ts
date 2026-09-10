@@ -5,13 +5,13 @@
  * @jest-environment-options {"url": "http://127.0.0.1:3000/local-login"}
  */
 import { getLocalApiUrl } from "../getLocalApiUrl";
-import { RUNTIME_CONFIG_ELEMENT_ID } from "@/modules/config/runtimeConfig";
+import { RUNTIME_CONFIG_ELEMENT_ID, clearRuntimeConfigCache } from "@/modules/config/runtimeConfig";
 
-function renderRuntimeConfig(backendUrl: string | null): void {
+function renderRuntimeConfig(backendUrl: string | null, backendPort: string | null = null): void {
   const element = document.createElement("script");
   element.id = RUNTIME_CONFIG_ELEMENT_ID;
   element.type = "application/json";
-  element.textContent = JSON.stringify({ backendUrl });
+  element.textContent = JSON.stringify({ backendUrl, backendPort });
   document.head.appendChild(element);
 }
 
@@ -22,6 +22,7 @@ describe("getLocalApiUrl", () => {
   afterEach(() => {
     window.history.replaceState({}, "", originalUrl);
     document.getElementById(RUNTIME_CONFIG_ELEMENT_ID)?.remove();
+    clearRuntimeConfigCache();
     if (originalOverride === undefined) {
       delete process.env.NEXT_PUBLIC_LOCAL_API_URL;
     } else {
@@ -33,6 +34,22 @@ describe("getLocalApiUrl", () => {
     window.history.replaceState({}, "", "http://127.0.0.1:3000/local-login");
 
     expect(getLocalApiUrl()).toBe("http://127.0.0.1:8000");
+  });
+
+  it("uses the runtime backendPort with the browser hostname when no URL is set", () => {
+    window.history.replaceState({}, "", "http://127.0.0.1:3000/");
+    renderRuntimeConfig(null, "8320");
+
+    expect(getLocalApiUrl()).toBe("http://127.0.0.1:8320");
+  });
+
+  it("keeps the cached backendPort when the runtime script disappears", () => {
+    window.history.replaceState({}, "", "http://127.0.0.1:3000/");
+    renderRuntimeConfig(null, "8320");
+    expect(getLocalApiUrl()).toBe("http://127.0.0.1:8320");
+
+    document.getElementById(RUNTIME_CONFIG_ELEMENT_ID)?.remove();
+    expect(getLocalApiUrl()).toBe("http://127.0.0.1:8320");
   });
 
   it("keeps an explicitly configured API URL unchanged", () => {
@@ -60,6 +77,7 @@ describe("getLocalApiUrl", () => {
     expect(getLocalApiUrl()).toBe("https://api.example.com");
 
     document.getElementById(RUNTIME_CONFIG_ELEMENT_ID)?.remove();
+    clearRuntimeConfigCache();
     process.env.NEXT_PUBLIC_LOCAL_API_URL = "https://api.example.com/";
     expect(getLocalApiUrl()).toBe("https://api.example.com");
   });

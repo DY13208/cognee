@@ -4,6 +4,7 @@ import {
   serializeRuntimeConfig,
   stripTrailingSlash,
   readRuntimeConfig,
+  clearRuntimeConfigCache,
 } from "../runtimeConfig";
 
 function renderConfigElement(json: string): void {
@@ -49,6 +50,7 @@ describe("serializeRuntimeConfig", () => {
   it("escapes sequences that would break out of an inline script", () => {
     const serialized = serializeRuntimeConfig({
       backendUrl: "http://x/</script><script>alert(1)</script>",
+      backendPort: null,
     });
 
     expect(serialized).not.toContain("</script>");
@@ -59,6 +61,7 @@ describe("serializeRuntimeConfig", () => {
   it("escapes the line terminators that are legal in JSON but not in JS source", () => {
     const serialized = serializeRuntimeConfig({
       backendUrl: "http://x/\u2028\u2029",
+      backendPort: null,
     });
 
     expect(serialized).not.toContain("\u2028");
@@ -68,7 +71,7 @@ describe("serializeRuntimeConfig", () => {
   });
 
   it("round-trips through the same eval the browser performs", () => {
-    const config = { backendUrl: "https://cognee.example.com" };
+    const config = { backendUrl: "https://cognee.example.com", backendPort: null };
 
     expect(JSON.parse(serializeRuntimeConfig(config))).toEqual(config);
   });
@@ -77,6 +80,7 @@ describe("serializeRuntimeConfig", () => {
 describe("readRuntimeConfig", () => {
   afterEach(() => {
     document.getElementById(RUNTIME_CONFIG_ELEMENT_ID)?.remove();
+    clearRuntimeConfigCache();
   });
 
   it("is empty when the server rendered nothing", () => {
@@ -84,9 +88,23 @@ describe("readRuntimeConfig", () => {
   });
 
   it("returns what the server rendered", () => {
-    renderConfigElement(JSON.stringify({ backendUrl: "http://cognee:8000" }));
+    renderConfigElement(JSON.stringify({ backendUrl: "http://cognee:8000", backendPort: "8320" }));
 
-    expect(readRuntimeConfig()).toEqual({ backendUrl: "http://cognee:8000" });
+    expect(readRuntimeConfig()).toEqual({ backendUrl: "http://cognee:8000", backendPort: "8320" });
+  });
+
+  it("can advertise only a backendPort so the browser derives the host", () => {
+    renderConfigElement(JSON.stringify({ backendUrl: null, backendPort: "8320" }));
+
+    expect(readRuntimeConfig()).toEqual({ backendPort: "8320" });
+  });
+
+  it("keeps the last good port when the head script is briefly missing", () => {
+    renderConfigElement(JSON.stringify({ backendUrl: null, backendPort: "8320" }));
+    expect(readRuntimeConfig()).toEqual({ backendPort: "8320" });
+
+    document.getElementById(RUNTIME_CONFIG_ELEMENT_ID)?.remove();
+    expect(readRuntimeConfig()).toEqual({ backendPort: "8320" });
   });
 
   it("degrades to the caller's fallback rather than throwing on a corrupt payload", () => {

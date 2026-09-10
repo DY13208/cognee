@@ -22,6 +22,12 @@ export const RUNTIME_CONFIG_ELEMENT_ID = "cognee-runtime-config";
 export interface RuntimeConfig {
   /** Absolute origin of the cognee backend, without a trailing slash. */
   backendUrl: string | null;
+  /**
+   * Host-published API port used when `backendUrl` is unset. The browser then
+   * builds `http(s)://{page-hostname}:{backendPort}` so the same UI works via
+   * localhost and via LAN IP without baking a hostname into the container.
+   */
+  backendPort: string | null;
 }
 
 /**
@@ -65,23 +71,76 @@ export function normalizeBackendUrl(
 }
 
 /**
- * Client-side read of the config the server rendered into the document.
- *
- * Never throws: a missing or malformed element just means "not configured",
- * and the caller's own fallback is a better outcome than a blank page.
+ * Accept a host-mapped backend port (e.g. compose `8320:8000` → `8320`).
+ * Returns null when unset/blank; throws when set but not a usable TCP port.
  */
-export function readRuntimeConfig(): Partial<RuntimeConfig> {
-  if (typeof document === "undefined") return {};
+export function normalizeBackendPort(
+  raw: string | undefined | null,
+  source = "COGNEE_BACKEND_PORT",
+): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  if (!/^\d{1,5}$/.test(value)) {
+    throw new Error(`${source} must be a TCP port number, got "${value}".`);
+  }
+  const port = Number(value);
+  if (port < 1 || port > 65535) {
+    throw new Error(`${source} must be between 1 and 65535, got "${value}".`);
+  }
+  return value;
+}
 
-  const element = document.getElementById(RUNTIME_CONFIG_ELEMENT_ID);
-  if (!element?.textContent) return {};
+const RUNTIME_CONFIG_STORAGE_KEY = "cognee.runtimeConfig";
 
-  let parsed: Partial<RuntimeConfig>;
+/** In-memory copy of the last usable runtime config (survives brief DOM gaps). */
+let cachedRuntimeConfig: Partial<RuntimeConfig> | null = null;
+
+/** Test helper — drop module + session caches between cases. */
+export function clearRuntimeConfigCache(): void {
+  cachedRuntimeConfig = null;
+  if (typeof sessionStorage !== "undefined") {
+    try {
+      sessionStorage.removeItem(RUNTIME_CONFIG_STORAGE_KEY);
+    } catch {
+      // Private mode / disabled storage.
+    }
+  }
+}
+
+function persistRuntimeConfig(config: Partial<RuntimeConfig>): void {
+  if (!config.backendUrl && !config.backendPort) return;
+  cachedRuntimeConfig = config;
+  if (typeof sessionStorage === "undefined") return;
   try {
-    parsed = JSON.parse(element.textContent) as Partial<RuntimeConfig>;
+    sessionStorage.setItem(RUNTIME_CONFIG_STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // Quota / private mode — memory cache still helps within the tab life.
+  }
+}
+
+function readPersistedRuntimeConfig(): Partial<RuntimeConfig> {
+  if (cachedRuntimeConfig) return cachedRuntimeConfig;
+  if (typeof sessionStorage === "undefined") return {};
+  try {
+    const raw = sessionStorage.getItem(RUNTIME_CONFIG_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Partial<RuntimeConfig>;
+    cachedRuntimeConfig = parsed;
+    return parsed;
   } catch {
     return {};
   }
+}
+
+function parseRuntimeConfigPayload(text: string): Partial<RuntimeConfig> {
+  let parsed: Partial<RuntimeConfig>;
+  try {
+    parsed = JSON.parse(text) as Partial<RuntimeConfig>;
+  } catch {
+    return {};
+  }
+
+  const result: Partial<RuntimeConfig> = {};
 
   // Re-check the URL on the way out of the DOM, with the same rule the server
   // applied on the way in. The client should not trust document content it did
@@ -95,22 +154,57 @@ export function readRuntimeConfig(): Partial<RuntimeConfig> {
   // backend base URL has no use for them. Anything unusable degrades to the
   // caller's own fallback rather than throwing.
   const raw = parsed.backendUrl?.trim();
-  if (!raw) return {};
+  if (raw) {
+    try {
+      const url = new URL(raw);
+      if (url.protocol === "https:") {
+        result.backendUrl = stripTrailingSlash(`https://${url.host}${url.pathname}`);
+      } else if (url.protocol === "http:") {
+        result.backendUrl = stripTrailingSlash(`http://${url.host}${url.pathname}`);
+      }
+    } catch {
+      // Unparseable — leave backendUrl unset.
+    }
+  }
 
-  let url: URL;
   try {
-    url = new URL(raw);
+    const port = normalizeBackendPort(
+      typeof parsed.backendPort === "string" || typeof parsed.backendPort === "number"
+        ? String(parsed.backendPort)
+        : null,
+    );
+    if (port) result.backendPort = port;
   } catch {
-    return {};
+    // Bad port in the document — ignore; caller may use a cached / default port.
   }
 
-  if (url.protocol === "https:") {
-    return { backendUrl: stripTrailingSlash(`https://${url.host}${url.pathname}`) };
+  return result;
+}
+
+/**
+ * Client-side read of the config the server rendered into the document.
+ *
+ * Never throws: a missing or malformed element just means "not configured",
+ * and the caller's own fallback is a better outcome than a blank page.
+ *
+ * Next/Turbopack HMR and App Router head reconciliation can briefly detach the
+ * `<script id="cognee-runtime-config">` tag. Without a cache, that race makes
+ * `getLocalApiUrl()` fall back to port 8000 while the API is published on
+ * 8320 — the intermittent "Cannot connect … :8000" error on LAN setups.
+ */
+export function readRuntimeConfig(): Partial<RuntimeConfig> {
+  if (typeof document === "undefined") return readPersistedRuntimeConfig();
+
+  const element = document.getElementById(RUNTIME_CONFIG_ELEMENT_ID);
+  if (element?.textContent) {
+    const fromDom = parseRuntimeConfigPayload(element.textContent);
+    if (fromDom.backendUrl || fromDom.backendPort) {
+      persistRuntimeConfig(fromDom);
+      return fromDom;
+    }
   }
-  if (url.protocol === "http:") {
-    return { backendUrl: stripTrailingSlash(`http://${url.host}${url.pathname}`) };
-  }
-  return {};
+
+  return readPersistedRuntimeConfig();
 }
 
 /**

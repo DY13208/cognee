@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, type ReactElement } from "react";
+import { copyTextToClipboard } from "@/utils";
 
 const COPIED_RESET_MS = 1800;
 
@@ -18,10 +19,15 @@ export function InlineCodeBlock({ code, toCopy, loading, onCopy }: InlineCodeBlo
 
   const doCopy = useCallback(() => {
     if (loading) return;
-    navigator.clipboard.writeText(toCopy ?? code);
-    onCopy?.();
-    setCopied(true);
-    setTimeout(() => setCopied(false), COPIED_RESET_MS);
+    void copyTextToClipboard(toCopy ?? code)
+      .then(() => {
+        onCopy?.();
+        setCopied(true);
+        setTimeout(() => setCopied(false), COPIED_RESET_MS);
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
   }, [loading, toCopy, code, onCopy]);
 
   const handleClick = useCallback(
