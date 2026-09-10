@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import type { FeatureAnnouncementContent } from "@/modules/featureAnnouncements/featureAnnouncementContent";
 
 interface FeatureAnnouncementModalProps {
+  featureKey: string;
   content: FeatureAnnouncementContent;
   onDismiss: () => void;
 }
@@ -20,11 +22,18 @@ const CLOSE_ICON = (
 // Mounted once by FeatureAnnouncementsProvider; content is looked up by
 // feature_key from FEATURE_ANNOUNCEMENT_CONTENT.
 export default function FeatureAnnouncementModal({
+  featureKey,
   content,
   onDismiss,
 }: FeatureAnnouncementModalProps): React.ReactElement {
   const router = useRouter();
+  const tCommon = useTranslations("common");
+  const t = useTranslations("dashboard.announcements");
   const Illustration = content.illustration;
+  const isAutoRecharge = featureKey === "auto_recharge_intro";
+  const title = isAutoRecharge ? t("autoRecharge.title") : content.title;
+  const description = isAutoRecharge ? t("autoRecharge.description") : content.description;
+  const ctaLabel = isAutoRecharge ? t("autoRecharge.cta") : content.ctaLabel;
 
   function handleCta(): void {
     onDismiss();
@@ -64,7 +73,7 @@ export default function FeatureAnnouncementModal({
         <div style={{ flex: 1, padding: 32, display: "flex", flexDirection: "column", gap: 16, position: "relative" }}>
           <button
             onClick={onDismiss}
-            aria-label="Dismiss"
+            aria-label={tCommon("close")}
             style={{
               position: "absolute", top: 16, right: 16, background: "none", border: "none",
               cursor: "pointer", padding: 4, color: "rgba(237,236,234,0.4)", lineHeight: 1,
@@ -74,10 +83,10 @@ export default function FeatureAnnouncementModal({
           </button>
 
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#EDECEA", margin: 0, paddingRight: 24 }}>
-            {content.title}
+            {title}
           </h2>
           <p style={{ fontSize: 14, color: "rgba(237,236,234,0.65)", margin: 0, lineHeight: 1.6 }}>
-            {content.description}
+            {description}
           </p>
 
           <div style={{ marginTop: "auto", display: "flex", gap: 10 }}>
@@ -88,7 +97,7 @@ export default function FeatureAnnouncementModal({
                 fontSize: 13, fontWeight: 500, color: "#fff", cursor: "pointer",
               }}
             >
-              {content.ctaLabel}
+              {ctaLabel}
             </button>
             <button
               onClick={onDismiss}
@@ -98,7 +107,7 @@ export default function FeatureAnnouncementModal({
                 color: "#EDECEA", cursor: "pointer",
               }}
             >
-              Maybe later
+              {t("maybeLater")}
             </button>
           </div>
         </div>

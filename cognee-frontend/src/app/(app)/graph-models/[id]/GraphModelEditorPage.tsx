@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useState } from "react";
+import { useTranslations } from "next-intl";
 import { notifications } from "@mantine/notifications";
 import { useRouter } from "next/navigation";
 import type { GraphModel } from "@/modules/graphModels/types";
@@ -21,12 +22,14 @@ interface GraphModelEditorPageProps {
 }
 
 export default function GraphModelEditorPage({ modelId }: GraphModelEditorPageProps) {
+  const t = useTranslations("graphModels");
+  const tCommon = useTranslations("common");
   const router = useRouter();
   const { cogniInstance } = useCogniInstance();
   const { datasets: contextDatasets } = useFilter();
 
   // ── Model metadata ──────────────────────────────────────────────────────────
-  const [modelName, setModelName] = useState("Untitled Model");
+  const [modelName, setModelName] = useState("");
   const [savedModelId, setSavedModelId] = useState<string>(modelId);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -53,6 +56,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
   const [newFieldType, setNewFieldType] = useState<"string" | "number" | "boolean" | "date" | "relation">("string");
   const [newFieldTarget, setNewFieldTarget] = useState("");
   const [editingName, setEditingName] = useState(false);
+  const displayName = modelName || t("untitled");
 
   // ── Regenerate modal state ─────────────────────────────────────────────────
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
@@ -146,7 +150,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
   // ── Save to backend config ──────────────────────────────────────────────────
   async function handleSave() {
     if (!cogniInstance) {
-      notifications.show({ title: "Not connected", message: "Connect to a Cognee instance to save.", color: "yellow" });
+      notifications.show({ title: t("notConnectedTitle"), message: t("notConnectedSave"), color: "yellow" });
       return;
     }
 
@@ -156,7 +160,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
       const now = new Date().toISOString();
       const currentModel: GraphModel = {
         id: savedModelId,
-        name: modelName,
+        name: displayName,
         schema,
         createdAt: cfg.models.find((m) => m.id === savedModelId)?.createdAt ?? now,
         updatedAt: now,
@@ -173,11 +177,11 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
       }
       await syncGraphModels(cogniInstance, updatedModels);
       setIsDirty(false);
-      trackEvent({ pageName: "Graph Model Editor", eventName: "model_saved", additionalProperties: { model_id: savedModelId, model_name: modelName, entity_count: String(schema.entities.length) } });
-      notifications.show({ title: "Saved", message: `"${modelName}" saved.`, color: "green" });
+      trackEvent({ pageName: "Graph Model Editor", eventName: "model_saved", additionalProperties: { model_id: savedModelId, model_name: displayName, entity_count: String(schema.entities.length) } });
+      notifications.show({ title: t("save"), message: `"${displayName}" saved.`, color: "green" });
     } catch (err) {
       console.error("Save failed:", err);
-      notifications.show({ title: "Save failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({ title: t("saveFailed"), message: t("genericError"), color: "red" });
     } finally {
       setIsSaving(false);
     }
@@ -186,7 +190,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
   // ── Regenerate schema via LLM ───────────────────────────────────────────────
   async function openRegenerateModal() {
     if (!cogniInstance) {
-      notifications.show({ title: "Not connected", message: "Connect to a Cognee instance first.", color: "yellow" });
+      notifications.show({ title: t("notConnectedTitle"), message: t("notConnectedFirst"), color: "yellow" });
       return;
     }
     setShowRegenerateModal(true);
@@ -298,11 +302,11 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
         };
         dispatch({ type: "SET_SCHEMA", schema: newSchema });
         setIsDirty(true);
-        notifications.show({ title: "Schema regenerated", message: `Detected ${newSchema.entities.length} entity types from ${selectedFileEntries.length} file${selectedFileEntries.length !== 1 ? "s" : ""}.`, color: "green", autoClose: 4000 });
+        notifications.show({ title: t("schemaRegeneratedTitle"), message: t("schemaRegenerated", { count: newSchema.entities.length, fileCount: selectedFileEntries.length }), color: "green", autoClose: 4000 });
       }
     } catch (err) {
       console.error("Regenerate failed:", err);
-      notifications.show({ title: "Regeneration failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({ title: t("regenerateFailed"), message: t("genericError"), color: "red" });
     } finally {
       setIsRegenerating(false);
     }
@@ -339,12 +343,12 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
           {/* Back button */}
           <button
             onClick={() => {
-              if (isDirty && !window.confirm("You have unsaved changes. Leave anyway?")) return;
+              if (isDirty && !window.confirm(t("unsavedLeave"))) return;
               router.push(assignedDatasetIds.length > 0 ? `/datasets/${assignedDatasetIds[0]}` : "/datasets");
             }}
             className="cursor-pointer hover:bg-white/10"
             style={{ background: "none", border: "none", padding: "2px 6px", borderRadius: 4, fontSize: 16, color: "rgba(237,236,234,0.55)", fontFamily: "inherit" }}
-            title="Back to models"
+            title={t("backToModels")}
           >
             &larr;
           </button>
@@ -356,15 +360,16 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
               onChange={(e) => { setModelName(e.target.value); setIsDirty(true); }}
               onBlur={() => setEditingName(false)}
               onKeyDown={(e) => { if (e.key === "Enter") setEditingName(false); if (e.key === "Escape") setEditingName(false); }}
+              placeholder={t("untitled")}
               style={{ fontSize: "0.875rem", fontWeight: 700, color: "#EDECEA", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 4, padding: "1px 6px", fontFamily: "inherit", outline: "none", minWidth: 120 }}
             />
           ) : (
             <span
               onDoubleClick={() => setEditingName(true)}
-              title="Double-click to rename"
+              title={t("renameHint")}
               style={{ fontSize: "0.875rem", fontWeight: 700, color: "#EDECEA", cursor: "default" }}
             >
-              {modelName}
+              {displayName}
             </span>
           )}
           <span style={{ color: "rgba(237,236,234,0.35)", fontSize: "0.6875rem" }}>·</span>
@@ -382,20 +387,20 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
           <button
             onClick={async () => {
               if (!cogniInstance) return;
-              if (!window.confirm(`Delete "${modelName}"? This cannot be undone.`)) return;
+              if (!window.confirm(`Delete "${displayName}"? This cannot be undone.`)) return;
               try {
                 const cfg = await loadGraphModelsConfig(cogniInstance);
                 const updated = cfg.models.filter((m) => m.id !== savedModelId);
                 await syncGraphModels(cogniInstance, updated);
-                notifications.show({ title: "Deleted", message: `"${modelName}" has been deleted.`, color: "green", autoClose: 4000 });
+                notifications.show({ title: t("delete"), message: `"${displayName}" has been deleted.`, color: "green", autoClose: 4000 });
                 router.push(assignedDatasetIds.length > 0 ? `/datasets/${assignedDatasetIds[0]}` : "/datasets");
-              } catch (err) {
-                notifications.show({ title: "Delete failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+              } catch {
+                notifications.show({ title: t("genericError"), message: t("genericError"), color: "red" });
               }
             }}
             className="cursor-pointer hover:opacity-100"
             style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", borderRadius: "0.375rem", border: "1px solid rgba(239,68,68,0.4)", paddingBlock: "0.4375rem", paddingInline: "0.625rem", opacity: 0.7, transition: "opacity 150ms" }}
-            title="Delete graph model"
+            title={t("deleteModel")}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V3h4v1M5 4v8.5a.5.5 0 00.5.5h5a.5.5 0 00.5-.5V4" stroke="#EF4444" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
@@ -409,7 +414,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
               <path d="M1.5 8a6.5 6.5 0 0111.48-4.16M14.5 8a6.5 6.5 0 01-11.48 4.16" stroke="#BC9BFF" strokeWidth="1.3" strokeLinecap="round" />
               <path d="M13 1v3h-3M3 15v-3h3" stroke="#BC9BFF" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            {isRegenerating ? "Regenerating..." : "Regenerate"}
+            {isRegenerating ? t("regenerating") : t("regenerate")}
           </button>
           <button
             onClick={handleSave}
@@ -417,7 +422,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
             className="cursor-pointer"
             style={{ background: "#6510F4", borderRadius: "0.375rem", border: "none", paddingBlock: "0.4375rem", paddingInline: "1.25rem", color: "#fff", fontSize: "0.8125rem", fontWeight: 500, lineHeight: "20px" }}
           >
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? t("saving") : t("save")}
           </button>
         </div>
       </div>
@@ -489,7 +494,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
                   type="text"
                   value={selectedEntity.description ?? ""}
                   onChange={(e) => dirtyDispatch({ type: "UPDATE_ENTITY", entityId: selectedEntity._id, updates: { description: e.target.value } })}
-                  placeholder="Describe this entity type..."
+                  placeholder={t("describeEntity")}
                   style={{ border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", borderRadius: "0.375rem", padding: "0.4375rem 0.625rem", fontSize: 14, fontFamily: "inherit", color: "#EDECEA", outline: "none" }}
                 />
               </div>
@@ -515,7 +520,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
                       onClick={() => dirtyDispatch({ type: "DELETE_FIELD", entityId: selectedEntity._id, fieldId: field._id })}
                       className="cursor-pointer hover:opacity-100"
                       style={{ background: "none", border: "none", padding: 0, opacity: 0.3, transition: "opacity 150ms", flexShrink: 0, lineHeight: 1 }}
-                      title="Remove field"
+                      title={t("removeField")}
                     >
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2l-6 6" stroke="#EF4444" strokeWidth="1.3" strokeLinecap="round" /></svg>
                     </button>
@@ -529,7 +534,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
                       type="text"
                       value={newFieldName}
                       onChange={(e) => setNewFieldName(e.target.value)}
-                      placeholder="Field name"
+                      placeholder={t("fieldName")}
                       autoFocus
                       style={{ border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#EDECEA", borderRadius: "0.25rem", padding: "0.3rem 0.5rem", fontSize: "0.75rem", fontFamily: "inherit", outline: "none" }}
                     />
@@ -562,7 +567,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
                         className="cursor-pointer"
                         style={{ flex: 1, background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "0.25rem", padding: "0.25rem", fontSize: "0.6875rem", color: "rgba(237,236,234,0.7)", fontFamily: "inherit" }}
                       >
-                        Cancel
+                        {tCommon("cancel")}
                       </button>
                       <button
                         onClick={() => {
@@ -693,7 +698,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
                       className="cursor-pointer"
                       style={{ background: "none", border: "none", fontSize: 11, color: "#6510F4", fontWeight: 500, fontFamily: "inherit", padding: 0 }}
                     >
-                      {regenSelectedFiles.size === regenFiles.length ? "Deselect all" : "Select all"}
+                      {regenSelectedFiles.size === regenFiles.length ? t("deselectAll") : t("selectAll")}
                     </button>
                   )}
                 </div>
@@ -727,7 +732,7 @@ export default function GraphModelEditorPage({ modelId }: GraphModelEditorPagePr
 
             {/* Actions */}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
-              <button onClick={() => setShowRegenerateModal(false)} className="cursor-pointer" style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.8)", fontFamily: "inherit" }}>Cancel</button>
+              <button onClick={() => setShowRegenerateModal(false)} className="cursor-pointer" style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.8)", fontFamily: "inherit" }}>{tCommon("cancel")}</button>
               <button
                 onClick={handleRegenerate}
                 disabled={regenSelectedFiles.size === 0}

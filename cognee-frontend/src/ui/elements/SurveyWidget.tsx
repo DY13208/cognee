@@ -2,13 +2,19 @@
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useTranslations } from "next-intl";
 import { FOLLOWUP_QUESTIONS } from "@/modules/survey/surveyConfig";
+import type { ScoreBucket } from "@/modules/survey/types";
 import { useSurveyWidgetState } from "./useSurveyWidgetState";
 import SurveyScoreStep from "./SurveyScoreStep";
 import SurveyFollowupStep from "./SurveyFollowupStep";
 import SurveyThanksStep from "./SurveyThanksStep";
 
-const SCORE_QUESTION = "How likely are you to recommend Cognee to a colleague?";
+const FOLLOWUP_COPY: Record<ScoreBucket, "followupDetractor" | "followupPassive" | "followupPromoter"> = {
+  detractor: "followupDetractor",
+  passive: "followupPassive",
+  promoter: "followupPromoter",
+};
 
 interface SurveyWidgetProps {
   responseId: string;
@@ -16,6 +22,8 @@ interface SurveyWidgetProps {
 }
 
 export default function SurveyWidget({ responseId, onDone }: SurveyWidgetProps): React.ReactElement | null {
+  const t = useTranslations("survey");
+  const tCommon = useTranslations("common");
   const survey = useSurveyWidgetState(responseId, onDone);
 
   useEffect(() => {
@@ -50,21 +58,21 @@ export default function SurveyWidget({ responseId, onDone }: SurveyWidgetProps):
       <div className="rounded-xl border border-cognee-border bg-white p-5 shadow-2xl">
         <div className="mb-1 flex items-start justify-between gap-3">
           <h2 id="survey-widget-title" className="m-0 text-sm font-bold text-cognee-dark">
-            Quick question
+            {t("title")}
           </h2>
-          <button type="button" onClick={survey.close} aria-label="Close" className="cursor-pointer rounded-md p-1 text-base text-cognee-placeholder hover:text-cognee-body">
+          <button type="button" onClick={survey.close} aria-label={tCommon("close")} className="cursor-pointer rounded-md p-1 text-base text-cognee-placeholder hover:text-cognee-body">
             ✕
           </button>
         </div>
 
         {survey.step === "score" && (
-          <SurveyScoreStep question={SCORE_QUESTION} selectedScore={survey.score} onSelect={survey.selectScore} />
+          <SurveyScoreStep question={t("question")} selectedScore={survey.score} onSelect={survey.selectScore} />
         )}
 
         {survey.step === "followup" && survey.score !== null && survey.bucket && followup && (
           <SurveyFollowupStep
             score={survey.score}
-            question={followup.question}
+            question={t(FOLLOWUP_COPY[survey.bucket])}
             showQuoteConsent={followup.showQuoteConsent}
             answer={survey.answer}
             consentToQuote={survey.consentToQuote}
@@ -78,7 +86,7 @@ export default function SurveyWidget({ responseId, onDone }: SurveyWidgetProps):
           />
         )}
 
-        {survey.step === "thanks" && <SurveyThanksStep message="Your score and note are on their way to the team." />}
+        {survey.step === "thanks" && <SurveyThanksStep message={t("thanksBody")} />}
       </div>
     </div>,
     survey.portalTarget,

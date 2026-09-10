@@ -26,6 +26,7 @@ export default function FeatureAnnouncementsProvider({ children }: { children: R
       {children}
       {featureKey && (
         <FeatureAnnouncementModal
+          featureKey={featureKey}
           content={FEATURE_ANNOUNCEMENT_CONTENT[featureKey]}
           onDismiss={handleDismiss}
         />

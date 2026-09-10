@@ -3,6 +3,7 @@
 import { useState, type ReactElement } from "react";
 import Link from "next/link";
 import { Loader } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import ModalShell from "@/ui/elements/ModalShell";
 import type { TeamConnectorCfg, TeamConnectionState } from "@/modules/integrations/types";
 import type { AvailableTenant } from "@/modules/users/UserContext";
@@ -76,10 +77,13 @@ export default function ConnectModal({
   onRefresh,
   onRoutedFromExisting,
 }: ConnectModalProps): ReactElement {
+  const t = useTranslations("integrations");
+  const tCommon = useTranslations("common");
   const isConnected = state.status === "connected";
   const [showRouteFromExisting, setShowRouteFromExisting] = useState(false);
-  const canRouteFromExisting = cfg.supportsChannelRouting && ownedTenants.some((t) => t.id !== tenantId);
-  const title = isConnected ? `${cfg.name} connected` : `Connect ${cfg.name}`;
+  const canRouteFromExisting = cfg.supportsChannelRouting && ownedTenants.some((tenant) => tenant.id !== tenantId);
+  const title = isConnected ? t("connectedName", { name: cfg.name }) : t("connectName", { name: cfg.name });
+  const permissions = cfg.key === "slack" ? [t("slackPermRead"), t("slackPermNames")] : cfg.permissions;
 
   return (
     <ModalShell onClose={onClose} width={420} label={title}>
@@ -88,7 +92,7 @@ export default function ConnectModal({
         <h2 className="m-0 flex-1 text-[16px] font-semibold text-[var(--color-cognee-fg,#EDECEA)]">{title}</h2>
         <button
           onClick={onClose}
-          aria-label="Close"
+          aria-label={tCommon("close")}
           className="cursor-pointer rounded border-none bg-transparent p-0.5 text-[var(--color-cognee-fg,#EDECEA)]/55 transition-colors hover:text-[var(--color-cognee-fg,#EDECEA)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cognee-lavender/70"
           style={CLOSE_BUTTON_STYLE}
         >
@@ -111,7 +115,7 @@ export default function ConnectModal({
           role="alert"
           className="rounded-lg border border-[var(--color-cognee-danger,#EF4444)]/30 bg-[var(--color-cognee-danger,#EF4444)]/10 px-3.5 py-3"
         >
-          <p className="m-0 text-[12px] leading-[1.5] text-[var(--color-cognee-danger-fg,#FF8A8A)]">{connectError}</p>
+          <p className="m-0 text-[12px] leading-[1.5] text-[var(--color-cognee-danger-fg,#FF8A8A)]">{tCommon("genericError")}</p>
         </div>
       )}
 
@@ -125,17 +129,16 @@ export default function ConnectModal({
           {state.syncStatus === "degraded" && isOwner && (
             <div className="mb-3 rounded-lg border border-[var(--color-cognee-warning,#F59E0B)]/30 bg-[var(--color-cognee-warning,#F59E0B)]/10 px-3.5 py-3">
               <p className="m-0 mb-2 text-[12px] leading-[1.5] text-[var(--color-cognee-fg,#EDECEA)]/70">
-                {cfg.name} stopped accepting this connection, so nothing new is being read.
-                Reconnecting restores it and keeps the channels you selected.
+                {cfg.name} {t("stoppedAccepting")}
               </p>
               {isConnecting ? (
                 <p className="m-0 flex items-center gap-2 text-[12px] text-[var(--color-cognee-fg,#EDECEA)]/55">
                   <Loader size={12} color="#BC9BFF" />
-                  Waiting for authorization in the {cfg.name} window…
+                  {t("waitingAuth")}
                 </p>
               ) : (
                 <button onClick={onAuthorize} className={RECONNECT_BUTTON} style={BUTTON_TEXT_STYLE}>
-                  Reconnect {cfg.name}
+                  {t("reconnectName", { name: cfg.name })}
                 </button>
               )}
             </div>
@@ -154,7 +157,7 @@ export default function ConnectModal({
             Cognee reads the channels selected below, including the history they already have, and
             anyone in this workspace can then ask about them.{" "}
             <Link href="/integrations/slack" className={GUIDE_LINK}>
-              How {cfg.name} memory works
+              {t("howMemoryWorks", { name: cfg.name })}
             </Link>
           </p>
 
@@ -179,7 +182,7 @@ export default function ConnectModal({
       ) : isConnecting ? (
         <p className="m-0 flex items-center gap-2 text-[13px] text-[var(--color-cognee-fg,#EDECEA)]/55">
           <Loader size={14} color="#BC9BFF" />
-          Waiting for authorization in the {cfg.name} window…
+          {t("waitingAuth")}
         </p>
       ) : showRouteFromExisting ? (
         <RouteFromExistingSection
@@ -191,9 +194,9 @@ export default function ConnectModal({
         />
       ) : (
         <div>
-          <p className="m-0 mb-3.5 text-[13px] leading-[1.5] text-[var(--color-cognee-fg,#EDECEA)]/55">Cognee will be able to:</p>
+          <p className="m-0 mb-3.5 text-[13px] leading-[1.5] text-[var(--color-cognee-fg,#EDECEA)]/55">{t("cogneeWillBeAble")}</p>
           <ul className="m-0 mb-[18px] flex list-none flex-col gap-[7px] p-0">
-            {cfg.permissions.map((permission) => (
+            {permissions.map((permission) => (
               <li key={permission} className="relative pl-[18px] text-[13px] text-[var(--color-cognee-fg,#EDECEA)]">
                 <span className="absolute left-0 text-[var(--color-cognee-success,#22C55E)]">✓</span>
                 {permission}
@@ -201,14 +204,14 @@ export default function ConnectModal({
             ))}
           </ul>
           <button onClick={onAuthorize} className={PRIMARY_BUTTON} style={BUTTON_TEXT_STYLE}>
-            Continue with {cfg.name}
+            {t("continueWith", { name: cfg.name })}
           </button>
           <p className="m-0 mt-2.5 text-center text-[12px] text-[var(--color-cognee-fg,#EDECEA)]/55">
-            Opens {cfg.name}&apos;s authorization window — this page stays open
+            {t("opensAuth", { name: cfg.name })}
           </p>
           <p className="m-0 mt-2.5 text-center text-[12px] text-[var(--color-cognee-fg,#EDECEA)]/55">
             <Link href="/integrations/slack" className={GUIDE_LINK}>
-              How {cfg.name} memory works
+              {t("howMemoryWorks", { name: cfg.name })}
             </Link>
           </p>
           {canRouteFromExisting && (
@@ -217,7 +220,7 @@ export default function ConnectModal({
               className="mt-2.5 w-full cursor-pointer border-none bg-transparent p-0 text-[var(--color-cognee-fg,#EDECEA)]/55 underline transition-colors hover:text-[var(--color-cognee-fg,#EDECEA)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cognee-lavender/70"
               style={ROUTE_FROM_EXISTING_STYLE}
             >
-              Or route channels from a workspace you already own
+              {t("orRoute")}
             </button>
           )}
         </div>

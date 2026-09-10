@@ -2,6 +2,7 @@
 
 import { useState, type ReactElement } from "react";
 import { Loader } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import classNames from "classnames";
 
 interface DisconnectZoneProps {
@@ -27,6 +28,7 @@ const DISCONNECT_TRIGGER_STYLE = { fontSize: 12, fontWeight: 500 };
  * an ingestion pipeline the whole workspace depends on, so it asks first.
  */
 export default function DisconnectZone({ name, provider, onDisconnect }: DisconnectZoneProps): ReactElement {
+  const t = useTranslations("integrations");
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -49,7 +51,7 @@ export default function DisconnectZone({ name, provider, onDisconnect }: Disconn
           className="cursor-pointer border-none bg-transparent p-0 text-[var(--color-cognee-danger-fg,#FF8A8A)] underline-offset-2 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cognee-lavender/70"
           style={DISCONNECT_TRIGGER_STYLE}
         >
-          Disconnect {provider}
+          {t("disconnect")} {provider}
         </button>
       </div>
     );
@@ -76,7 +78,7 @@ export default function DisconnectZone({ name, provider, onDisconnect }: Disconn
           style={SMALL_BUTTON_STYLE}
         >
           {busy && <Loader size={12} color="#fff" />}
-          {busy ? "Disconnecting…" : "Disconnect"}
+          {busy ? t("disconnecting") : t("disconnect")}
         </button>
       </div>
     </div>

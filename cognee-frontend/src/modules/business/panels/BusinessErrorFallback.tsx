@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 interface BusinessErrorFallbackProps {
   resetErrorBoundary: () => void;
 }
@@ -10,6 +12,8 @@ interface BusinessErrorFallbackProps {
 // bbox), and without this boundary one of those crashed the entire
 // /business or /knowledge-graph route instead of a recoverable panel.
 export default function BusinessErrorFallback({ resetErrorBoundary }: BusinessErrorFallbackProps): React.JSX.Element {
+  const t = useTranslations("knowledgeGraph");
+  const tCommon = useTranslations("common");
   return (
     <div
       style={{
@@ -23,9 +27,9 @@ export default function BusinessErrorFallback({ resetErrorBoundary }: BusinessEr
         backgroundColor: "#000000",
       }}
     >
-      <h1 style={{ fontSize: 14, fontWeight: 700, color: "#EDECEA", margin: 0 }}>Failed to load business view</h1>
+      <h1 style={{ fontSize: 14, fontWeight: 700, color: "#EDECEA", margin: 0 }}>{t("failedTitle")}</h1>
       <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0, textAlign: "center", maxWidth: 400 }}>
-        Something went wrong rendering the graph. Please try again.
+        {t("failedBody")}
       </p>
       <button
         onClick={resetErrorBoundary}
@@ -41,7 +45,7 @@ export default function BusinessErrorFallback({ resetErrorBoundary }: BusinessEr
           marginTop: 8,
         }}
       >
-        Try again
+        {tCommon("tryAgain")}
       </button>
     </div>
   );

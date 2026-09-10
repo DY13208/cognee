@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button, Flex, Modal, Stack, Text, TextInput, Textarea } from "@mantine/core";
+import { useTranslations } from "next-intl";
 
 interface AddEntityModalProps {
   opened: boolean;
@@ -20,6 +21,8 @@ const inputStyles = {
 };
 
 export default function AddEntityModal({ opened, onClose, onSubmit }: AddEntityModalProps) {
+  const t = useTranslations("graphModels");
+  const tCommon = useTranslations("common");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [nameError, setNameError] = useState("");
@@ -27,11 +30,11 @@ export default function AddEntityModal({ opened, onClose, onSubmit }: AddEntityM
   function handleSubmit() {
     const trimmed = name.trim();
     if (!trimmed) {
-      setNameError("Name is required.");
+      setNameError(t("addEntity.nameRequired"));
       return;
     }
     if (!/^[A-Z][a-zA-Z0-9]*$/.test(trimmed)) {
-      setNameError("Must be PascalCase (e.g. PersonEntity).");
+      setNameError(t("addEntity.pascalCase"));
       return;
     }
     onSubmit(trimmed, description.trim() || undefined);
@@ -49,7 +52,7 @@ export default function AddEntityModal({ opened, onClose, onSubmit }: AddEntityM
     <Modal
       opened={opened}
       onClose={handleClose}
-      title="New Entity"
+      title={t("addEntity.title")}
       centered
       radius="0.5rem"
       styles={{
@@ -65,9 +68,9 @@ export default function AddEntityModal({ opened, onClose, onSubmit }: AddEntityM
     >
       <Stack gap="0.75rem">
         <TextInput
-          label="Entity name"
-          placeholder="e.g. Person"
-          description="Must be PascalCase"
+          label={t("addEntity.name")}
+          placeholder={t("addEntity.namePlaceholder")}
+          description={t("addEntity.nameHint")}
           value={name}
           onChange={(e) => {
             setName(e.currentTarget.value);
@@ -80,8 +83,8 @@ export default function AddEntityModal({ opened, onClose, onSubmit }: AddEntityM
           autoFocus
         />
         <Textarea
-          label="Description"
-          placeholder="Optional description"
+          label={t("addEntity.description")}
+          placeholder={t("addEntity.descriptionPlaceholder")}
           value={description}
           onChange={(e) => setDescription(e.currentTarget.value)}
           styles={inputStyles}
@@ -89,7 +92,7 @@ export default function AddEntityModal({ opened, onClose, onSubmit }: AddEntityM
           rows={2}
         />
         <Text size="xs" c="rgba(237,236,234,0.45)">
-          Tip: Entity names should be singular PascalCase nouns (Person, Document, Company).
+          {t("addEntity.tip")}
         </Text>
         <Flex justify="flex-end" gap="0.5rem" mt="0.25rem">
           <Button
@@ -98,7 +101,7 @@ export default function AddEntityModal({ opened, onClose, onSubmit }: AddEntityM
             radius="0.5rem"
             styles={{ root: { background: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(237,236,234,0.8)" } }}
           >
-            Cancel
+            {tCommon("cancel")}
           </Button>
           <Button
             onClick={handleSubmit}
@@ -106,7 +109,7 @@ export default function AddEntityModal({ opened, onClose, onSubmit }: AddEntityM
             style={{ backgroundColor: "#6510F4" }}
             radius="0.5rem"
           >
-            Add Entity
+            {t("addEntity.submit")}
           </Button>
         </Flex>
       </Stack>

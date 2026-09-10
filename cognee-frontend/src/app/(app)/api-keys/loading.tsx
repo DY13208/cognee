@@ -1,2 +1,9 @@
 import PageLoading from "@/ui/elements/PageLoading";
-export default function Loading() { return <PageLoading name="API Keys" />; }
+import { getMessages } from "@/i18n/getMessages";
+import { getRequestLocale } from "@/i18n/getRequestLocale";
+
+export default async function Loading() {
+  const locale = await getRequestLocale();
+  const messages = getMessages(locale) as { apiKeys: { title: string } };
+  return <PageLoading name={messages.apiKeys.title} />;
+}

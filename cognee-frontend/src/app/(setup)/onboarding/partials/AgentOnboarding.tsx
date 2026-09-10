@@ -13,6 +13,7 @@ import { useAgentConnectionDetection } from "../hooks/useAgentConnectionDetectio
 import { useOnboardingTrackEvent } from "../useOnboardingTrackEvent";
 import { buildAgentOnboardingCards } from "./agentOnboardingCards";
 import { SkipLink } from "./Shared";
+import { useTranslations } from "next-intl";
 
 // Steps that show the live "waiting for connection" indicator. Both Claude
 // Code and Codex share the same flow: step 3 = Upload (index 2), step 4 =
@@ -27,6 +28,7 @@ export function AgentOnboarding({ agent, serviceUrl, apiKey, cogniInstance, onRe
   cogniInstance: ReturnType<typeof useCogniInstance>["cogniInstance"];
   onRestart: () => void;
 }) {
+  const t = useTranslations("Setup");
   const router = useRouter();
   const { markOnboardingComplete } = useUser();
   const track = useOnboardingTrackEvent();
@@ -87,10 +89,10 @@ export function AgentOnboarding({ agent, serviceUrl, apiKey, cogniInstance, onRe
       }}>
         <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
           <Image src={agent === "claude-code" ? "/visuals/logos/claude.svg" : "/visuals/logos/codex.svg"} alt={name} width={28} height={28} style={{ width: 28, height: 28, objectFit: "contain" }} />
-          <h1 style={{ fontSize: 26, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.02em" }}>Connect {name}</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.02em" }}>{t("agent.connect", { name })}</h1>
         </div>
         <p style={{ fontSize: 14, color: "rgba(237,236,234,0.6)", margin: "0 0 12px", textAlign: "center" }}>
-          A few quick steps to give {name} persistent memory.
+          {t("agent.uploadDescription", { name })}
         </p>
 
         <div style={{ display: "flex", justifyContent: "flex-end", width: "100%", marginBottom: 4 }}>
@@ -138,7 +140,7 @@ export function AgentOnboarding({ agent, serviceUrl, apiKey, cogniInstance, onRe
                   </span>
                   {isDone && (
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", background: "rgba(34,197,94,0.18)", color: "#22C55E", borderRadius: 100, padding: "2px 8px", flexShrink: 0, animation: "ob-check 200ms ease forwards" }}>
-                      Done
+                      {t("done")}
                     </span>
                   )}
                 </div>
@@ -149,7 +151,7 @@ export function AgentOnboarding({ agent, serviceUrl, apiKey, cogniInstance, onRe
                       <p style={{ fontSize: 13, color: "rgba(237,236,234,0.6)", lineHeight: "19px", margin: 0 }}>{card.description}</p>
                       {card.node}
                       {!isLast && (
-                        <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(237,236,234,0.5)" }}>Click step {i + 2} when ready ↓</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(237,236,234,0.5)" }}>{t("step", { step: i + 2, total: cards.length })} ↓</p>
                       )}
                     </div>
                   </div>
@@ -168,7 +170,7 @@ export function AgentOnboarding({ agent, serviceUrl, apiKey, cogniInstance, onRe
               style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.65)", fontFamily: "inherit", cursor: "pointer" }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 4v6h6" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
-              Start over
+              {t("startOver")}
             </button>
             {currentStep < cards.length - 1 && (
               <button
@@ -176,12 +178,12 @@ export function AgentOnboarding({ agent, serviceUrl, apiKey, cogniInstance, onRe
                 className="cursor-pointer"
                 style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#BC9BFF", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 500, color: "#1e1e1c", fontFamily: "inherit", cursor: "pointer" }}
               >
-                Next
+                {t("continue")}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
               </button>
             )}
           </div>
-          <SkipLink label="Skip onboarding" compact />
+          <SkipLink label={t("skipOnboarding")} compact />
         </div>
       </div>
     </div>

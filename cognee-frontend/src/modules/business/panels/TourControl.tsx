@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { useTranslations } from "next-intl";
 
 interface TourControlProps {
   isPlaying: boolean;
@@ -11,6 +12,7 @@ interface TourControlProps {
 // A one-button flythrough trigger for useBusinessTour — new in this port,
 // no source equivalent. Sits in the dock next to the LIVE indicator.
 export default function TourControl({ isPlaying, onStart, onStop }: TourControlProps) {
+  const t = useTranslations("knowledgeGraph");
   // BusinessView's capture-phase document pointerdown already stops the tour
   // on ANY press — including one on this button. React re-renders before the
   // click event lands on the same reused node, so a plain isPlaying-switched
@@ -36,7 +38,7 @@ export default function TourControl({ isPlaying, onStart, onStop }: TourControlP
         isPlaying ? "border-[#F5A83C] text-[#F5A83C]" : "border-[#2A3652] text-[#7E8CA6] hover:text-[#E9EEF6]"
       }`}
     >
-      {isPlaying ? "■ stop tour" : "▶ tour"}
+      {isPlaying ? t("stopTour") : t("startTour")}
     </button>
   );
 }

@@ -7,6 +7,7 @@ import { AgentActivityTerminal, type OnboardingDemoEntry } from "@/ui/elements/A
 import { completeOnboardingAndNavigate } from "../completeOnboardingAndNavigate";
 import { useOnboardingTrackEvent } from "../useOnboardingTrackEvent";
 import { StepBadge, StepDots } from "./Shared";
+import { useTranslations } from "next-intl";
 
 // Mirror of the "no answer" detection used in the terminal so the parent
 // can store a non-boilerplate top result. Kept narrow on purpose.
@@ -37,6 +38,7 @@ export function Step3({ datasetId, cogniInstance, demoEntries }: {
   cogniInstance: NonNullable<ReturnType<typeof useCogniInstance>["cogniInstance"]>;
   demoEntries: OnboardingDemoEntry[] | null;
 }) {
+  const t = useTranslations("Setup");
   const router = useRouter();
   const { markOnboardingComplete } = useUser();
   const track = useOnboardingTrackEvent();
@@ -68,9 +70,9 @@ export function Step3({ datasetId, cogniInstance, demoEntries }: {
         maxWidth: 860, width: "100%", boxSizing: "border-box",
       }}>
       <StepBadge step={3} total={3} />
-      <h1 style={{ fontSize: 28, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.02em" }}>Ask cognee anything</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.02em" }}>{t("ready.title")}</h1>
       <p style={{ fontSize: 15, color: "rgba(237,236,234,0.65)", margin: 0, textAlign: "center", lineHeight: "22px" }}>
-        Your memory is ready. Ask anything about your data below.
+        {t("ready.description")}
       </p>
 
       <div style={{ width: "100%", maxWidth: 780 }}>
@@ -99,7 +101,7 @@ export function Step3({ datasetId, cogniInstance, demoEntries }: {
         className="cursor-pointer"
         style={{ background: "#BC9BFF", border: "none", borderRadius: 8, padding: "11px 32px", fontSize: 14, fontWeight: 500, color: "#1e1e1c", letterSpacing: "-0.01em" }}
       >
-        Connect my agent now →
+        {t("ready.connectAgent")}
       </button>
       </div>
     </div>

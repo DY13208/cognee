@@ -1,11 +1,14 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 /**
  * Slim sticky banner shown at the top of the app shell while the tenant pod is
  * still provisioning (`!tenantReady`). Derived from context per-render, so it
  * survives a page refresh and clears automatically when the pod comes online.
  */
 export default function ProvisioningBanner() {
+  const t = useTranslations("common");
   return (
     <div
       style={{
@@ -31,7 +34,7 @@ export default function ProvisioningBanner() {
         }}
       />
       <span style={{ fontSize: 13, color: "#EDECEA" }}>
-        Setting up your workspace — this can take a minute. Some features unlock once it&apos;s ready.
+        {t("provisioningBanner")}
       </span>
     </div>
   );

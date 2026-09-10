@@ -1,7 +1,9 @@
 "use client";
 
 import type { EnrichmentRun } from "@/modules/sessions/getSessions";
+import { useLocale, useTranslations } from "next-intl";
 import { formatDate, formatRelativeTime } from "./format";
+import type { Locale } from "@/i18n/config";
 
 // Matches the SelfImprovementCard purple so all improve surfaces read as one feature.
 const PURPLE = { bg: "rgba(188,155,255,0.15)", border: "rgba(188,155,255,0.35)", color: "#BC9BFF" };
@@ -24,7 +26,9 @@ function formatBurstDuration(startedAt: string | null, endedAt: string | null): 
 }
 
 export default function ImproveCard({ run }: { run: EnrichmentRun }) {
-  const full = formatDate(run.created_at);
+  const t = useTranslations("sessions");
+  const locale = useLocale() as Locale;
+  const full = formatDate(run.created_at, locale);
   const duration = formatBurstDuration(run.started_at, run.created_at);
   return (
     <div style={{
@@ -46,17 +50,17 @@ export default function ImproveCard({ run }: { run: EnrichmentRun }) {
           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.2 2.2m8.4 8.4l2.2 2.2M5.6 18.4l2.2-2.2m8.4-8.4l2.2-2.2" />
           </svg>
-          Improve
+          {t("improve.title")}
         </span>
-        <span title={full} style={{ fontSize: 11, color: "rgba(237,236,234,0.45)", fontVariantNumeric: "tabular-nums" }}>{formatRelativeTime(run.created_at)}</span>
-        {run.status === "completed" && <span style={{ fontSize: 11, color: GREEN }}>success</span>}
-        {run.status === "failed" && <span style={{ fontSize: 11, color: "#EF4444" }}>failed</span>}
-        {run.status === "running" && <span style={{ fontSize: 11, color: PURPLE.color }}>in progress</span>}
+        <span title={full} style={{ fontSize: 11, color: "rgba(237,236,234,0.45)", fontVariantNumeric: "tabular-nums" }}>{formatRelativeTime(run.created_at, locale)}</span>
+        {run.status === "completed" && <span style={{ fontSize: 11, color: GREEN }}>{t("status.success")}</span>}
+        {run.status === "failed" && <span style={{ fontSize: 11, color: "#EF4444" }}>{t("status.failed")}</span>}
+        {run.status === "running" && <span style={{ fontSize: 11, color: PURPLE.color }}>{t("status.inProgress")}</span>}
       </div>
       <div style={{ fontSize: 13, lineHeight: 1.55, color: "rgba(237,236,234,0.7)" }}>
         {run.status === "failed"
-          ? "Graph enrichment did not complete — no memory was bridged this run"
-          : "Session memory bridged into the knowledge graph"}
+          ? t("improve.failedDescription")
+          : t("improve.successDescription")}
       </div>
       {run.status === "failed" && run.failure_reason && (
         <div style={{ fontSize: 11, lineHeight: 1.5, color: "rgba(239,68,68,0.75)" }}>
@@ -64,7 +68,7 @@ export default function ImproveCard({ run }: { run: EnrichmentRun }) {
         </div>
       )}
       <div style={{ display: "flex", gap: 12, fontSize: 11, color: "rgba(237,236,234,0.45)", fontVariantNumeric: "tabular-nums" }}>
-        <span>{run.count} {run.count === 1 ? "stage" : "stages"}</span>
+        <span>{t("improve.stageCount", { count: run.count })}</span>
         {duration && <span>{duration}</span>}
       </div>
     </div>

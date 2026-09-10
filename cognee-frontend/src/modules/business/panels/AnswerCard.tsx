@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import ReactMarkdown from "react-markdown";
 import type { SessionEvent } from "../types";
 import { truncate } from "../textUtils";
@@ -18,6 +19,7 @@ interface AnswerCardProps {
 // after clicking play. Opens showing the question and the first few lines
 // of the answer; clicking the card toggles the full, scrollable text.
 export default function AnswerCard({ event, onDismiss }: AnswerCardProps) {
+  const t = useTranslations("knowledgeGraph");
   const [expanded, setExpanded] = useState(false);
 
   if (!event) return null;
@@ -33,7 +35,7 @@ export default function AnswerCard({ event, onDismiss }: AnswerCardProps) {
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-        aria-label="dismiss"
+        aria-label={t("dismissAnswer")}
         className="absolute right-2 top-1.5 text-[#7E8CA6] hover:text-[#E9EEF6]"
       >
         ✕
@@ -51,7 +53,7 @@ export default function AnswerCard({ event, onDismiss }: AnswerCardProps) {
         </div>
       )}
       {answer && !expanded && (
-        <div className="mt-1 text-[11px] text-[#7E8CA6]">click to read the full answer</div>
+        <div className="mt-1 text-[11px] text-[#7E8CA6]">{t("clickToRead")}</div>
       )}
     </div>
   );

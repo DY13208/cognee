@@ -40,7 +40,7 @@ const config = {
 // the exact shape depends on the transpilePackages it derives (today "geist"),
 // and hardcoding a replacement would silently drop those the next time they
 // change. The CSS-module entry it also sets is left alone.
-const ESM_DEPS = "d3-.*|internmap|delaunator|robust-predicates";
+const ESM_DEPS = "d3-.*|internmap|delaunator|robust-predicates|next-intl|use-intl|intl-messageformat|@formatjs.*|uuid";
 
 function allowEsmDeps(pattern) {
   // "/node_modules/(?!.pnpm)(?!(geist)/)" and its ".pnpm/(?!(geist)@)" sibling

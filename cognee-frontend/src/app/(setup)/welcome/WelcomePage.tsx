@@ -7,8 +7,10 @@ import { useTenant } from "@/modules/tenant/TenantProvider";
 import { useUser } from "@/modules/users/UserContext";
 import { trackEvent } from "@/modules/analytics";
 import TetrisBackground from "@/ui/elements/Auth/TetrisBackground";
+import { useTranslations } from "next-intl";
 
 export default function WelcomePage() {
+  const t = useTranslations("Welcome");
   const router = useRouter();
   const { releaseLoader } = useTenant();
   const { markWelcomeSeen } = useUser();
@@ -45,7 +47,7 @@ export default function WelcomePage() {
     try {
       await markWelcomeSeen();
     } catch {
-      notifications.show({ color: "red", message: "Something went wrong, please try again." });
+      notifications.show({ color: "red", message: t("saveError") });
     }
   }
 
@@ -99,7 +101,7 @@ export default function WelcomePage() {
             fontFamily: '"TWKLausanne", sans-serif',
           }}
         >
-          Welcome to Cognee Cloud
+          {t("title")}
         </h1>
 
         <p
@@ -112,7 +114,7 @@ export default function WelcomePage() {
             maxWidth: 400,
           }}
         >
-          Let&apos;s take a minute to set up your account.
+          {t("description")}
         </p>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
@@ -134,7 +136,7 @@ export default function WelcomePage() {
               transition: "background 150ms ease",
             }}
           >
-            {saving ? "Saving…" : "Get started →"}
+            {saving ? t("saving") : t("getStarted")}
           </button>
           <button
             onClick={() => setShowTutorial(true)}
@@ -153,7 +155,7 @@ export default function WelcomePage() {
             }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="#BC9BFF"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-            Watch Quick Tutorial
+            {t("watchTutorial")}
           </button>
         </div>
       </div>
@@ -181,7 +183,7 @@ export default function WelcomePage() {
           >
             <button
               onClick={() => setShowTutorial(false)}
-              aria-label="Close tutorial"
+              aria-label={t("closeTutorial")}
               style={{
                 position: "absolute",
                 top: -36,

@@ -1,8 +1,10 @@
 "use client";
 
 import type { ReactElement } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import FileIcon, { getExtMeta } from "@/ui/elements/FileIcon";
 import { decodeFilename, formatDate, formatFileSize } from "@/utils/fileFormat";
+import type { Locale } from "@/i18n/config";
 
 export interface DocRow {
   id: string;
@@ -19,6 +21,8 @@ export default function DocumentList<T extends DocRow>({
   docs: T[];
   onDelete: (doc: T) => void;
 }): ReactElement {
+  const t = useTranslations("datasets");
+  const locale = useLocale() as Locale;
   return (
     <>
       {docs.map((doc, i) => {
@@ -30,14 +34,14 @@ export default function DocumentList<T extends DocRow>({
             <span style={{ flex: 1, fontSize: 13, color: "#EDECEA", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
               <span style={{ fontSize: 11, color: "rgba(237,236,234,0.55)", fontWeight: 500, minWidth: 32, textAlign: "right" }}>{meta.label}</span>
-              <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)", minWidth: 52, textAlign: "right" }}>{formatFileSize(doc.size)}</span>
-              <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)", minWidth: 80, textAlign: "right", whiteSpace: "nowrap" }}>{formatDate(doc.createdAt)}</span>
+              <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)", minWidth: 52, textAlign: "right" }}>{formatFileSize(doc.size, locale)}</span>
+              <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)", minWidth: 80, textAlign: "right", whiteSpace: "nowrap" }}>{formatDate(doc.createdAt, false, locale)}</span>
               <button
                 onClick={() => onDelete(doc)}
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 500, color: "rgba(237,236,234,0.7)", cursor: "pointer", flexShrink: 0 }}
-                title="Delete file"
+                title={t("documents.deleteFile")}
               >
-                Delete
+                {t("common.delete")}
               </button>
             </div>
           </div>

@@ -6,12 +6,9 @@
  * wanted a relative time, so it moved out; that module re-exports it and its
  * callers are unchanged.
  */
-export function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+import { DEFAULT_LOCALE, type Locale } from "@/i18n/config";
+import { formatRelativeTime } from "./formatDate";
+
+export function timeAgo(dateStr: string, locale: Locale = DEFAULT_LOCALE): string {
+  return formatRelativeTime(dateStr, locale);
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useCurrentUser } from "@/modules/users/useCurrentUser";
 import getLocalUser from "@/modules/users/getLocalUser";
 import CogneeUser from "@/modules/users/CogneeUser";
@@ -50,22 +51,22 @@ function Slash() {
 
 // ── Page name from path ──
 
-const ROUTE_LABELS: Record<string, string> = {
-  "/": "Overview", "/dashboard": "Overview",
-  "/datasets": "Brain", "/sessions": "Sessions", "/search": "Search",
-  "/knowledge-graph": "Mindmap",
+const ROUTE_KEYS: Record<string, string> = {
+  "/": "items.overview", "/dashboard": "items.overview",
+  "/datasets": "items.brain", "/sessions": "items.sessions", "/search": "items.search",
+  "/knowledge-graph": "items.mindmap",
   // /business is the same page as /knowledge-graph (page.tsx re-exports
   // BusinessPage) but had no entry here, so visiting it directly fell back
-  // to a derived "Business" breadcrumb while the nav-linked /knowledge-graph
-  // correctly showed "Mindmap" for identical content.
-  "/business": "Mindmap",
-  "/integrations": "Integrations",
-  "/api-keys": "API Keys",
-  "/settings": "Settings",
-  "/onboarding": "Onboarding", "/members": "Members",
-  "/memory-gap-analysis": "Memory coverage",
-  "/analytics": "Analytics",
-  "/activity": "Activity",
+  // to a derived slug while the nav-linked /knowledge-graph showed the
+  // knowledge-graph label for identical content.
+  "/business": "items.mindmap",
+  "/integrations": "items.integrations",
+  "/api-keys": "items.apiKeys",
+  "/settings": "items.settings",
+  "/onboarding": "items.onboarding", "/members": "items.members",
+  "/memory-gap-analysis": "items.memoryCoverage",
+  "/analytics": "items.analytics",
+  "/activity": "items.activity",
 };
 
 // ── TopBar ──
@@ -75,6 +76,7 @@ function PlusIcon() {
 }
 
 export default function TopBar() {
+  const t = useTranslations("navigation");
   const [localUser, setLocalUser] = useState<CogneeUser>();
   const cloud = isCloudEnvironment();
   const { data: cloudUser } = useCurrentUser(cloud);
@@ -89,7 +91,10 @@ export default function TopBar() {
 
   // Derive page label
   const basePath = "/" + (pathname.split("/").filter(Boolean)[0] || "");
-  const pageName = ROUTE_LABELS[basePath] || basePath.slice(1).charAt(0).toUpperCase() + basePath.slice(2).replace(/-/g, " ");
+  const routeKey = ROUTE_KEYS[basePath];
+  const pageName = routeKey
+    ? t(routeKey)
+    : basePath.slice(1).charAt(0).toUpperCase() + basePath.slice(2).replace(/-/g, " ");
 
   // Check if we're on a dataset detail page
   const isDatasetDetail = /^\/datasets\/.+$/.test(pathname);
@@ -126,7 +131,7 @@ export default function TopBar() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   <span style={{ fontSize: 13, fontWeight: workspace.id === ws.id ? 500 : 400, color: blocked ? "#71717A" : workspace.id === ws.id ? "rgba(188,155,255,0.60)" : "#EDECEA" }}>{ws.name}</span>
-                  {blocked && <span style={{ fontSize: 10, color: "rgba(237,236,234,0.55)" }}>No active subscription</span>}
+                  {blocked && <span style={{ fontSize: 10, color: "rgba(237,236,234,0.55)" }}>{t("noSubscription")}</span>}
                 </div>
                 {workspace.id === ws.id && !blocked && <Check />}
               </div>
@@ -142,7 +147,7 @@ export default function TopBar() {
               >
                 <PlusIcon />
                 <span style={{ fontSize: 13, fontWeight: 500, color: "#6510F4" }}>
-                  Create new workspace
+                  {t("createWorkspace")}
                 </span>
               </div>
             </>
@@ -153,9 +158,9 @@ export default function TopBar() {
         {isDatasetDetail ? (
           <>
             <Slash />
-            <Link href="/datasets" className="hover:opacity-70" style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>Brain</Link>
+            <Link href="/datasets" className="hover:opacity-70" style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>{t("items.brain")}</Link>
             <Slash />
-            <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.7)" }}>Documents</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.7)" }}>{t("items.documents")}</span>
           </>
         ) : basePath !== "/" && basePath !== "/dashboard" ? (
           <><Slash /><span style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.7)" }}>{pageName}</span></>

@@ -9,7 +9,7 @@ import { completeOnboardingAndNavigate } from "./completeOnboardingAndNavigate";
 import getDatasets from "@/modules/datasets/getDatasets";
 import { TrackPageView } from "@/modules/analytics";
 import { useOnboardingTrackEvent } from "./useOnboardingTrackEvent";
-import { type OnboardingDemoEntry, DEMO_QUERIES } from "@/ui/elements/AgentActivityTerminal";
+import { type OnboardingDemoEntry, getDemoQueries } from "@/ui/elements/AgentActivityTerminal";
 import recallKnowledge from "@/modules/datasets/recallKnowledge";
 import { StepPreparing } from "./partials/StepPreparing";
 import { Step1 } from "./partials/Step1";
@@ -17,6 +17,7 @@ import { Step2 } from "./partials/Step2";
 import { Step3, extractFirstAnswer } from "./partials/Step3";
 import { StepSelect, type OnboardingPath } from "./partials/StepSelect";
 import { AgentOnboarding } from "./partials/AgentOnboarding";
+import { useTranslations } from "next-intl";
 
 // Completes onboarding and navigates to the dashboard, where the skeleton
 // takes over until the workspace is fully ready. Used by the "Skip to
@@ -31,6 +32,8 @@ function skipToDashboard(
 }
 
 export default function OnboardingPage() {
+  const t = useTranslations("Setup");
+  const tActivity = useTranslations("dashboard.activity");
   const { cogniInstance, isInitializing, serviceUrl, apiKey } = useCogniInstance();
   const { markOnboardingComplete } = useUser();
   const router = useRouter();
@@ -69,9 +72,10 @@ export default function OnboardingPage() {
   // same render). All three queries run in parallel.
   useEffect(() => {
     if (!datasetId || !cogniInstance || demoEntries) return;
-    const initial: OnboardingDemoEntry[] = DEMO_QUERIES.map((q) => ({ query: q, result: null, status: "pending" }));
+    const demoQueries = getDemoQueries(tActivity);
+    const initial: OnboardingDemoEntry[] = demoQueries.map((q) => ({ query: q, result: null, status: "pending" }));
     setDemoEntries(initial);
-    DEMO_QUERIES.forEach((q, i) => {
+    demoQueries.forEach((q, i) => {
       recallKnowledge(cogniInstance, { query: q, scope: "graph", datasetIds: [datasetId] })
         .then((data) => {
           const text = extractFirstAnswer(data);
@@ -81,7 +85,7 @@ export default function OnboardingPage() {
           setDemoEntries((prev) => prev?.map((e, j) => j === i ? { ...e, status: "error" } : e) ?? prev);
         });
     });
-  }, [datasetId, cogniInstance, demoEntries]);
+  }, [datasetId, cogniInstance, demoEntries, tActivity]);
 
   const darkPage: React.CSSProperties = {
     backgroundColor: "#000000",
@@ -92,7 +96,7 @@ export default function OnboardingPage() {
   if (isInitializing) {
     return (
       <><TrackPageView page="Onboarding" /><div className="flex items-center justify-center h-screen" style={darkPage}>
-        <span style={{ fontSize: 14, color: "rgba(237,236,234,0.65)" }}>Connecting...</span>
+        <span style={{ fontSize: 14, color: "rgba(237,236,234,0.65)" }}>{t("connecting")}</span>
       </div></>
     );
   }
@@ -102,7 +106,7 @@ export default function OnboardingPage() {
     if (!cogniInstance) {
       return (
         <><TrackPageView page="Onboarding" /><div className="flex items-center justify-center h-screen" style={darkPage}>
-          <span style={{ fontSize: 14, color: "rgba(237,236,234,0.65)" }}>Connecting...</span>
+          <span style={{ fontSize: 14, color: "rgba(237,236,234,0.65)" }}>{t("connecting")}</span>
         </div></>
       );
     }
@@ -145,14 +149,14 @@ export default function OnboardingPage() {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", gap: 16 }}>
             <style>{`@keyframes ob-spin { to { transform: rotate(360deg); } }`}</style>
             <div style={{ width: 36, height: 36, borderRadius: "50%", border: "3px solid rgba(237,236,234,0.12)", borderTopColor: "#BC9BFF", animation: "ob-spin 0.8s linear infinite" }} />
-            <p style={{ margin: 0, fontSize: 14, color: "rgba(237,236,234,0.75)" }}>Still preparing your memory…</p>
-            <p style={{ margin: 0, fontSize: 13, color: "rgba(237,236,234,0.5)" }}>This usually takes about a minute on first sign-up.</p>
+            <p style={{ margin: 0, fontSize: 14, color: "rgba(237,236,234,0.75)" }}>{t("stillPreparingMemory")}</p>
+            <p style={{ margin: 0, fontSize: 13, color: "rgba(237,236,234,0.5)" }}>{t("firstSignupWait")}</p>
             <button
               onClick={() => skipToDashboard(router, markOnboardingComplete, track)}
               className="cursor-pointer"
               style={{ marginTop: 8, background: "none", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.8)" }}
             >
-              Skip to dashboard
+              {t("skipDashboard")}
             </button>
           </div>
         ) : (

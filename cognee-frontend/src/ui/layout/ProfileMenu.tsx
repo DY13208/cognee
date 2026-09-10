@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import useBoolean from "@/utils/useBoolean";
 import useOutsideClick from "@/utils/useOutsideClick";
 
@@ -32,6 +33,7 @@ interface ProfileMenuProps {
 }
 
 export default function ProfileMenu({ userName, userEmail, profileHref = "/settings", logoutHref = "/api/signout" }: ProfileMenuProps) {
+  const t = useTranslations("navigation");
   const { value: isOpen, toggle, setFalse: close } = useBoolean(false);
   const closeCallback = useCallback(() => close(), [close]);
   const containerRef = useOutsideClick<HTMLDivElement>(closeCallback, isOpen);
@@ -42,6 +44,7 @@ export default function ProfileMenu({ userName, userEmail, profileHref = "/setti
     <div ref={containerRef} className="relative">
       <button
         onClick={toggle}
+        aria-label={t("profile")}
         className="flex items-center justify-center rounded-full cursor-pointer"
         style={{ width: 28, height: 28, background: "#6C47FF", border: "none" }}
       >
@@ -87,7 +90,7 @@ export default function ProfileMenu({ userName, userEmail, profileHref = "/setti
             style={{ fontSize: 13, color: "#333333", textDecoration: "none" }}
           >
             <PersonIcon />
-            Profile
+            {t("profile")}
           </Link>
 
           <div style={{ height: 1, background: "#EEEEEE", margin: "2px -6px" }} />
@@ -99,7 +102,7 @@ export default function ProfileMenu({ userName, userEmail, profileHref = "/setti
             style={{ fontSize: 13, color: "#CC3333", textDecoration: "none" }}
           >
             <LogoutIcon />
-            Log out
+            {t("logOut")}
           </a>
         </div>
       )}

@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { notifications } from "@mantine/notifications";
 import { trackEvent } from "@/modules/analytics";
 import { useCogniInstance, useTenant } from "@/modules/tenant/TenantProvider";
@@ -76,6 +77,7 @@ function agentStatus(sessions: SessionRow[], prefixes: string[]): NodeStatus {
 }
 
 export default function OverviewPage(): React.ReactElement {
+  const t = useTranslations("dashboard");
   const { cogniInstance, isInitializing, serviceUrl, apiKey } = useCogniInstance();
   const { tenantReady, podUnreachable, tenant, isOwner } = useTenant();
   const { agents, datasets, selectedAgent, loading: filterLoading } = useFilter();
@@ -119,15 +121,15 @@ export default function OverviewPage(): React.ReactElement {
   useEffect(() => {
     if (!prevWorkspaceReady.current && workspaceReady) {
       notifications.show({
-        title: "Your workspace is ready",
-        message: "All features are now available.",
+        title: t("workspaceReadyTitle"),
+        message: t("workspaceReadyMessage"),
         color: "teal",
         autoClose: 5000,
       });
       trackEvent({ pageName: "Dashboard", eventName: "workspace_active" });
     }
     prevWorkspaceReady.current = workspaceReady;
-  }, [workspaceReady]);
+  }, [workspaceReady, t]);
 
   const { runs, sessions, loading } = useDashboardTelemetry(telemetryRange);
   const { data: hourlyCosts = null } = useTenantHourlyCosts(tenant?.tenant_id ?? null, range);
@@ -204,7 +206,7 @@ export default function OverviewPage(): React.ReactElement {
   // built yet live in the Integrations page's notify-me list, not here — the
   // graph never advertises a source nobody can connect.
   const flowSources: FlowSource[] = [
-    { name: "Company Brain", logo: "company-brain", status: datasets.length > 0 ? "connected" : "disconnected" },
+    { name: t("companyBrain"), logo: "company-brain", status: datasets.length > 0 ? "connected" : "disconnected" },
     ...DATA_SOURCE_CARDS.map((card) => ({
       name: card.name,
       // The card's glyph is optional; the graph node falls back to the key,
@@ -251,7 +253,7 @@ export default function OverviewPage(): React.ReactElement {
         {/* Greeting — standard page-header type (matches every other page). */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <h1 style={{ ...FONT, margin: 0, fontSize: 20, fontWeight: 300, color: T.text, lineHeight: "28px" }}>
-            {greetingForTime()}{greetingName ? `, ${greetingName}` : ""}
+            {greetingForTime(t)}{greetingName ? `, ${greetingName}` : ""}
           </h1>
           {selectedAgent && (
             <span style={{ ...FONT, background: "var(--color-cognee-lavender-tint-10)", borderRadius: 100, padding: "2px 10px", fontSize: 11, fontWeight: 500, color: T.lavender }}>
@@ -274,7 +276,7 @@ export default function OverviewPage(): React.ReactElement {
 
         {/* Get started — collapsed connection strip */}
         <GetStartedBar
-          subtitle="Connect your AI agents to give them persistent memory"
+          subtitle={t("connectAgentsSubtitle")}
           connectors={connectedAgentCount}
         >
           <AgentConnectionSection
@@ -358,9 +360,9 @@ export default function OverviewPage(): React.ReactElement {
   );
 }
 
-function greetingForTime(): string {
+function greetingForTime(t: ReturnType<typeof useTranslations>): string {
   const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
+  if (h < 12) return t("greetingMorning");
+  if (h < 18) return t("greetingAfternoon");
+  return t("greetingEvening");
 }

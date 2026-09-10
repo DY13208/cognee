@@ -13,8 +13,10 @@ import PasteTextModal from "./partials/PasteTextModal";
 import BrainList from "./partials/BrainList";
 import DocumentsPanel from "./partials/DocumentsPanel";
 import { useBrainsData } from "./useBrainsData";
+import { useTranslations } from "next-intl";
 
 export default function DatasetsPage() {
+  const t = useTranslations("datasets");
   const {
     isLoading,
     datasets,
@@ -66,7 +68,7 @@ export default function DatasetsPage() {
 
   if (isLoading) {
     return (
-      <><TrackPageView page="Brains" /><PageLoading name="Brain" /></>
+      <><TrackPageView page="Brains" /><PageLoading name={t("title")} /></>
     );
   }
 
@@ -93,8 +95,8 @@ export default function DatasetsPage() {
 
       {deleteDocTarget && (
         <DeleteConfirmModal
-          title="Delete document"
-          message={<>Are you sure you want to delete <strong>{decodeFilename(deleteDocTarget.name)}</strong>? This action cannot be undone.</>}
+          title={t("deleteDocument.title")}
+          message={t.rich("deleteDocument.message", { name: decodeFilename(deleteDocTarget.name), strong: (chunks) => <strong>{chunks}</strong> })}
           onConfirm={() => handleDeleteFile(deleteDocTarget.id)}
           onCancel={() => setDeleteDocTarget(null)}
           busy={deletingDocId === deleteDocTarget.id}
@@ -113,8 +115,8 @@ export default function DatasetsPage() {
 
       {deleteTarget && (
         <DeleteConfirmModal
-          title="Delete brain"
-          message={<>Are you sure you want to delete <strong>{deleteTarget.name}</strong>? This will permanently remove the dataset and all its files.</>}
+          title={t("deleteBrain.title")}
+          message={t.rich("deleteBrain.message", { name: deleteTarget.name, strong: (chunks) => <strong>{chunks}</strong> })}
           onConfirm={() => handleDelete(deleteTarget)}
           onCancel={() => setDeleteTarget(null)}
         />
@@ -133,13 +135,13 @@ export default function DatasetsPage() {
       {/* ── Header ── */}
       <div style={{ padding: "24px 32px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>Brain</h1>
-          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>Upload documents to build searchable knowledge graphs.</p>
+          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>{t("title")}</h1>
+          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>{t("description")}</p>
         </div>
         <button onClick={handleRefresh} disabled={refreshing}
           className="hover:bg-white/10 cursor-pointer"
           style={{ background: "rgba(255,255,255,0.06)", color: "rgba(237,236,234,0.7)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
-          title="Refresh">
+          title={t("common.refresh")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             style={refreshing ? { animation: "spin 1s linear infinite" } : undefined}>
             <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0115.36-6.36L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 01-15.36 6.36L3 16" />
@@ -187,14 +189,14 @@ export default function DatasetsPage() {
         /* ── Load-error state — never render "no brains" for a failed fetch ── */
         <div style={{ flex: 1, display: "flex", flexDirection: "column", paddingInline: 32, paddingBottom: 32 }}>
           <div style={{ flex: 1, background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 48 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#F87171" }}>Couldn&rsquo;t load your brains</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#F87171" }}>{t("loadError.title")}</span>
             <p style={{ fontSize: 14, color: "rgba(237,236,234,0.35)", margin: 0, maxWidth: 340, textAlign: "center" }}>
-              Your brains are safe — we just couldn&rsquo;t reach the server. This can happen while a large upload is still processing.
+              {t("loadError.description")}
             </p>
             <button onClick={handleRefresh} disabled={refreshing}
               className="cursor-pointer hover:bg-white/10"
               style={{ background: "rgba(255,255,255,0.06)", color: "#EDECEA", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "8px 20px", fontSize: 14, fontWeight: 500, marginTop: 8 }}>
-              {refreshing ? "Retrying…" : "Retry"}
+              {refreshing ? t("common.retrying") : t("common.retry")}
             </button>
           </div>
         </div>
@@ -205,14 +207,14 @@ export default function DatasetsPage() {
             <div style={{ width: 56, height: 56, background: "rgba(188,155,255,0.20)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <EmptyDocIcon />
             </div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>No brains yet</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>{t("empty.title")}</span>
             <p style={{ fontSize: 14, color: "rgba(237,236,234,0.35)", margin: 0, maxWidth: 340, textAlign: "center" }}>
-              A brain turns the documents you upload into a searchable knowledge graph — Cognee extracts entities and relationships so you can query them later. Create your first one to get started.
+              {t("empty.description")}
             </p>
             <button onClick={() => { trackEvent({ pageName: "Brains", eventName: "dataset_create_modal_opened" }); setShowCreate(true); }}
               className="hover:bg-[#5A0ED6] cursor-pointer"
               style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", fontSize: 14, fontWeight: 500, display: "flex", alignItems: "center", gap: 6, marginTop: 12 }}>
-              <PlusIcon /> Create brain
+              <PlusIcon /> {t("empty.action")}
             </button>
           </div>
         </div>

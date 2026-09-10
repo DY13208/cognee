@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useActionState } from "react";
+import { useTranslations } from "next-intl";
 import { IconButton } from "@/ui/elements";
 import { LoadingIndicator } from "@/ui/app";
 import deleteApiKey from "@/modules/apiKeys/deleteAPIKey";
@@ -16,14 +17,17 @@ export default function DeleteApiKeyButton({
   apiKey: { id: string };
   onDeleted?: (id: string) => void;
 }) {
+  const t = useTranslations("common");
+  const tKeys = useTranslations("apiKeys");
+
   async function handleApiKeyDelete() {
     try {
       await deleteApiKey(apiKey.id);
       trackEvent({ pageName: "API Keys", eventName: "api_key_deleted" });
       onDeleted?.(apiKey.id);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      return error.message;
+    } catch (error) {
+      console.error("[api-keys] failed to delete key:", error instanceof Error ? error.message : error);
+      return t("genericError");
     }
   }
 
@@ -45,7 +49,7 @@ export default function DeleteApiKeyButton({
         {isLoading ? (
           <LoadingIndicator />
         ) : (
-          <Image width={28} height={28} src={"/images/icons/x.svg"} alt={"X"} />
+          <Image width={28} height={28} src={"/images/icons/x.svg"} alt={tKeys("revoke")} />
         )}
       </IconButton>
     </>

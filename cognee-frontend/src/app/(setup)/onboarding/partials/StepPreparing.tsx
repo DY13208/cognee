@@ -5,6 +5,7 @@ import { useCogniInstance, useTenant } from "@/modules/tenant/TenantProvider";
 import TetrisBackground from "@/ui/elements/Auth/TetrisBackground";
 import { GraphBuildingAnimation } from "./GraphBuildingAnimation";
 import { useOnboardingTrackEvent } from "../useOnboardingTrackEvent";
+import { useTranslations } from "next-intl";
 
 // Bridges the gap between "Get started" and a live cogniInstance so path
 // selection and Step 2's own pod-readiness bar never race a null connection.
@@ -36,6 +37,7 @@ function PreparingChecklistItem({ label, done }: { label: string; done: boolean 
 }
 
 export function StepPreparing({ onReady }: { onReady: () => void }) {
+  const t = useTranslations("Setup");
   const { cogniInstance, apiKey } = useCogniInstance();
   const { tenantReady } = useTenant();
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -96,12 +98,12 @@ export function StepPreparing({ onReady }: { onReady: () => void }) {
           textAlign: "center", letterSpacing: "-0.02em", lineHeight: 1.2,
           fontFamily: '"TWKLausanne", sans-serif',
         }}>
-          Building your workspace…
+          {t("preparing.title")}
         </h1>
         <p style={{ margin: 0, fontSize: 14, color: "rgba(237,236,234,0.65)", textAlign: "center", lineHeight: "22px", maxWidth: 340 }}>
           {takingLonger
-            ? "Still going — this can take a couple of minutes on a brand-new account."
-            : "Setting up your memory layer. This usually takes under a minute."}
+            ? t("preparing.long")
+            : t("preparing.short")}
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12, alignSelf: "stretch" }}>
@@ -109,9 +111,9 @@ export function StepPreparing({ onReady }: { onReady: () => void }) {
               the API key resolves before cogniInstance is set, which resolves
               before tenantReady — showing them out of order made "API key"
               flip to done before "workspace" ever left its spinner. */}
-          <PreparingChecklistItem label="Creating your API key" done={!!apiKey} />
-          <PreparingChecklistItem label="Preparing your workspace" done={!!cogniInstance} />
-          <PreparingChecklistItem label="Preparing your data" done={tenantReady} />
+          <PreparingChecklistItem label={t("preparing.apiKey")} done={!!apiKey} />
+          <PreparingChecklistItem label={t("preparing.workspace")} done={!!cogniInstance} />
+          <PreparingChecklistItem label={t("preparing.data")} done={tenantReady} />
         </div>
 
         {takingLonger && (
@@ -128,7 +130,7 @@ export function StepPreparing({ onReady }: { onReady: () => void }) {
             className="cursor-pointer"
             style={{ background: "none", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.8)" }}
           >
-            Continue without waiting
+            {t("preparing.continueWithoutWait")}
           </button>
         )}
       </div>

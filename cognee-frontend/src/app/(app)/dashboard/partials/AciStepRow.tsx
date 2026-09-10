@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { trackEvent } from "@/modules/analytics";
 import { InlineCodeBlock } from "@/ui/elements/InlineCodeBlock";
 import type { AciStepDef, AciAgentKey } from "./agentConnectionSteps";
 import { SkillCopyBlock } from "./SkillCopyBlock";
+import { translateStepText } from "@/modules/integrations/stepTitleMap";
 
 interface AciStepRowProps {
   step: AciStepDef;
@@ -27,6 +29,7 @@ export function AciStepRow({
   onClick,
   onNavigate,
 }: AciStepRowProps): React.ReactElement {
+  const t = useTranslations("integrations");
   const trackCopy = useCallback(
     (block: string) => (): void => {
       trackEvent({
@@ -74,11 +77,11 @@ export function AciStepRow({
           )}
         </div>
         <span style={{ flex: 1, fontSize: 14, fontWeight: isActive ? 500 : 400, color: isDone ? "rgba(237,236,234,0.45)" : isActive ? "#EDECEA" : "rgba(237,236,234,0.30)" }}>
-          {step.title}
+          {translateStepText(step.title, t)}
         </span>
         {isDone && (
           <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", background: "rgba(34,197,94,0.12)", color: "#22C55E", borderRadius: 100, padding: "2px 8px", flexShrink: 0, animation: "aci-check 200ms ease forwards" }}>
-            Done
+            {t("stepDone")}
           </span>
         )}
       </button>
@@ -108,7 +111,7 @@ export function AciStepRow({
                 {step.codeBlocks.map((cb, j) =>
                   cb.label ? (
                     <div key={j}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{cb.label}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{translateStepText(cb.label, t)}</div>
                       <InlineCodeBlock code={cb.code} toCopy={cb.toCopy} onCopy={trackCopy(cb.label)} />
                     </div>
                   ) : (
@@ -122,14 +125,14 @@ export function AciStepRow({
             )}
             {index < total - 1 ? (
               <p style={{ margin: "10px 0 0", fontSize: 12, color: "rgba(237,236,234,0.65)" }}>
-                Click step {index + 2} when ready ↓
+                {t("clickStepWhenReady", { step: index + 2 })}
               </p>
             ) : (
               <button
                 onClick={(e) => { e.stopPropagation(); onNavigate("/sessions"); }}
                 style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 0, padding: "7px 14px", fontSize: 13, fontWeight: 500, color: "#EDECEA", fontFamily: "inherit", cursor: "pointer" }}
               >
-                Go to Sessions →
+                {t("goToSessions")}
               </button>
             )}
           </div>

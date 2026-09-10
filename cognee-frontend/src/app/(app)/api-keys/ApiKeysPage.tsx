@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { useCogniInstance, useTenant } from "@/modules/tenant/TenantProvider";
 import UpgradeBanner from "@/ui/elements/UpgradeBanner";
 import PageLoading from "@/ui/elements/PageLoading";
@@ -48,6 +49,7 @@ function CheckIcon() {
 }
 
 export default function ApiKeysPage() {
+  const t = useTranslations("apiKeys");
   const { cogniInstance, serviceUrl, isInitializing } = useCogniInstance();
   const { tenant, hasAccess, tenantReady } = useTenant();
   const isCloud = isCloudEnvironment();
@@ -108,7 +110,11 @@ export default function ApiKeysPage() {
     try {
       const result = await createApiKey({ name, noRedirectOnAuth: true });
       if (!result.ok) {
-        notifications.show({ title: "Could not create API key", message: result.error, color: "red" });
+        notifications.show({
+          title: t("createFailedTitle"),
+          message: isCloud ? t("genericError") : t("createRequiresCloud"),
+          color: "red",
+        });
         return;
       }
       trackEvent({ pageName: "API Keys", eventName: "api_key_created", additionalProperties: { key_name: name } });
@@ -124,11 +130,11 @@ export default function ApiKeysPage() {
         // The key was created but the response carried no clear-text key, so
         // there is nothing to reveal. Say so rather than silently listing a
         // masked key the user can never read.
-        notifications.show({ title: "API key created", message: `"${name}" was created, but the key could not be shown. Revoke it and create a new one if you need the value.`, color: "yellow" });
+        notifications.show({ title: t("createdHiddenTitle"), message: t("createdHidden", { name }), color: "yellow" });
       }
     } catch (err) {
       console.error("Failed to create key:", err);
-      notifications.show({ title: "Could not create API key", message: "Something went wrong while creating the key. Please try again.", color: "red" });
+      notifications.show({ title: t("createFailedTitle"), message: t("genericError"), color: "red" });
     } finally {
       setCreating(false);
     }
@@ -151,13 +157,13 @@ export default function ApiKeysPage() {
       setTimeout(() => setCopiedId(null), 1500);
     }).catch((err) => {
       console.error("Failed to copy API key:", err);
-      notifications.show({ title: "Copy failed", message: "Could not copy the key to your clipboard. Please select and copy it manually.", color: "red" });
+      notifications.show({ title: t("copyFailedTitle"), message: t("copyFailed"), color: "red" });
     });
   }
 
   if (isInitializing) {
     return (
-      <><TrackPageView page="API Keys" /><PageLoading name="API Keys" /></>
+      <><TrackPageView page="API Keys" /><PageLoading name={t("title")} /></>
     );
   }
 
@@ -167,8 +173,8 @@ export default function ApiKeysPage() {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>API Keys</h1>
-          <span style={{ fontSize: 14, color: "rgba(237,236,234,0.55)" }}>Manage keys for programmatic access to the Cognee API.</span>
+          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>{t("title")}</h1>
+          <span style={{ fontSize: 14, color: "rgba(237,236,234,0.55)" }}>{t("description")}</span>
         </div>
         <button
           onClick={() => { trackEvent({ pageName: "API Keys", eventName: "api_key_create_clicked" }); setShowCreateModal(true); }}
@@ -177,7 +183,7 @@ export default function ApiKeysPage() {
           style={{ background: hasAccess ? "#6510F4" : "rgba(255,255,255,0.08)", color: hasAccess ? "#fff" : "rgba(237,236,234,0.35)", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6, cursor: hasAccess ? "pointer" : "not-allowed" }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Create new key
+          {t("createKey")}
         </button>
       </div>
 
@@ -185,23 +191,23 @@ export default function ApiKeysPage() {
       {showCreateModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowCreateModal(false)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "rgba(15,15,15,0.92)", backdropFilter: "blur(16px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 24, width: 420, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 16px 48px rgba(0,0,0,0.4)" }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", margin: 0 }}>Create API key</h2>
-            <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>Give your key a name to identify it later.</p>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", margin: 0 }}>{t("createModal.title")}</h2>
+            <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>{t("createModal.description")}</p>
             <input
               autoFocus
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
-              placeholder="e.g. Production, CI/CD, Local Dev..."
+              placeholder={t("createModal.placeholder")}
               style={{ width: "100%", height: 40, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, paddingInline: 14, fontSize: 14, color: "#EDECEA", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
               onFocus={(e) => { e.target.style.borderColor = "#6510F4"; e.target.style.boxShadow = "0 0 0 3px rgba(188,155,255,0.10)"; }}
               onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; e.target.style.boxShadow = "none"; }}
             />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => { setShowCreateModal(false); setNewName(""); }} className="cursor-pointer" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.7)", fontFamily: "inherit" }}>Cancel</button>
+              <button onClick={() => { setShowCreateModal(false); setNewName(""); }} className="cursor-pointer" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.7)", fontFamily: "inherit" }}>{t("cancel")}</button>
               <button onClick={handleCreate} disabled={creating || !newName.trim()} className="cursor-pointer" style={{ background: newName.trim() ? "#6510F4" : "rgba(255,255,255,0.08)", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: newName.trim() ? "#fff" : "rgba(237,236,234,0.35)", fontFamily: "inherit" }}>
-                {creating ? "Creating..." : "Create"}
+                {creating ? t("creating") : t("create")}
               </button>
             </div>
           </div>
@@ -212,14 +218,14 @@ export default function ApiKeysPage() {
       <div style={{ background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6510F4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 010 8h-1" /><path d="M6 8H5a4 4 0 000 8h1" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
-          <span style={{ fontSize: 14, fontWeight: 700, color: "#EDECEA" }}>Connection Details</span>
-          <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>Use these with Claude, MCP, or any API client</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "#EDECEA" }}>{t("connectionDetails")}</span>
+          <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>{t("connectionHint")}</span>
         </div>
 
         <div style={{ display: "flex", gap: 16 }}>
           {/* API Base URL */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>API Base URL</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>{t("apiBaseUrl")}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "10px 14px" }}>
               {urlProvisioning ? (
                 <span style={{ flex: 1 }}><SkeletonBar width={220} height={12} /></span>
@@ -232,7 +238,7 @@ export default function ApiKeysPage() {
 
           {/* Tenant ID */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>Tenant ID</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>{t("tenantId")}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "10px 14px" }}>
               {tenantId ? (
                 <>
@@ -242,14 +248,14 @@ export default function ApiKeysPage() {
               ) : isCloud ? (
                 <span style={{ flex: 1 }}><SkeletonBar width={180} height={12} /></span>
               ) : (
-                <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)", fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace', fontStyle: "italic" }}>Not assigned (local mode)</span>
+                <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)", fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace', fontStyle: "italic" }}>{t("localTenantUnassigned")}</span>
               )}
             </div>
           </div>
 
           {/* User ID */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>User ID</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>{t("userId")}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "10px 14px" }}>
               {userId ? (
                 <>
@@ -282,8 +288,8 @@ export default function ApiKeysPage() {
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6510F4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" /><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" /></svg>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#EDECEA" }}>API Reference</span>
-            <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>Interactive Swagger docs for the shared API</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#EDECEA" }}>{t("apiReference")}</span>
+            <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>{t("apiReferenceHint")}</span>
           </div>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.35)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto", flexShrink: 0 }}><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
         </a>
@@ -298,8 +304,8 @@ export default function ApiKeysPage() {
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6510F4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: "#EDECEA" }}>API Tenant Reference</span>
-              <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>Swagger docs for your tenant instance</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "#EDECEA" }}>{t("tenantReference")}</span>
+              <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>{t("tenantReferenceHint")}</span>
             </div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.35)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "auto", flexShrink: 0 }}><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
           </a>
@@ -312,14 +318,14 @@ export default function ApiKeysPage() {
           <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
         </svg>
         <span style={{ fontSize: 13, color: "#EDECEA", lineHeight: "20px" }}>
-          API keys grant full access to your account. Keep them secret — do not share keys in client-side code or public repositories. Use environment variables instead.
+          {t("secretBanner")}
         </span>
       </div>
 
       {isCloud && (
         <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <StatusDot label="Workspace" ready={tenantReady} />
-          <StatusDot label="API Keys" ready={keysWarmed} />
+          <StatusDot label={t("workspaceStatus")} ready={tenantReady} />
+          <StatusDot label={t("keysStatus")} ready={keysWarmed} />
         </div>
       )}
 
@@ -327,8 +333,8 @@ export default function ApiKeysPage() {
       <div style={{ background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, overflow: "hidden" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", padding: "12px 24px", borderBottom: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)" }}>
-          <span style={{ width: 200, fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>Name</span>
-          <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>Key</span>
+          <span style={{ width: 200, fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>{t("columnName")}</span>
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>{t("columnKey")}</span>
           <span style={{ width: 80 }} />
         </div>
 
@@ -360,21 +366,21 @@ export default function ApiKeysPage() {
             style={{ display: "flex", alignItems: "center", padding: "14px 24px", borderBottom: "1px solid rgba(255,255,255,0.07)", transition: "background 150ms" }}
           >
             <div style={{ width: 200, display: "flex", flexDirection: "column", gap: 2 }}>
-              <span style={{ fontSize: 14, fontWeight: 500, color: "#EDECEA" }}>{k.name || "Unnamed"}</span>
+              <span style={{ fontSize: 14, fontWeight: 500, color: "#EDECEA" }}>{k.name || t("unnamed")}</span>
             </div>
             <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
               {k.isNew ? (
                 /* Show full key once for newly created keys */
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)", borderRadius: 6, padding: "6px 12px" }}>
                   <span className="cs-mask" data-cs-mask="true" style={{ fontSize: 12, color: "#22C55E", fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace', wordBreak: "break-all" }}>{k.key}</span>
-                  <button onClick={() => handleCopy(k.id, k.key)} className="cursor-pointer" style={{ background: "none", border: "none", padding: 2, display: "flex", flexShrink: 0 }} title="Copy key">
+                  <button onClick={() => handleCopy(k.id, k.key)} className="cursor-pointer" style={{ background: "none", border: "none", padding: 2, display: "flex", flexShrink: 0 }} title={t("copyKey")} aria-label={t("copyKey")}>
                     {copiedId === k.id ? <CheckIcon /> : <CopyIcon />}
                   </button>
                 </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span className="cs-mask" data-cs-mask="true" style={{ fontSize: 13, color: "rgba(237,236,234,0.7)", fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace' }}>{k.label || k.key}</span>
-                  <button onClick={() => handleCopy(k.id, k.key)} className="cursor-pointer" style={{ background: "none", border: "none", padding: 2, display: "flex" }} title="Copy key">
+                  <button onClick={() => handleCopy(k.id, k.key)} className="cursor-pointer" style={{ background: "none", border: "none", padding: 2, display: "flex" }} title={t("copyKey")} aria-label={t("copyKey")}>
                     {copiedId === k.id ? <CheckIcon /> : <CopyIcon />}
                   </button>
                 </div>
@@ -387,7 +393,7 @@ export default function ApiKeysPage() {
                 className="cursor-pointer hover:underline"
                 style={{ background: "none", border: "none", fontSize: 13, color: hasAccess ? "#EF4444" : "rgba(237,236,234,0.35)", fontFamily: "inherit", cursor: hasAccess ? "pointer" : "not-allowed" }}
               >
-                Revoke
+                {t("revoke")}
               </button>
             </div>
           </div>
@@ -398,15 +404,15 @@ export default function ApiKeysPage() {
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
             </svg>
-            <span style={{ fontSize: 14, color: "rgba(237,236,234,0.55)" }}>No API keys yet</span>
-            <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>Create one to connect agents or use the API programmatically.</span>
+            <span style={{ fontSize: 14, color: "rgba(237,236,234,0.55)" }}>{t("emptyTitle")}</span>
+            <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>{t("emptyDescription")}</span>
             <button
               onClick={() => { trackEvent({ pageName: "API Keys", eventName: "api_key_create_clicked" }); setShowCreateModal(true); }}
               disabled={!hasAccess}
               className="cursor-pointer hover:bg-[#5A0ED6]"
               style={{ background: hasAccess ? "#6510F4" : "rgba(255,255,255,0.08)", color: hasAccess ? "#fff" : "rgba(237,236,234,0.35)", border: "none", borderRadius: 8, padding: "8px 20px", fontSize: 13, fontWeight: 500, marginTop: 4, cursor: hasAccess ? "pointer" : "not-allowed" }}
             >
-              Create your first key
+              {t("createFirstKey")}
             </button>
           </div>
         )}
@@ -418,13 +424,15 @@ export default function ApiKeysPage() {
 const COPY_FIELD_MAP: Record<string, string> = { url: "api_base_url", tenant: "tenant_id", user: "user_id", header: "auth_header" };
 
 function CopyBtn({ id, text, copiedField, setCopiedField, light }: { id: string; text: string; copiedField: string | null; setCopiedField: (v: string | null) => void; light?: boolean }) {
+  const t = useTranslations("apiKeys");
   const isCopied = copiedField === id;
   return (
     <button
       onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(text); trackEvent({ pageName: "API Keys", eventName: "api_connection_detail_copied", additionalProperties: { field: COPY_FIELD_MAP[id] || id } }); setCopiedField(id); setTimeout(() => setCopiedField(null), 1500); }}
       className="cursor-pointer hover:opacity-80 rounded p-1 active:scale-90 transition-all"
       style={{ background: "none", border: "none", flexShrink: 0, display: "flex" }}
-      title="Copy"
+      title={t("copy")}
+      aria-label={t("copy")}
     >
       {isCopied ? (
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="#22C55E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>

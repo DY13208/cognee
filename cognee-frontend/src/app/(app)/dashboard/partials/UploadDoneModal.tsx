@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import Modal from "@/ui/elements/Modal/Modal";
 
 interface UploadDoneModalProps {
@@ -9,35 +10,17 @@ interface UploadDoneModalProps {
   onNavigate: (path: string) => void;
 }
 
-interface ActionRow {
-  label: string;
-  sublabel: string;
-  path: string;
-  icon: React.ReactElement;
-}
+const SEARCH_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-cognee-lavender-tint-60)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
 
-const ACTION_ROWS: ActionRow[] = [
-  {
-    label: "Search your data",
-    sublabel: "Ask questions about your knowledge graph",
-    path: "/search",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-cognee-lavender-tint-60)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-      </svg>
-    ),
-  },
-  {
-    label: "Explore the knowledge graph",
-    sublabel: "Open the full graph visualization",
-    path: "/knowledge-graph",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-cognee-lavender-tint-60)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" />
-      </svg>
-    ),
-  },
-];
+const EXPLORE_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-cognee-lavender-tint-60)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" />
+  </svg>
+);
 
 export function UploadDoneModal({
   datasetName,
@@ -45,6 +28,8 @@ export function UploadDoneModal({
   onClose,
   onNavigate,
 }: UploadDoneModalProps): React.ReactElement {
+  const t = useTranslations("dashboard.uploadDone");
+
   return (
     <Modal isOpen onClose={onClose}>
       <div
@@ -74,14 +59,17 @@ export function UploadDoneModal({
             </svg>
           </div>
           <div>
-            <h2 id="upload-done-title" style={{ fontSize: 17, fontWeight: 700, color: "#EDECEA", margin: 0 }}>Knowledge graph built</h2>
-            <p style={{ fontSize: 13, color: "rgba(237,236,234,0.65)", margin: 0 }}>&ldquo;{datasetName}&rdquo; is now searchable.</p>
+            <h2 id="upload-done-title" style={{ fontSize: 17, fontWeight: 700, color: "#EDECEA", margin: 0 }}>{t("title")}</h2>
+            <p style={{ fontSize: 13, color: "rgba(237,236,234,0.65)", margin: 0 }}>{t("searchable", { datasetName })}</p>
           </div>
         </div>
 
         {/* Action rows */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {ACTION_ROWS.map((row) => (
+          {([
+            { path: "/search", icon: SEARCH_ICON, label: t("search"), sublabel: t("searchHint") },
+            { path: "/knowledge-graph", icon: EXPLORE_ICON, label: t("explore"), sublabel: t("exploreHint") },
+          ]).map((row) => (
             <button
               key={row.path}
               onClick={() => onNavigate(row.path)}
@@ -125,8 +113,8 @@ export function UploadDoneModal({
               <line x1="8.5" y1="7.5" x2="10.5" y2="16" /><line x1="15.5" y1="7.5" x2="13.5" y2="16" />
             </svg>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 500, color: "#EDECEA" }}>Inspect the knowledge graph</div>
-              <div style={{ fontSize: 12, color: "rgba(237,236,234,0.65)" }}>View entities and relationships</div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "#EDECEA" }}>{t("inspect")}</div>
+              <div style={{ fontSize: 12, color: "rgba(237,236,234,0.65)" }}>{t("inspectHint")}</div>
             </div>
           </button>
         </div>
@@ -146,7 +134,7 @@ export function UploadDoneModal({
             alignSelf: "flex-end",
           }}
         >
-          Stay here
+          {t("stay")}
         </button>
       </div>
     </Modal>

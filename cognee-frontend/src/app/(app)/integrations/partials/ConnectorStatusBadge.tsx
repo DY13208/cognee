@@ -2,6 +2,7 @@
 
 import type { ReactElement } from "react";
 import classNames from "classnames";
+import { useTranslations } from "next-intl";
 import SkeletonBar from "@/ui/elements/SkeletonBar";
 import type { ConnectionStatus } from "@/modules/integrations/types";
 
@@ -21,6 +22,7 @@ export default function ConnectorStatusBadge({
   status,
   syncStatus,
 }: ConnectorStatusBadgeProps): ReactElement | null {
+  const t = useTranslations("integrations");
   // A placeholder rather than the disconnected state: rendering "Connect" on a
   // workspace that is already connected, then flipping it a beat later, reads
   // as the app losing the connection.
@@ -33,7 +35,7 @@ export default function ConnectorStatusBadge({
   }
 
   if (status === "unavailable") {
-    return <span className={classNames(PILL, "bg-white/[0.06] font-medium text-[var(--color-cognee-fg,#EDECEA)]/55")}>Status unknown</span>;
+    return <span className={classNames(PILL, "bg-white/[0.06] font-medium text-[var(--color-cognee-fg,#EDECEA)]/55")}>{t("statusUnknown")}</span>;
   }
 
   if (status !== "connected") return null;
@@ -54,7 +56,7 @@ export default function ConnectorStatusBadge({
   return (
     <span className={classNames(PILL, "bg-[var(--color-cognee-success,#22C55E)]/15 font-semibold text-[var(--color-cognee-success,#22C55E)]")}>
       <span className="size-1.5 rounded-full bg-[var(--color-cognee-success,#22C55E)]" />
-      Connected
+      {t("connected")}
     </span>
   );
 }

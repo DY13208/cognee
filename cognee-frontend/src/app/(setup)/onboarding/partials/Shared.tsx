@@ -4,11 +4,13 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/modules/users/UserContext";
 import { completeOnboardingAndNavigate } from "../completeOnboardingAndNavigate";
 import { useOnboardingTrackEvent } from "../useOnboardingTrackEvent";
+import { useTranslations } from "next-intl";
 
 export function StepBadge({ step, total = 4 }: { step: number; total?: number }) {
+  const t = useTranslations("Setup");
   return (
     <div style={{ background: "rgba(188,155,255,0.20)", borderRadius: 100, border: "1px solid rgba(188,155,255,0.35)", padding: "5px 12px" }}>
-      <span style={{ color: "#EDECEA", fontSize: 13, fontWeight: 500 }}>Step {step} of {total}</span>
+      <span style={{ color: "#EDECEA", fontSize: 13, fontWeight: 500 }}>{t("step", { step, total })}</span>
     </div>
   );
 }
@@ -23,10 +25,11 @@ export function StepDots({ current, total = 4 }: { current: number; total?: numb
   );
 }
 
-export function SkipLink({ label = "Skip onboarding and go to dashboard", compact = false }: { label?: string; compact?: boolean } = {}) {
+export function SkipLink({ label, compact = false }: { label?: string; compact?: boolean } = {}) {
   const router = useRouter();
   const { markOnboardingComplete } = useUser();
   const track = useOnboardingTrackEvent();
+  const t = useTranslations("Setup");
   return (
     <button
       onClick={() => {
@@ -36,7 +39,7 @@ export function SkipLink({ label = "Skip onboarding and go to dashboard", compac
       className="cursor-pointer"
       style={{ background: "none", border: "none", color: "rgba(237,236,234,0.65)", fontSize: 13, paddingTop: compact ? 12 : 32, paddingBottom: compact ? 0 : 24 }}
     >
-      {label}
+      {label ?? t("skipOnboardingDashboard")}
     </button>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import type { BusinessEntity } from "../sceneTypes";
 import type { SessionEvent } from "../types";
 import { setsOf } from "../computeBrainState";
@@ -31,6 +32,7 @@ interface NodePanelProps {
 export default function NodePanel({
   entity, docCount, connectionCount, events, onClose, pathTargetName, pathHops, onClearPath, onSimulateRemoval,
 }: NodePanelProps) {
+  const t = useTranslations("knowledgeGraph");
   if (!entity) return null;
   const sets = setsOf(entity);
   const usedIn = events.filter((e) => e.node_ids?.includes(entity.id));
@@ -44,10 +46,12 @@ export default function NodePanel({
         </button>
       </div>
       <div className="mt-1 text-xs text-[#7E8CA6]">
-        {entity.type || ""}
-        {sets.length ? ` · from ${sets.join(", ")}` : ""}
-        {docCount ? ` · seen in ${docCount} places` : ""}
-        {connectionCount ? ` · ${connectionCount} connection${connectionCount === 1 ? "" : "s"}` : ""}
+        {[
+          entity.type || "",
+          sets.length ? t("fromName", { name: sets.join(", ") }) : "",
+          docCount ? t("seenIn", { count: docCount }) : "",
+          connectionCount ? t("connectionsCount", { count: connectionCount }) : "",
+        ].filter(Boolean).join(" · ")}
       </div>
       {/* The shortest-path trace — new in this port, see useShortestPath. */}
       {pathTargetName && pathHops !== null ? (
@@ -67,10 +71,10 @@ export default function NodePanel({
         onClick={onSimulateRemoval}
         className="mt-2 w-full cursor-pointer rounded-[8px] border border-[#2A3652] px-2 py-1.5 text-left text-[11px] text-[#7E8CA6] transition-colors hover:border-[#F5566B] hover:text-[#F5566B]"
       >
-        ⚠ what breaks without this record?
+        {t("whatBreaks")}
       </button>
       <div className="mt-3 text-xs uppercase tracking-wide text-[#7E8CA6]">
-        Used in {usedIn.length} answer{usedIn.length === 1 ? "" : "s"}
+        {t("usedInAnswers", { count: usedIn.length })}
       </div>
       {usedIn.length > 0 && (
         <ul className="mt-1 flex flex-col gap-2">

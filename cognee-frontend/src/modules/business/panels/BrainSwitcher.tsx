@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Menu } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import type { BrainsPayload } from "../types";
 import type { GovernanceIndex } from "../useGovernanceIndex";
 import { accessibleDatasetIds } from "../useGovernanceIndex";
@@ -24,6 +25,7 @@ function holderCount(index: GovernanceIndex, datasetId: string): number {
 // permanent sidebar spent screen space (competing with SourcesRail right
 // above it) on a choice that's mostly made once per session.
 export default function BrainSwitcher({ brains, index, activeDatasetId, onSelect, hoveredPrincipalId }: BrainSwitcherProps) {
+  const t = useTranslations("knowledgeGraph");
   // Controlled instead of relying on Mantine's own outside-click close:
   // d3-zoom's mousedown handler on the graph canvas stops propagation, so
   // Mantine's bubble-phase document listener never fires for clicks on the
@@ -46,7 +48,7 @@ export default function BrainSwitcher({ brains, index, activeDatasetId, onSelect
   const team = datasets.filter((d) => holderCount(index, d.id) > 1);
   const personal = datasets.filter((d) => holderCount(index, d.id) <= 1);
   const activeDataset = datasets.find((d) => d.id === activeDatasetId);
-  const activeName = activeDataset ? String(activeDataset.name || "brain") : "select a brain";
+  const activeName = activeDataset ? String(activeDataset.name || t("brain")) : t("selectBrain");
 
   const row = (datasetId: string, name: string, isTeam: boolean) => {
     const dimmed = reachable ? !reachable.has(datasetId) : false;
@@ -64,7 +66,7 @@ export default function BrainSwitcher({ brains, index, activeDatasetId, onSelect
             {name}
           </span>
           <span className="shrink-0 rounded border border-[#2A3652] px-1 text-[8.5px] uppercase text-[#7E8CA6]">
-            {isTeam ? "team" : "personal"}
+            {isTeam ? t("team") : t("personal")}
           </span>
         </div>
         {sourceNames.length > 0 && (
@@ -88,14 +90,14 @@ export default function BrainSwitcher({ brains, index, activeDatasetId, onSelect
       <Menu.Dropdown className="bv-brain-switcher-dropdown" style={{ background: "#1A2438", border: "1px solid #2A3652", padding: 4 }}>
         {team.length > 0 && (
           <>
-            <Menu.Label style={{ color: "#7E8CA6", fontSize: 9, letterSpacing: "0.05em" }}>team</Menu.Label>
-            {team.map((d) => row(d.id, String(d.name || "brain"), true))}
+            <Menu.Label style={{ color: "#7E8CA6", fontSize: 9, letterSpacing: "0.05em" }}>{t("team")}</Menu.Label>
+            {team.map((d) => row(d.id, String(d.name || t("brain")), true))}
           </>
         )}
         {personal.length > 0 && (
           <>
-            <Menu.Label style={{ color: "#7E8CA6", fontSize: 9, letterSpacing: "0.05em" }}>personal</Menu.Label>
-            {personal.map((d) => row(d.id, String(d.name || "brain"), false))}
+            <Menu.Label style={{ color: "#7E8CA6", fontSize: 9, letterSpacing: "0.05em" }}>{t("personal")}</Menu.Label>
+            {personal.map((d) => row(d.id, String(d.name || t("brain")), false))}
           </>
         )}
       </Menu.Dropdown>

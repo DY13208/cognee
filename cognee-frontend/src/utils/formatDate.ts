@@ -1,3 +1,5 @@
+import { DEFAULT_LOCALE, type Locale } from "@/i18n/config";
+
 // Server returns some timestamps as naive ISO (no timezone designator), but
 // they are actually UTC. Appending "Z" forces JS to parse them as UTC instead
 // of local — without this, CEST users see everything offset by 2 hours.
@@ -6,31 +8,32 @@ export function parseServerIso(iso: string): Date {
   return new Date(hasTz ? iso : iso + "Z");
 }
 
-export function formatDate(iso: string | null): string {
+export function formatDate(iso: string | null, locale: Locale = DEFAULT_LOCALE): string {
   if (!iso) return "—";
-  return parseServerIso(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return parseServerIso(iso).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 /** Full, unambiguous timestamp (year + seconds) — for tables/logs where a
  *  short "Aug 6, 2:34 PM" (see `formatDate`) is too lossy to tell days/years apart. */
-export function formatDateTime(iso: string | null): string {
+export function formatDateTime(iso: string | null, locale: Locale = DEFAULT_LOCALE): string {
   if (!iso) return "—";
   const d = parseServerIso(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return d.toLocaleString(locale, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-export function formatRelativeTime(iso?: string | null): string {
+export function formatRelativeTime(iso?: string | null, locale: Locale = DEFAULT_LOCALE): string {
   if (!iso) return "—";
   const d = parseServerIso(iso);
   const t = d.getTime();
   if (Number.isNaN(t)) return "—";
   const diffMs = Date.now() - t;
   const diffSec = Math.round(diffMs / 1000);
-  if (diffSec < 60) return `${diffSec}s ago`;
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-  return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (diffSec < 60) return relative.format(-diffSec, "second");
+  if (diffSec < 3600) return relative.format(-Math.floor(diffSec / 60), "minute");
+  if (diffSec < 86400) return relative.format(-Math.floor(diffSec / 3600), "hour");
+  return d.toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export function durationSeconds(s: { started_at: string | null; ended_at: string | null; last_activity_at: string | null }): number {

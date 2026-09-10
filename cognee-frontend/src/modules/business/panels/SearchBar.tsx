@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import type { CogneeInstance } from "@/modules/instances/types";
 import searchDataset from "@/modules/datasets/searchDataset";
 import type { BusinessEntity } from "../sceneTypes";
@@ -26,6 +27,7 @@ interface SearchBarProps {
 // node_ids (verified against the running backend), so an asked answer shows
 // text only — the spotlight arrives later via the live-events replay.
 export default function SearchBar({ cogniInstance, activeDatasetId, onAnswer, entities, onPickEntity }: SearchBarProps) {
+  const t = useTranslations("knowledgeGraph");
   const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const needle = query.trim().toLowerCase();
@@ -59,14 +61,14 @@ export default function SearchBar({ cogniInstance, activeDatasetId, onAnswer, en
         datasetIds: [activeDatasetId],
         searchType: "GRAPH_COMPLETION",
       });
-      const answer = results[0]?.search_result?.join("\n\n") || "no answer found.";
+      const answer = results[0]?.search_result?.join("\n\n") || t("noAnswer");
       onAnswer(trimmed, answer);
       setQuery("");
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("Business search failed:", error);
       captureException(error, { context: "BusinessView search" });
-      onAnswer(trimmed, "search failed — try again.");
+      onAnswer(trimmed, t("searchFailed"));
     } finally {
       setIsSearching(false);
     }
@@ -89,7 +91,7 @@ export default function SearchBar({ cogniInstance, activeDatasetId, onAnswer, en
             }
             if (e.key === "Escape") setQuery("");
           }}
-          placeholder="find a record or ask anything…"
+          placeholder={t("searchPlaceholder")}
           disabled={isSearching || !activeDatasetId}
           className="flex-1 bg-transparent text-[#E9EEF6] placeholder:text-[#7E8CA6] focus:outline-none"
         />
@@ -99,7 +101,7 @@ export default function SearchBar({ cogniInstance, activeDatasetId, onAnswer, en
           disabled={isSearching || !query.trim() || !activeDatasetId}
           className="text-[#43D9E8] disabled:text-[#7E8CA6]"
         >
-          {isSearching ? "…" : "ask"}
+          {isSearching ? "…" : t("ask")}
         </button>
       </div>
       {needle && isSearching && (
@@ -109,7 +111,7 @@ export default function SearchBar({ cogniInstance, activeDatasetId, onAnswer, en
         // sits where the results dropdown would be, the one place the user
         // is actually looking right after submitting.
         <div className="mt-1 overflow-hidden rounded-[10px] border border-[#2A3652] bg-[#1A2438] px-2.5 py-1.5 text-[11px] text-[#7E8CA6]">
-          searching…
+          {t("searching")}
         </div>
       )}
       {needle && !isSearching && (
@@ -129,7 +131,7 @@ export default function SearchBar({ cogniInstance, activeDatasetId, onAnswer, en
             onClick={() => void ask()}
             className="block w-full truncate px-2.5 py-1.5 text-left text-[#43D9E8] hover:bg-[#141D33]"
           >
-            ⌕ ask: &ldquo;{truncate(query.trim(), 40)}&rdquo;
+            ⌕ {t("askQuery", { query: truncate(query.trim(), 40) })}
           </button>
         </div>
       )}

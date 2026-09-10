@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { http } from "@/services/http/client";
 import { useTenant } from "@/modules/tenant/TenantContext";
 
@@ -13,6 +14,8 @@ interface Props {
 }
 
 export default function FeedbackModal({ onClose }: Props) {
+  const t = useTranslations("navigation");
+  const tCommon = useTranslations("common");
   const { tenant } = useTenant();
   const pathname = usePathname();
 
@@ -54,11 +57,11 @@ export default function FeedbackModal({ onClose }: Props) {
       setSent(true);
     } catch (e) {
       console.error("[feedback] send failed:", e instanceof Error ? e.message : String(e));
-      setError("Could not send your feedback. Please try again.");
+      setError(t("feedback.sendFailed"));
     } finally {
       setSending(false);
     }
-  }, [message, sending, tenant, pathname]);
+  }, [message, sending, tenant, pathname, t]);
 
   if (!portalTarget) return null;
   return createPortal(
@@ -98,9 +101,9 @@ export default function FeedbackModal({ onClose }: Props) {
             <div style={{ width: 44, height: 44, borderRadius: "50%", border: "1.5px solid rgba(34,197,94,0.5)", background: "rgba(34,197,94,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
             </div>
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#EDECEA" }}>Thank you!</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#EDECEA" }}>{t("feedback.thanks")}</span>
             <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0, maxWidth: 300 }}>
-              Your feedback is on its way to the team. We read every message.
+              {t("feedback.thanksBody")}
             </p>
           </div>
         ) : (
@@ -108,15 +111,15 @@ export default function FeedbackModal({ onClose }: Props) {
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
               <div>
                 <h2 id="feedback-modal-title" style={{ fontSize: 15, fontWeight: 700, color: "#EDECEA", margin: "0 0 3px" }}>
-                  Give feedback
+                  {t("feedback.title")}
                 </h2>
                 <p style={{ fontSize: 12.5, color: "rgba(237,236,234,0.55)", margin: 0 }}>
-                  What&rsquo;s broken, missing, or great? It goes straight to the team.
+                  {t("feedback.description")}
                 </p>
               </div>
               <button
                 onClick={onClose}
-                aria-label="Close"
+                aria-label={tCommon("close")}
                 className="cursor-pointer"
                 style={{ background: "none", border: "none", color: "rgba(237,236,234,0.35)", fontSize: 16, lineHeight: 1, padding: 4, borderRadius: 5 }}
               >
@@ -127,8 +130,8 @@ export default function FeedbackModal({ onClose }: Props) {
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="e.g. The session page takes forever to load when I have many sessions…"
-              aria-label="Your feedback"
+              placeholder={t("feedback.placeholder")}
+              aria-label={t("feedback.aria")}
               autoFocus
               style={{
                 width: "100%",
@@ -151,14 +154,14 @@ export default function FeedbackModal({ onClose }: Props) {
 
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ flex: 1, fontSize: 11, color: "rgba(237,236,234,0.35)" }}>
-                Sent with your account email so we can reply
+                {t("feedback.emailHint")}
               </span>
               <button
                 onClick={onClose}
                 className="cursor-pointer"
                 style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(237,236,234,0.55)", borderRadius: 7, padding: "8px 14px", fontSize: 13, fontWeight: 500, fontFamily: "inherit" }}
               >
-                Cancel
+                {tCommon("cancel")}
               </button>
               <button
                 onClick={send}
@@ -178,7 +181,7 @@ export default function FeedbackModal({ onClose }: Props) {
                   cursor: !message.trim() || sending ? "not-allowed" : "pointer",
                 }}
               >
-                {sending ? "Sending…" : "Send feedback"}
+                {sending ? t("feedback.sending") : t("feedback.send")}
               </button>
             </div>
           </>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 
 // The view piles up visual conventions (rings, colors, moving dots) that a
 // first-time viewer has no way to decode — this is the decoder card, the
@@ -34,17 +35,18 @@ function Glyph({ kind }: { kind: string }) {
 }
 
 const LEGEND_ITEMS = [
-  { kind: "size", label: "size = importance" },
-  { kind: "color", label: "color = which source it came from" },
-  { kind: "amber", label: "amber ring = part of the live answer" },
-  { kind: "answered", label: "dashed ring = answered questions before" },
-  { kind: "double", label: "double ring = spans sources / agent memory" },
-  { kind: "path", label: "green ring = shortest path between two records" },
-  { kind: "orphan", label: "faint dashed gray = no connections yet" },
-  { kind: "dot", label: "drifting dots = relationships at work" },
-];
+  { kind: "size", key: "legendSize" },
+  { kind: "color", key: "legendColor" },
+  { kind: "amber", key: "legendAmber" },
+  { kind: "answered", key: "legendAnswered" },
+  { kind: "double", key: "legendDouble" },
+  { kind: "path", key: "legendPath" },
+  { kind: "orphan", key: "legendOrphan" },
+  { kind: "dot", key: "legendDot" },
+] as const;
 
 export default function BusinessLegend() {
+  const t = useTranslations("knowledgeGraph");
   const [open, setOpen] = useState(false);
 
   return (
@@ -54,11 +56,11 @@ export default function BusinessLegend() {
           {LEGEND_ITEMS.map((item) => (
             <div key={item.kind} className="mb-1.5 flex items-center gap-2 last:mb-0">
               <Glyph kind={item.kind} />
-              <span>{item.label}</span>
+              <span>{t(item.key)}</span>
             </div>
           ))}
           <div className="mt-1.5 border-t border-[#2A3652] pt-1.5">
-            click a record to focus its neighborhood · shift+click a second to trace the path between them
+            {t("legendHint")}
           </div>
         </div>
       )}
@@ -69,7 +71,7 @@ export default function BusinessLegend() {
           open ? "border-[#43D9E8] text-[#43D9E8]" : "border-[#2A3652] text-[#7E8CA6] hover:text-[#E9EEF6]"
         }`}
       >
-        {open ? "✕ legend" : "? legend"}
+        {open ? t("closeLegend") : t("openLegend")}
       </button>
     </div>
   );

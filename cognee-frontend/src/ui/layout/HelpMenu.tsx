@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import useBoolean from "@/utils/useBoolean";
 import useOutsideClick from "@/utils/useOutsideClick";
 import ExtractionSettingsModal from "./ExtractionSettingsModal";
@@ -71,16 +72,17 @@ function ExtractionIcon() {
 }
 
 const MENU_ITEMS = [
-  { label: "Docs", href: "https://docs.cognee.ai", external: true, icon: <DocsIcon /> },
-  { label: "Discord community", href: "https://discord.gg/m63hxKsp4p", external: true, icon: <DiscordIcon /> },
+  { labelKey: "docs" as const, href: "https://docs.cognee.ai", external: true, icon: <DocsIcon /> },
+  { labelKey: "discord" as const, href: "https://discord.gg/m63hxKsp4p", external: true, icon: <DiscordIcon /> },
 ];
 
 const CHANGELOG_ITEMS = [
-  { label: "Full agent support — create agents, track sessions, live status, and per-agent metrics", date: "May 8" },
-  { label: "Custom graph models, custom prompts, and ontology uploads for memory customization", date: "Apr 24" },
+  { labelKey: "changelogAgent" as const, dateKey: "changelogAgentDate" as const },
+  { labelKey: "changelogModels" as const, dateKey: "changelogModelsDate" as const },
 ];
 
 export default function HelpMenu() {
+  const t = useTranslations("navigation");
   const router = useRouter();
   const { value: isOpen, toggle, setFalse: close } = useBoolean(false);
   const closeCallback = useCallback(() => close(), [close]);
@@ -104,6 +106,7 @@ export default function HelpMenu() {
       {/* Help trigger button */}
       <button
         onClick={toggle}
+        aria-label={t("help")}
         className="flex items-center justify-center rounded-full cursor-pointer"
         style={{ width: 28, height: 28, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" }}
       >
@@ -134,7 +137,7 @@ export default function HelpMenu() {
             onMouseLeave={e => (e.currentTarget.style.background = "none")}
           >
             <OnboardingIcon />
-            Onboarding
+            {t("items.onboarding")}
           </button>
 
           {/* Extraction Settings */}
@@ -146,7 +149,7 @@ export default function HelpMenu() {
             onMouseLeave={e => (e.currentTarget.style.background = "none")}
           >
             <ExtractionIcon />
-            Extraction Settings
+            {t("extractionSettings")}
           </button>
 
           {/* Separator */}
@@ -154,7 +157,7 @@ export default function HelpMenu() {
 
           {MENU_ITEMS.map((item) => (
             <Link
-              key={item.label}
+              key={item.labelKey}
               href={item.href}
               target="_blank"
               rel="noopener noreferrer"
@@ -165,7 +168,7 @@ export default function HelpMenu() {
               onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = "transparent")}
             >
               {item.icon}
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           ))}
 
@@ -179,7 +182,7 @@ export default function HelpMenu() {
           >
             <div className="flex items-center gap-[10px]">
               <KeyboardIcon />
-              Keyboard shortcuts
+              {t("keyboardShortcuts")}
             </div>
             <kbd
               className="flex items-center justify-center rounded-[4px]"
@@ -202,7 +205,7 @@ export default function HelpMenu() {
             style={{ fontSize: 13, color: "rgba(237,236,234,0.8)" }}
           >
             <StatusIcon />
-            System status
+            {t("systemStatus")}
             <span
               className="ml-auto rounded-full"
               style={{ width: 10, height: 10, background: "#22C55E", flexShrink: 0 }}
@@ -214,11 +217,11 @@ export default function HelpMenu() {
 
           {/* What's new */}
           <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 500, color: "rgba(237,236,234,0.35)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            {"What's new"}
+            {t("whatsNew")}
           </div>
           {CHANGELOG_ITEMS.map((item) => (
             <div
-              key={item.label}
+              key={item.labelKey}
               className="flex items-start gap-[10px] rounded-[6px] px-3 py-[8px] cursor-default"
               style={{ fontSize: 13, color: "rgba(237,236,234,0.7)" }}
             >
@@ -232,8 +235,8 @@ export default function HelpMenu() {
                 }}
               />
               <div>
-                <div>{item.label}</div>
-                <div style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>{item.date}</div>
+                <div>{t(item.labelKey)}</div>
+                <div style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>{t(item.dateKey)}</div>
               </div>
             </div>
           ))}

@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { Flex, Text, Title, TextInput, PasswordInput, Button } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import AuthCard from "@/ui/elements/Auth/AuthCard";
 import { getLocalApiUrl } from "@/modules/users/getLocalApiUrl";
-
-const DEFAULT_EMAIL = "default_user@example.com";
-const DEFAULT_PASSWORD = "default_password";
+import { getLocalizedErrorKey } from "@/i18n/errorMessages";
 
 export default function LocalSignInForm() {
+  const t = useTranslations("Auth");
   const localApiUrl = getLocalApiUrl();
-  const [email, setEmail] = useState(DEFAULT_EMAIL);
-  const [password, setPassword] = useState(DEFAULT_PASSWORD);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -38,13 +38,7 @@ export default function LocalSignInForm() {
           return null;
         });
         const detail = data?.detail;
-        if (detail === "LOGIN_BAD_CREDENTIALS") {
-          setError("Invalid email or password.");
-        } else if (detail === "LOGIN_USER_NOT_VERIFIED") {
-          setError("Please verify your email before signing in.");
-        } else {
-          setError(typeof detail === "string" ? detail : "Login failed. Please try again.");
-        }
+        setError(t(getLocalizedErrorKey(detail)));
         return;
       }
 
@@ -52,10 +46,10 @@ export default function LocalSignInForm() {
     } catch (err) {
       if (err instanceof TypeError) {
         setError(
-          "Cannot connect to local backend at " + localApiUrl + ". Is it running?"
+          t("connectionFailed", { url: localApiUrl })
         );
       } else {
-        setError("Something went wrong. Please try again.");
+        setError(t("genericError"));
       }
     } finally {
       setIsLoading(false);
@@ -70,10 +64,10 @@ export default function LocalSignInForm() {
           className="!text-[2.5rem] !font-light !leading-[1.1] !tracking-[-0.04em] !text-[#EDECEA]"
           style={{ fontFamily: '"TWKLausanne", sans-serif' }}
         >
-          Local instance
+          {t("localInstance")}
         </Title>
         <Text size="sm" className="!text-[#EDECEA]/85 !font-light !text-center">
-          Sign in to your local Cognee backend
+          {t("signInLocal")}
         </Text>
       </Flex>
 
@@ -90,7 +84,7 @@ export default function LocalSignInForm() {
 
       <form onSubmit={handleSubmit} className="w-full flex flex-col gap-[0.75rem]">
         <TextInput
-          label="Email"
+          label={t("email")}
           type="email"
           value={email}
           onChange={(e) => setEmail(e.currentTarget.value)}
@@ -106,7 +100,7 @@ export default function LocalSignInForm() {
         />
 
         <PasswordInput
-          label="Password"
+          label={t("password")}
           value={password}
           onChange={(e) => setPassword(e.currentTarget.value)}
           required
@@ -122,7 +116,7 @@ export default function LocalSignInForm() {
         />
 
         <Text size="xs" className="!text-[#EDECEA]/60 !font-light" mt={-4}>
-          Default credentials are pre-filled for local development
+          {t("credentialsHint")}
         </Text>
 
         <Button
@@ -135,7 +129,7 @@ export default function LocalSignInForm() {
           className="!bg-[#BC9BFF] !text-[#1e1e1c] hover:!bg-[#A87CFF] !transition-colors !border-none"
         >
           <Text size="sm" fw={500}>
-            Sign in
+            {t("signIn")}
           </Text>
         </Button>
       </form>

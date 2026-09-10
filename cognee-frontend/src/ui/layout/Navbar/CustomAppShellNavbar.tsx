@@ -2,12 +2,14 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useNavbar } from "../NavbarContext";
 import NavbarIconLink from "./NavbarIconLink";
 import { ReactNode, useState } from "react";
 import { useTenant } from "@/modules/tenant/TenantContext";
 import FeedbackModal from "@/ui/layout/FeedbackModal";
 import isCloudEnvironment from "@/utils/isCloudEnvironment";
+import LanguageSwitcher from "@/ui/layout/LanguageSwitcher";
 
 // Sidebar widths (px). The rail shows icons only; collapsing only applies on
 // desktop, matching the Tailwind `sm` breakpoint (640px) used below.
@@ -102,44 +104,45 @@ const POD_DEPENDENT_LINKS = new Set([
 ]);
 
 interface NavItem {
-  text: string;
+  textKey: string;
   link: string;
   icon: (props: { active: boolean }) => ReactNode;
 }
 
 interface NavSection {
-  label: string;
+  labelKey: string;
   items: NavItem[];
 }
 
 const NAV_SECTIONS: NavSection[] = [
   {
-    label: "DATA",
+    labelKey: "sections.data",
     items: [
-      { text: "Overview", link: "/dashboard", icon: HouseIcon },
-      { text: "Sessions", link: "/sessions", icon: SessionsIcon },
-      { text: "Brain", link: "/datasets", icon: DatabaseIcon },
+      { textKey: "items.overview", link: "/dashboard", icon: HouseIcon },
+      { textKey: "items.sessions", link: "/sessions", icon: SessionsIcon },
+      { textKey: "items.brain", link: "/datasets", icon: DatabaseIcon },
     ],
   },
   {
-    label: "EXPLORE",
+    labelKey: "sections.explore",
     items: [
-      { text: "Search", link: "/search", icon: SearchIcon },
-      { text: "Skills", link: "/skills", icon: SkillsIcon },
-      { text: "Mindmap", link: "/knowledge-graph", icon: GraphIcon },
+      { textKey: "items.search", link: "/search", icon: SearchIcon },
+      { textKey: "items.skills", link: "/skills", icon: SkillsIcon },
+      { textKey: "items.mindmap", link: "/knowledge-graph", icon: GraphIcon },
     ],
   },
   {
-    label: "CONNECT",
+    labelKey: "sections.connect",
     items: [
-      { text: "Integrations", link: "/integrations", icon: IntegrationsIcon },
-      { text: "API Keys", link: "/api-keys", icon: KeyIcon },
+      { textKey: "items.integrations", link: "/integrations", icon: IntegrationsIcon },
+      { textKey: "items.apiKeys", link: "/api-keys", icon: KeyIcon },
     ],
   },
 ];
 
 export default function CustomAppShellNavbar() {
   const pathname = usePathname();
+  const t = useTranslations("navigation");
   const { isOpen, close, collapsed, toggleCollapsed } = useNavbar();
   const { tenantReady } = useTenant();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -174,8 +177,8 @@ export default function CustomAppShellNavbar() {
             edge that fades in on hover (Notion-style). No dedicated header row. */}
         <button
           onClick={toggleCollapsed}
-          aria-label={railed ? "Expand sidebar" : "Collapse sidebar"}
-          title={railed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={railed ? t("expandSidebar") : t("collapseSidebar")}
+          title={railed ? t("expandSidebar") : t("collapseSidebar")}
           className="cursor-pointer hidden sm:flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ position: "absolute", top: 8, right: 6, width: 18, height: 44, borderRadius: 6, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", zIndex: 10 }}
           onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.12)")}
@@ -191,7 +194,7 @@ export default function CustomAppShellNavbar() {
         <div className="flex sm:hidden items-center justify-end flex-shrink-0 px-3" style={{ height: 40 }}>
           <button
             onClick={close}
-            aria-label="Close navigation"
+            aria-label={t("closeNav")}
             className="cursor-pointer"
             style={{ background: "none", border: "none", fontSize: 20, color: "rgba(255,255,255,0.6)", padding: 4 }}
           >
@@ -202,7 +205,7 @@ export default function CustomAppShellNavbar() {
         {/* Nav sections */}
         <nav className="flex-1 overflow-y-auto px-3 py-2">
           {NAV_SECTIONS.map((section) => (
-            <div key={section.label} className="mb-4">
+            <div key={section.labelKey} className="mb-4">
               {railed ? (
                 <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "0 8px 8px" }} />
               ) : (
@@ -216,30 +219,31 @@ export default function CustomAppShellNavbar() {
                     textTransform: "uppercase",
                   }}
                 >
-                  {section.label}
+                  {t(section.labelKey)}
                 </div>
               )}
               {section.items.map((item) => {
+                const label = t(item.textKey);
                 const isActive = pathname === item.link || pathname.startsWith(item.link + "/");
                 const locked = !tenantReady && POD_DEPENDENT_LINKS.has(item.link);
                 if (locked) {
                   return (
                     <div
                       key={item.link}
-                      title={railed ? `${item.text} — available once your workspace is ready` : "Available once your workspace is ready"}
+                      title={railed ? t("workspaceNotReadyNamed", { name: label }) : t("workspaceNotReady")}
                       className={`flex items-center gap-[10px] rounded-[6px] px-3 py-2 text-[14px] ${railed ? "justify-center" : ""}`}
                       style={{ color: "rgba(237,236,234,0.3)", cursor: "not-allowed", userSelect: "none" }}
                       aria-disabled="true"
                     >
                       {item.icon({ active: false })}
-                      {!railed && item.text}
+                      {!railed && label}
                     </div>
                   );
                 }
                 return (
                   <NavbarIconLink
                     key={item.link}
-                    text={item.text}
+                    text={label}
                     link={item.link}
                     isActive={isActive}
                     collapsed={railed}
@@ -253,9 +257,11 @@ export default function CustomAppShellNavbar() {
 
         {/* Feedback + Billing pinned to the bottom-left of the sidebar */}
         <div style={{ padding: 12, borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <LanguageSwitcher compact={railed} />
           <button
             onClick={() => setFeedbackOpen(true)}
-            title={railed ? "Give feedback" : undefined}
+            aria-label={t("giveFeedback")}
+            title={railed ? t("giveFeedback") : undefined}
             className="cursor-pointer"
             style={{
               display: "flex",
@@ -279,13 +285,14 @@ export default function CustomAppShellNavbar() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            {!railed && "Give feedback"}
+            {!railed && t("giveFeedback")}
           </button>
           <Link
             href="https://calendly.com/luca-topoteretes/new-meeting"
             target="_blank"
             rel="noopener noreferrer"
-            title={railed ? "Book a call" : undefined}
+            aria-label={t("bookCall")}
+            title={railed ? t("bookCall") : undefined}
             className="cursor-pointer"
             style={{
               display: "flex",
@@ -314,7 +321,7 @@ export default function CustomAppShellNavbar() {
               <line x1="3" y1="10" x2="21" y2="10" />
               <path d="M10 14l2 2 4-4" />
             </svg>
-            {!railed && "Book a call"}
+            {!railed && t("bookCall")}
           </Link>
           {/* Paid plans and credits are a cloud-only concept, and app/(app)/billing/
               is excluded from the public sync — without this gate the button 404s
@@ -322,7 +329,8 @@ export default function CustomAppShellNavbar() {
           {isCloudEnvironment() && (
             <Link
               href="/billing"
-              title={railed ? "Billing / Pricing" : undefined}
+              aria-label={t("billing")}
+              title={railed ? t("billing") : undefined}
               className="flex items-center justify-center rounded-[8px] w-full"
               style={{
                 padding: "10px 12px",
@@ -339,7 +347,7 @@ export default function CustomAppShellNavbar() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1e1e1c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" />
                 </svg>
-              ) : "Billing / Pricing"}
+              ) : t("billing")}
             </Link>
           )}
         </div>

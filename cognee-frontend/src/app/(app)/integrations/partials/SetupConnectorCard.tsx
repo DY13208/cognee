@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactElement } from "react";
+import { useTranslations } from "next-intl";
 import type { SetupConnectorCfg } from "@/modules/integrations/types";
 
 interface SetupConnectorCardProps {
@@ -12,6 +13,8 @@ interface SetupConnectorCardProps {
 }
 
 export default function SetupConnectorCard({ card, isActive, hasSignal, isConnected, onOpen }: SetupConnectorCardProps): ReactElement {
+  const t = useTranslations("integrations");
+
   return (
     <button
       className="aci-card"
@@ -43,19 +46,19 @@ export default function SetupConnectorCard({ card, isActive, hasSignal, isConnec
         {hasSignal && (
           isConnected ? (
             <span style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, background: "rgba(34,197,94,0.14)", color: "#22C55E", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999 }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22C55E" }} />Connected
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22C55E" }} />{t("connected")}
             </span>
           ) : (
-            <span style={{ flexShrink: 0, background: "rgba(255,255,255,0.06)", color: "rgba(237,236,234,0.35)", fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 999 }}>Not connected yet</span>
+            <span style={{ flexShrink: 0, background: "rgba(255,255,255,0.06)", color: "rgba(237,236,234,0.35)", fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 999 }}>{t("notConnected")}</span>
           )
         )}
       </div>
 
-      <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>{card.description}</p>
+      <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>{t(`cards.${card.key}.description`)}</p>
 
       <div style={{ marginTop: "auto" }}>
         <span style={{ display: "inline-flex", alignItems: "center", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, color: "#EDECEA" }}>
-          {card.cta}
+          {t(`cards.${card.key}.cta`)}
         </span>
       </div>
     </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { notifications } from "@mantine/notifications";
 import type { CogneeInstance } from "@/modules/instances/types";
 import { useBusinessScene } from "@/modules/business/useBusinessScene";
@@ -51,6 +52,7 @@ interface BusinessViewProps {
 // before this ever mounts (see POD_DEPENDENT_PATHS), the same gate every
 // other pod-backed route uses.
 export default function BusinessView({ cogniInstance }: BusinessViewProps) {
+  const t = useTranslations("knowledgeGraph");
   const scene = useBusinessScene(cogniInstance);
   const brainsQuery = useBrains(cogniInstance);
   const governanceIndex = useGovernanceIndex(scene.layerData[GOVERNANCE_LAYER_ID]);
@@ -126,7 +128,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
     hasNarratedFirstLoadRef.current = true;
     const brain = scene.brainState;
     narrate(
-      `this is your business — ${brain.typeNodes.length} kind${brain.typeNodes.length === 1 ? "" : "s"} of things across ${brain.sourceNames.length} source${brain.sourceNames.length === 1 ? "" : "s"}, one connected model`,
+      t("intro", { kindCount: brain.typeNodes.length, sourceCount: brain.sourceNames.length }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene.brainState, scene.layerData]);
@@ -142,16 +144,16 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
       if (first) bySet[first] = (bySet[first] || 0) + 1;
     });
     const src = Object.keys(bySet).sort((a, b) => bySet[b] - bySet[a])[0];
-    const text = `cognify complete — ${newborn.length} new entities joined the model${src ? ` from ${src}` : ""}`;
-    narrate(text, "#43D9E8");
+    const fromSource = src ? t("fromSource", { source: src }) : "";
+    narrate(t("cognifyJoined", { count: newborn.length, fromSource }), "#43D9E8");
     // A real state change gets its own dismissible toast, not just the
     // narration line — that line is shared with passive auto-insight tips
     // (see useBusinessAutoInsights) and fades on its own, so a genuine event
     // was easy to mistake for one of those tips or miss once it faded
     // (COG-6233 UX audit).
     notifications.show({
-      title: "Cognify complete",
-      message: `${newborn.length} new ${newborn.length === 1 ? "entity" : "entities"} joined the model${src ? ` from ${src}` : ""}.`,
+      title: t("cognifyComplete"),
+      message: t("cognifyJoined", { count: newborn.length, fromSource }),
       color: "teal",
       autoClose: 5000,
     });
@@ -160,14 +162,17 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
     // the instant it happened; this keeps a short history of it.
     constructionLogSeq.current += 1;
     setConstructionLog((prev) => [
-      { id: `growth-${constructionLogSeq.current}`, text: `+${newborn.length} entities${src ? ` · ${src}` : ""}` },
+      {
+        id: `growth-${constructionLogSeq.current}`,
+        text: t("growth", { count: newborn.length, fromSource: src ? t("growthFrom", { source: src }) : "" }),
+      },
       ...prev,
     ].slice(0, 30));
     if (src) {
       setFlashedSourceName(src);
       setTimeout(() => setFlashedSourceName((current) => (current === src ? null : current)), 2000);
     }
-  }, [narrate]);
+  }, [narrate, t]);
 
   const qa = useBusinessQaSurface(
     canvasRef,
@@ -210,7 +215,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
     ? (() => {
         const agent = governanceIndex.agents.find((a) => a.id === asking.principalId);
         return agent
-          ? { id: agent.id, name: String(agent.name || "agent"), startedAt: asking.startedAt, until: asking.until }
+          ? { id: agent.id, name: String(agent.name || t("agent")), startedAt: asking.startedAt, until: asking.until }
           : null;
       })()
     : null;
@@ -278,13 +283,13 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
   const clearSourceFocus = useCallback(() => {
     setFocusSets(null);
     setSelectedSourceName(null);
-    narrate("showing everything", "#7E8CA6");
+    narrate(t("showingEverything"), "#7E8CA6");
     // Without this, the camera stayed wherever the focus lens had zoomed
     // it — clearing the lens then dumped the WHOLE graph back into that
     // same tight framing instead of recentering to show it properly
     // (COG-6233).
     canvasRef.current?.fit(true);
-  }, [narrate]);
+  }, [narrate, t]);
 
   const selectedSourceDetail = selectedSourceName && scene.brainState
     ? computeSourceDetail(selectedSourceName, scene.brainState)
@@ -299,18 +304,22 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
       if (!scene.brainState) return;
       const result = computeWhatIfRemoval(entityId, scene.brainState.semanticLinks);
       if (!result.orphanedIds.size) {
-        narrate(`removing ${entityName} wouldn't disconnect anything, no single point of failure here`, "#56DB7D");
+        narrate(t("whatIfSafe", { name: entityName }), "#56DB7D");
         return;
       }
       const startedAt = performance.now();
       setSpotlight({ ids: result.orphanedIds, startedAt, until: startedAt + WHAT_IF_SPOTLIGHT_MS, source: "whatIf" });
       narrate(
-        `removing ${entityName} would split the model into ${result.islandCount} disconnected pieces, ${result.orphanedIds.size} record${result.orphanedIds.size === 1 ? "" : "s"} stranded`,
+        t("whatIfSplit", {
+          name: entityName,
+          islandCount: result.islandCount,
+          orphanCount: result.orphanedIds.size,
+        }),
         "#F5566B",
       );
       if (flyCamera) requestAnimationFrame(() => canvasRef.current?.focusOnIds(result.orphanedIds));
     },
-    [scene.brainState, setSpotlight, narrate],
+    [scene.brainState, setSpotlight, narrate, t],
   );
 
   return (
@@ -392,7 +401,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           lands at exactly 10+15+4 = 29px — SearchBar (top-[29px]) and
           OperatorsRail's workspace card align to that same line. */}
       <div className="absolute left-2.5 top-2.5 z-10">
-        <div className="mb-1 px-1 text-[10px] leading-[15px] uppercase tracking-widest text-[#7E8CA6]">brain</div>
+        <div className="mb-1 px-1 text-[10px] leading-[15px] uppercase tracking-widest text-[#7E8CA6]">{t("brain")}</div>
         <BrainSwitcher
           brains={brainsQuery.data ?? null}
           index={governanceIndex}
@@ -447,7 +456,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
                 return;
               }
               setFocusSets(new Set([name]));
-              narrate(`showing only ${sourceLabel(name)} — ${entityCount} entities · click again for everything`, "#43D9E8");
+              narrate(t("showingOnly", { name: sourceLabel(name), count: entityCount }), "#43D9E8");
               // Without this, clicking a source only dimmed everyone else —
               // invisible if the camera happened to be looking somewhere else
               // already, which read as the click doing nothing at all.
@@ -479,12 +488,12 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           <button
             type="button"
             onClick={qa.dismissPendingSearchEvent}
-            aria-label="dismiss"
+            aria-label={t("dismissAnswer")}
             className="absolute right-2 top-1.5 text-[#7E8CA6] hover:text-[#E9EEF6]"
           >
             ✕
           </button>
-          <div className="pr-4 text-[12px] font-semibold text-[#F5A83C]">this graph just answered a question</div>
+          <div className="pr-4 text-[12px] font-semibold text-[#F5A83C]">{t("justAnswered")}</div>
           <div className="mt-0.5 truncate text-[11.5px] text-[#7E8CA6]">
             &ldquo;{truncate(String(qa.pendingSearchEvent.question || ""), 60)}&rdquo;
           </div>
@@ -493,7 +502,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
             onClick={qa.playPendingSearchEvent}
             className="mt-1.5 cursor-pointer font-medium text-[#43D9E8] hover:underline"
           >
-            ▶ see what it used
+            {t("seeWhatUsed")}
           </button>
         </div>
       )}
@@ -552,7 +561,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           stays null forever, which otherwise pinned this "weaving…" overlay
           under the error state below with nothing left to wait for. */}
       {scene.activeDatasetId && (!scene.brainState || scene.isContentLoading) && !contentFailed && (
-        <BusinessLoading label="weaving your business model…" />
+        <BusinessLoading label={t("weaving")} />
       )}
       {/* No dataset selected is its own state, not an empty dataset — the
           auto-focus effect above normally picks the first brain, so this
@@ -565,10 +574,10 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           auto-focus runs in a post-paint effect — for one paint after
           governance resolves activeDatasetId is still null. */}
       {!scene.isLoading && !scene.activeDatasetId && governanceIndex.datasets.length === 0 && !governanceFailed && (
-        <BusinessEmptyState label="no dataset selected — create a brain and upload documents to see your business model" />
+        <BusinessEmptyState label={t("emptyNoDataset")} />
       )}
       {!scene.isLoading && !scene.activeDatasetId && governanceFailed && (
-        <BusinessEmptyState label="couldn't load this workspace's brains — check your connection and reload" />
+        <BusinessEmptyState label={t("emptyLoadBrains")} />
       )}
       {/* A failed graph fetch must never masquerade as "this dataset is
           empty" — without this branch a /visualize/json 500 rendered the
@@ -577,7 +586,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           through a failed poll tick (see contentFailed), and covering it with
           this overlay blocked every interaction until a later tick succeeded. */}
       {scene.activeDatasetId && contentFailed && !hasGraphContent && (
-        <BusinessEmptyState label="couldn't load this dataset's graph — check your connection and try switching to it again" />
+        <BusinessEmptyState label={t("emptyLoadGraph")} />
       )}
       {/* The filament that used to draw a stray line to an empty source's
           territory is gated on this same "no entities, no links" condition
@@ -586,8 +595,8 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
         <BusinessEmptyState
           label={
             scene.brainState.sourceNames.length
-              ? "content ingested, nothing extracted into the graph yet. check back after processing finishes"
-              : "no content in this dataset yet"
+              ? t("emptyIngested")
+              : t("emptyNoContent")
           }
         />
       )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Tooltip } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import { sourceLabel, sourceTooltipLabel } from "../computeBrainState";
 import type { BrainState } from "../sceneTypes";
 
@@ -54,6 +55,7 @@ interface SourceCardProps {
 function SourceCard({
   name, brainState, focused, dimmed, flashSourceName, registerCardRef, onToggleFocus,
 }: SourceCardProps) {
+  const t = useTranslations("knowledgeGraph");
   const entities = brainState?.setEntityCount[name] ?? 0;
   const docs = brainState?.setDocCount[name] ?? 0;
   const members = brainState?.setMemberCount[name] ?? 0;
@@ -89,10 +91,10 @@ function SourceCard({
         title="entities = concepts extracted from this source; items = source documents/records ingested"
       >
         {entities
-          ? `${entities} entities · ${docs} item${docs === 1 ? "" : "s"}`
+          ? t("entitiesItems", { entities, items: docs })
           : members
-            ? `${members} item${members === 1 ? "" : "s"}`
-            : "weaving…"}
+            ? t("entitiesItems", { entities: 0, items: members })
+            : t("weavingShort")}
       </div>
     </button>
   );
@@ -140,6 +142,7 @@ function SourceChip({ name, count, color, focused, dimmed, onToggleFocus }: Sour
 export default function SourcesRail({
   brainState, focusSets, onToggleFocus, registerCardRef, flashSourceName, reachableByHoveredPrincipal = true,
 }: SourcesRailProps) {
+  const t = useTranslations("knowledgeGraph");
   const sourceNames = brainState?.sourceNames ?? [];
   if (!sourceNames.length) return null;
 
@@ -161,7 +164,7 @@ export default function SourcesRail({
 
   return (
     <div className="p-2.5">
-      <div className="px-1 text-[10px] uppercase tracking-widest text-[#7E8CA6]">sources</div>
+      <div className="px-1 text-[10px] uppercase tracking-widest text-[#7E8CA6]">{t("sources")}</div>
       <div className="mt-2 flex flex-col gap-2">
         {cardNames.map((name) => (
           <SourceCard

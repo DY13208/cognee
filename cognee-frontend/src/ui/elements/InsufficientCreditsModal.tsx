@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Loader } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import { trackEvent } from "@/modules/analytics";
 
 export interface AutoRechargeModalInfo {
@@ -22,13 +23,15 @@ interface InsufficientCreditsModalProps {
   onClose: () => void;
 }
 
-const OPERATION_LABELS: Record<string, string> = {
-  remember: "upload",
-  cognify: "processing",
-  improve: "processing",
-  search: "search",
-  recall: "search",
-};
+const OPERATION_ACTIONS = {
+  remember: "actionUpload",
+  cognify: "actionProcessing",
+  improve: "actionProcessing",
+  search: "actionSearch",
+  recall: "actionSearch",
+} as const;
+
+type ActionKey = (typeof OPERATION_ACTIONS)[keyof typeof OPERATION_ACTIONS] | "actionThis";
 
 // Fed by InsufficientCreditsProvider, which is the single mount point that
 // listens for 402s across every pod call (upload, cognify, search, recall,
@@ -43,10 +46,15 @@ export default function InsufficientCreditsModal({
   onClose,
 }: InsufficientCreditsModalProps): React.ReactElement | null {
   const router = useRouter();
+  const t = useTranslations("dashboard.credits");
+  const tCommon = useTranslations("common");
 
   if (!isOpen) return null;
 
-  const actionLabel = operation ? OPERATION_LABELS[operation] ?? operation : "this action";
+  const actionKey: ActionKey =
+    operation && operation in OPERATION_ACTIONS
+      ? OPERATION_ACTIONS[operation as keyof typeof OPERATION_ACTIONS]
+      : "actionThis";
 
   function goToBilling(): void {
     trackEvent({ pageName: "Insufficient Credits Modal", eventName: "insufficient_credits_billing_clicked", additionalProperties: { operation: operation ?? "unknown" } });
@@ -69,7 +77,7 @@ export default function InsufficientCreditsModal({
         style={{ background: "rgba(15,15,15,0.92)", backdropFilter: "blur(16px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: 24, width: 420, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 16px 48px rgba(0,0,0,0.12)" }}
       >
         <h2 style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", margin: 0 }}>
-          Not enough credits to run {actionLabel}
+          {t("insufficientTitle", { action: t(actionKey) })}
         </h2>
         {/* While autoRechargeLoading, we genuinely don't know the tenant's
             auto-recharge state yet, so this branch must not assert either
@@ -77,26 +85,24 @@ export default function InsufficientCreditsModal({
             flip a moment later once the fetch resolves. */}
         {autoRechargeLoading ? (
           <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>
-            Checking your workspace&apos;s credit balance…
+            {t("checkingBalance")}
           </p>
         ) : autoRecharge?.enabled && autoRecharge.lastError ? (
           <p style={{ fontSize: 13, color: "#FCA5A5", margin: 0 }}>
-            Auto recharge is on but the last automatic charge failed: {autoRecharge.lastError} Add
-            credits manually or update your card on the billing page.
+            {t("autoRechargeFailed")}
           </p>
         ) : autoRecharge?.enabled ? (
           <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>
-            Auto recharge is on — a top-up may take a couple of minutes. Retry shortly, or add
-            credits on the billing page to continue right away.
+            {t("autoRechargePending")}
           </p>
         ) : (
           <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>
-            Your workspace doesn&apos;t have enough credits left. Add credits on the billing page to continue.
+            {t("notEnough")}
           </p>
         )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(101,16,244,0.45)", background: "rgba(101,16,244,0.08)" }}>
-          <span style={{ fontSize: 12, color: "rgba(237,236,234,0.55)" }}>Current balance</span>
+          <span style={{ fontSize: 12, color: "rgba(237,236,234,0.55)" }}>{t("currentBalance")}</span>
           <span style={{ flex: 1, textAlign: "right", fontSize: 15, fontWeight: 700, color: "#EDECEA", fontVariantNumeric: "tabular-nums" }}>
             {isLoadingBalance ? <Loader size={14} color="#EDECEA" /> : remainingUsd !== null ? `$${remainingUsd.toFixed(2)}` : "—"}
           </span>
@@ -108,14 +114,14 @@ export default function InsufficientCreditsModal({
             className="cursor-pointer"
             style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.7)", fontFamily: "inherit" }}
           >
-            Dismiss
+            {tCommon("dismiss")}
           </button>
           <button
             onClick={goToBilling}
             className="cursor-pointer"
             style={{ background: "#6510F4", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#fff", fontFamily: "inherit" }}
           >
-            Go to billing
+            {t("goToBilling")}
           </button>
         </div>
       </div>

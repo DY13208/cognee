@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { SkipLink } from "./Shared";
 import { useOnboardingTrackEvent } from "../useOnboardingTrackEvent";
+import { useTranslations } from "next-intl";
 
 export type OnboardingPath = "claude-code" | "codex" | "company";
 
@@ -23,10 +24,11 @@ function CompanyBrainIcon() {
 }
 
 export function StepSelect({ onSelect }: { onSelect: (path: OnboardingPath) => void }) {
+  const t = useTranslations("Setup");
   const cards: { key: OnboardingPath; name: string; description: string; logo: React.ReactNode }[] = [
-    { key: "claude-code", name: "Claude Code", description: "Give Claude Code persistent memory across all your projects", logo: <Image src="/visuals/logos/claude.svg" alt="Claude Code" width={72} height={72} style={{ height: 72, width: "auto" }} /> },
-    { key: "codex", name: "Codex", description: "Connect OpenAI Codex to your knowledge graph via a skill", logo: <Image src="/visuals/logos/codex.svg" alt="Codex" width={72} height={72} style={{ height: 72, width: "auto" }} /> },
-    { key: "company", name: "Company Brain", description: "Upload PDFs, docs, and data to build your knowledge graph", logo: <CompanyBrainIcon /> },
+    { key: "claude-code", name: "Claude Code", description: t("select.claude"), logo: <Image src="/visuals/logos/claude.svg" alt="Claude Code" width={72} height={72} style={{ height: 72, width: "auto" }} /> },
+    { key: "codex", name: "Codex", description: t("select.codex"), logo: <Image src="/visuals/logos/codex.svg" alt="Codex" width={72} height={72} style={{ height: 72, width: "auto" }} /> },
+    { key: "company", name: t("select.company"), description: t("select.companyDescription"), logo: <CompanyBrainIcon /> },
   ];
   const [hovered, setHovered] = useState<OnboardingPath | null>(null);
   const track = useOnboardingTrackEvent();
@@ -41,9 +43,9 @@ export function StepSelect({ onSelect }: { onSelect: (path: OnboardingPath) => v
       padding: "56px 24px", boxSizing: "border-box",
     }}>
       <div className="flex flex-col items-center gap-2" style={{ paddingBottom: 36 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.02em" }}>How do you want to start?</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.02em" }}>{t("select.title")}</h1>
         <p style={{ fontSize: 15, color: "rgba(237,236,234,0.65)", margin: 0, textAlign: "center", maxWidth: 460, lineHeight: "22px" }}>
-          Connect a coding agent to your memory, or upload your own data to build a company brain.
+          {t("select.description")}
         </p>
       </div>
 
@@ -73,7 +75,7 @@ export function StepSelect({ onSelect }: { onSelect: (path: OnboardingPath) => v
               <div style={{ fontSize: 18, fontWeight: 400, color: "#EDECEA", fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.01em" }}>{card.name}</div>
               <div style={{ fontSize: 13, color: "rgba(237,236,234,0.6)", lineHeight: "19px" }}>{card.description}</div>
               <span style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 5, background: "#BC9BFF", color: "#1e1e1c", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 500 }}>
-                {card.key === "company" ? "Upload data" : "Connect agent"} →
+                {card.key === "company" ? t("select.upload") : t("select.connect")} →
               </span>
             </button>
           );

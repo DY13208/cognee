@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactElement } from "react";
+import { useTranslations } from "next-intl";
 import { trackEvent } from "@/modules/analytics";
 
 // Mirrors the native integrations offered in Claude Desktop's connector
@@ -57,6 +58,8 @@ function ComingSoonModal({
   source: DataSource;
   onClose: () => void;
 }): ReactElement {
+  const t = useTranslations("integrations");
+  const tCommon = useTranslations("common");
   const [notified, setNotified] = useState(false);
 
   function requestNotify() {
@@ -76,10 +79,10 @@ function ComingSoonModal({
             <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>{source.initials}</span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#EDECEA", lineHeight: "20px" }}>Coming soon</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#EDECEA", lineHeight: "20px" }}>{t("comingSoonTitle")}</div>
             <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", marginTop: 1 }}>{source.name}</div>
           </div>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "rgba(237,236,234,0.65)", cursor: "pointer", padding: 4, borderRadius: 6, lineHeight: 1 }}>
+          <button onClick={onClose} aria-label={tCommon("close")} style={{ background: "none", border: "none", color: "rgba(237,236,234,0.65)", cursor: "pointer", padding: 4, borderRadius: 6, lineHeight: 1 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
@@ -88,7 +91,7 @@ function ComingSoonModal({
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
               <svg width="18" height="18" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="8" cy="8" r="7" stroke="#22C55E" strokeWidth="1.3" /><path d="M5 8.2L7 10.2L11 5.8" stroke="#22C55E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
               <p style={{ margin: 0, fontSize: 14, color: "rgba(237,236,234,0.75)", lineHeight: 1.6 }}>
-                Thanks — we’ll email you the moment the <strong style={{ color: "#EDECEA" }}>{source.name}</strong> integration is live.
+                {t("notifiedThanks")}
               </p>
             </div>
           ) : (
@@ -97,7 +100,7 @@ function ComingSoonModal({
                 We can let you know once the <strong style={{ color: "#EDECEA" }}>{source.name}</strong> integration is live to upgrade your Company Brain.
               </p>
               <button onClick={requestNotify} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#6510F4", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
-                Get notified once live
+                {t("getNotified")}
               </button>
             </>
           )}
@@ -108,13 +111,18 @@ function ComingSoonModal({
 }
 
 export default function MoreDataSourcesSection(): ReactElement {
+  const t = useTranslations("integrations");
   const [activeName, setActiveName] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const activeSource = INTEGRATIONS.find((it) => it.name === activeName) ?? null;
 
+  function sourceDescription(source: DataSource): string {
+    return source.logo ? t(`upcoming.${source.logo}`) : source.description;
+  }
+
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? INTEGRATIONS.filter((it) => it.name.toLowerCase().includes(q) || it.description.toLowerCase().includes(q))
+    ? INTEGRATIONS.filter((it) => it.name.toLowerCase().includes(q) || sourceDescription(it).toLowerCase().includes(q) || it.description.toLowerCase().includes(q))
     : INTEGRATIONS;
 
   function openSource(source: DataSource) {
@@ -145,8 +153,8 @@ export default function MoreDataSourcesSection(): ReactElement {
 
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", margin: "0 0 4px", letterSpacing: "-0.01em" }}>More data sources</h2>
-          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>Not live yet — tell us which ones to prioritize.</p>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", margin: "0 0 4px", letterSpacing: "-0.01em" }}>{t("moreTitle")}</h2>
+          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>{t("moreSubtitle")}</p>
         </div>
         <div style={{ position: "relative", width: 240, maxWidth: "100%" }}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ position: "absolute", left: 11, top: "50%", marginTop: -7.5, pointerEvents: "none" }}>
@@ -158,8 +166,8 @@ export default function MoreDataSourcesSection(): ReactElement {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search data sources"
-            aria-label="Search data sources"
+            placeholder={t("searchSources")}
+            aria-label={t("searchSourcesAria")}
             style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 9, padding: "8px 12px 8px 32px", fontSize: 13, color: "#EDECEA", fontFamily: "inherit" }}
           />
         </div>
@@ -178,10 +186,10 @@ export default function MoreDataSourcesSection(): ReactElement {
               </div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, color: "#EDECEA", fontFamily: '"TWKLausanne", sans-serif', overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.3 }}>{it.name}</div>
-                <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.4 }}>{it.description}</div>
+                <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.4 }}>{sourceDescription(it)}</div>
               </div>
               <span className="ds-connect" style={{ position: "absolute", right: 11, top: "50%", marginTop: -12, display: "inline-flex", alignItems: "center", gap: 3, background: "rgba(24,24,27,0.95)", backdropFilter: "blur(8px)", border: "1px solid rgba(188,155,255,0.4)", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, color: "#BC9BFF" }}>
-                Connect
+                {t("connect")}
                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </span>
             </button>
@@ -189,14 +197,14 @@ export default function MoreDataSourcesSection(): ReactElement {
         </div>
       ) : (
         <div style={{ textAlign: "center", padding: "28px 16px", fontSize: 13.5, color: "rgba(237,236,234,0.5)", lineHeight: 1.6 }}>
-          No data sources match “{query.trim()}”.{" "}
-          <a href={`mailto:support@cognee.ai?subject=${encodeURIComponent(`Integration request: ${query.trim()}`)}`} style={{ color: "#6510F4", textDecoration: "underline" }}>Request it</a> and we’ll consider it next.
+          {t("noMatch")}{" "}
+          <a href={`mailto:support@cognee.ai?subject=${encodeURIComponent(`Integration request: ${query.trim()}`)}`} style={{ color: "#6510F4", textDecoration: "underline" }}>{t("requestIt")}</a>
         </div>
       )}
 
       <p style={{ fontSize: 13, color: "rgba(237,236,234,0.35)", textAlign: "center", margin: 0 }}>
-        More integrations on the way.{" "}
-        <a href="mailto:support@cognee.ai?subject=Integration%20request" style={{ color: "#6510F4", textDecoration: "underline" }}>Let us know</a> what to prioritize.
+        {t("moreOnTheWay")}{" "}
+        <a href="mailto:support@cognee.ai?subject=Integration%20request" style={{ color: "#6510F4", textDecoration: "underline" }}>{t("letUsKnow")}</a>
       </p>
 
       {activeSource && <ComingSoonModal source={activeSource} onClose={() => setActiveName(null)} />}

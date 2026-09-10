@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useTranslations } from "next-intl";
 import { FONT, T } from "./mono";
 
 interface GetStartedBarProps {
@@ -18,6 +19,7 @@ interface GetStartedBarProps {
  * keeps the affordance discoverable.
  */
 export function GetStartedBar({ subtitle, connectors, defaultOpen = false, children }: GetStartedBarProps): React.ReactElement {
+  const t = useTranslations("dashboard");
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -40,13 +42,13 @@ export function GetStartedBar({ subtitle, connectors, defaultOpen = false, child
         }}
       >
         <span style={{ color: T.lavender, display: "inline-block", width: 12, transition: "transform 140ms", transform: open ? "rotate(90deg)" : "none" }}>➤</span>
-        <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Get started</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{t("getStarted")}</span>
         <span style={{ marginLeft: 4, fontSize: 13, color: "rgba(237,236,234,0.48)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subtitle}</span>
         {/* One compact control group: connector count + expand/collapse toggle. */}
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 9, flexShrink: 0, background: "rgba(255,255,255,0.04)", border: `1px solid ${T.frame}`, borderRadius: 0, padding: "5px 10px" }}>
-          <span style={{ fontSize: 12, color: T.muted }}>{connectors} connector{connectors === 1 ? "" : "s"}</span>
+          <span style={{ fontSize: 12, color: T.muted }}>{t("connectors", { count: connectors })}</span>
           <span style={{ width: 1, height: 12, background: T.frameStrong }} />
-          <span style={{ fontSize: 12, fontWeight: 500, color: T.lavender }}>{open ? "Collapse ▴" : "Expand ▾"}</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: T.lavender }}>{open ? t("collapse") : t("expand")}</span>
         </span>
       </button>
 

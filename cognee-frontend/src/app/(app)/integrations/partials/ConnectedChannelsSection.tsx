@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactElement } from "react";
+import { useTranslations } from "next-intl";
 import SkeletonBar from "@/ui/elements/SkeletonBar";
 import setAllowedChannels from "@/modules/integrations/setAllowedChannels";
 import type { AvailableTenant } from "@/modules/users/UserContext";
@@ -68,6 +69,7 @@ export default function ConnectedChannelsSection({
   onAllowedApplied,
   onRefresh,
 }: ConnectedChannelsSectionProps): ReactElement {
+  const t = useTranslations("integrations");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -107,7 +109,7 @@ export default function ConnectedChannelsSection({
     if (!result.success) {
       // Surfaced, not swallowed: the checkbox springs back on its own, which
       // on its own looks like a glitch rather than a refused change.
-      setSaveError(result.error ?? "Could not save your channel selection.");
+      setSaveError(t("saveChannelsFailed"));
       return false;
     }
     onAllowedApplied(channelId, allowed);
@@ -132,7 +134,7 @@ export default function ConnectedChannelsSection({
     setBulkSaving(false);
 
     if (!result.success) {
-      setSaveError(result.error ?? "Could not save your channel selection.");
+      setSaveError(t("saveChannelsFailed"));
       return;
     }
     for (const channel of changed) onAllowedApplied(channel.id, allowed);
@@ -161,9 +163,9 @@ export default function ConnectedChannelsSection({
             disabled={refreshing}
             className={BULK_ACTION}
             style={BULK_ACTION_STYLE}
-            title="Re-read the channel list"
+            title={t("rereadChannels")}
           >
-            {refreshing ? "Refreshing…" : "Refresh"}
+            {refreshing ? t("refreshing") : t("refresh")}
           </button>
         </div>
         {data && !data.error && (
@@ -207,8 +209,8 @@ export default function ConnectedChannelsSection({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search channels"
-                aria-label="Search channels"
+                placeholder={t("searchChannels")}
+                aria-label={t("searchChannelsAria")}
                 className={SEARCH_INPUT}
                 style={SEARCH_INPUT_STYLE}
               />

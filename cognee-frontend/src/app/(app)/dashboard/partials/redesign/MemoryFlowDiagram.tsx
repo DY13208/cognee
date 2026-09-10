@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useTranslations } from "next-intl";
 import { FONT, T } from "./mono";
 
 /** Open-source stub — the interactive hub-and-spoke diagram (data sources,
@@ -34,6 +35,7 @@ interface MemoryFlowDiagramProps {
 const DOT = { width: 8, height: 8, borderRadius: "50%", background: T.frameStrong } as const;
 
 export function MemoryFlowDiagram(_props: MemoryFlowDiagramProps): React.ReactElement {
+  const t = useTranslations("dashboard.stubs");
   return (
     <div style={{ position: "relative" }}>
       <div
@@ -75,10 +77,10 @@ export function MemoryFlowDiagram(_props: MemoryFlowDiagramProps): React.ReactEl
         }}
       >
         <span style={{ ...FONT, fontSize: 14, fontWeight: 500, color: T.text }}>
-          Live memory graph is a Cognee Cloud feature
+          {t("liveGraphTitle")}
         </span>
         <span style={{ ...FONT, fontSize: 13, color: T.muted, maxWidth: 360 }}>
-          Build your own dashboard from the API, or use the hosted one in Cognee Cloud.
+          {t("description")}
         </span>
         <a
           href="https://www.cognee.ai"
@@ -96,7 +98,7 @@ export function MemoryFlowDiagram(_props: MemoryFlowDiagramProps): React.ReactEl
             textDecoration: "none",
           }}
         >
-          Open Cognee Cloud
+          {t("openCloud")}
         </a>
       </div>
     </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import type { SessionEvent } from "../types";
 import { truncate } from "../textUtils";
 import { sourceLabel } from "../computeBrainState";
@@ -20,6 +21,7 @@ interface SessionMemoryCardProps {
 // shows the tenant's recent search history regardless of which user opened
 // this — accurate today, gracefully approximate once that link exists.
 export default function SessionMemoryCard({ principalName, events, distilledSets, onDismiss }: SessionMemoryCardProps) {
+  const t = useTranslations("knowledgeGraph");
   if (!principalName) return null;
   const qas = events.filter((e) => (e.kind || "search") === "search" && e.question);
 
@@ -36,7 +38,7 @@ export default function SessionMemoryCard({ principalName, events, distilledSets
       >
         ✕
       </button>
-      <div className="pr-4 text-[13px] font-semibold text-[#F5A83C]">{principalName} — session memory</div>
+      <div className="pr-4 text-[13px] font-semibold text-[#F5A83C]">{t("sessionMemory", { name: principalName })}</div>
       <div className="mt-1 text-[11px] text-[#7E8CA6]">
         {qas.length ? `${qas.length} exchange${qas.length === 1 ? "" : "s"}` : "no session activity yet"}
       </div>

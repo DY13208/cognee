@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { useFilter } from "@/ui/layout/FilterContext";
 import useBoolean from "@/utils/useBoolean";
 import useOutsideClick from "@/utils/useOutsideClick";
@@ -41,6 +42,7 @@ interface BrainSelectorProps {
 }
 
 export default function BrainSelector({ allowAll = true, align = "left", direction = "down" }: BrainSelectorProps) {
+  const t = useTranslations("common");
   const { selectedDataset, setSelectedDataset, datasets } = useFilter();
   const { value: isOpen, toggle, setFalse: close } = useBoolean(false);
   const closeCallback = useCallback(() => close(), [close]);
@@ -76,7 +78,7 @@ export default function BrainSelector({ allowAll = true, align = "left", directi
       >
         <DatabaseIcon color={displayDataset ? "rgba(188,155,255,0.60)" : "rgba(255,255,255,0.45)"} />
         <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {displayDataset ? displayDataset.name : "All brains"}
+          {displayDataset ? displayDataset.name : t("allBrains")}
         </span>
         <Chevron />
       </button>
@@ -107,7 +109,7 @@ export default function BrainSelector({ allowAll = true, align = "left", directi
                 onMouseLeave={e => { if (!isAllSelected) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
               >
                 <span style={{ fontSize: 13, fontWeight: isAllSelected ? 500 : 400, color: isAllSelected ? "rgba(188,155,255,0.60)" : "rgba(237,236,234,0.7)", flex: 1 }}>
-                  All brains
+                  {t("allBrains")}
                 </span>
                 {isAllSelected && <Check />}
               </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import Modal from "@/ui/elements/Modal/Modal";
 import type { CogneeInstance } from "@/modules/instances/types";
 import rememberSkill, { slugifySkillName } from "@/modules/skills/rememberSkill";
@@ -26,6 +27,8 @@ const ACCENT = "#BC9BFF";
 const TEXT = "#EDECEA";
 
 export default function SkillUploadModal({ isOpen, onClose, datasets, instance, onUploaded }: SkillUploadModalProps) {
+  const t = useTranslations("skills");
+  const tCommon = useTranslations("common");
   const [skillName, setSkillName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [body, setBody] = useState("");
@@ -64,9 +67,9 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
 
   async function handleSubmit() {
     if (!instance) return;
-    if (!skillName.trim()) { setError("Give the skill a name."); return; }
-    if (!file && !body.trim()) { setError("Upload a SKILL.md file or paste the skill content."); return; }
-    if (selected.size === 0) { setError("Select at least one brain to attach the skill to."); return; }
+    if (!skillName.trim()) { setError(t("upload.nameRequired")); return; }
+    if (!file && !body.trim()) { setError(t("upload.contentRequired")); return; }
+    if (selected.size === 0) { setError(t("upload.brainRequired")); return; }
 
     setSubmitting(true);
     setError(null);
@@ -84,7 +87,7 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
       const r = settled[i];
       return r.status === "fulfilled"
         ? { id: d.id, name: d.name, ok: true }
-        : { id: d.id, name: d.name, ok: false, error: (r.reason as Error)?.message ?? "Failed" };
+        : { id: d.id, name: d.name, ok: false, error: tCommon("genericError") };
     });
 
     setResults(perDataset);
@@ -112,10 +115,10 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 16, fontWeight: 600, color: TEXT }}>Add a skill</span>
-            <span style={{ fontSize: 12, color: "rgba(237,236,234,0.5)" }}>Name it, provide the SKILL.md content, and attach to one or more brains.</span>
+            <span style={{ fontSize: 16, fontWeight: 600, color: TEXT }}>{t("upload.title")}</span>
+            <span style={{ fontSize: 12, color: "rgba(237,236,234,0.5)" }}>{t("upload.description")}</span>
           </div>
-          <button onClick={handleClose} aria-label="Close" disabled={submitting}
+          <button onClick={handleClose} aria-label={tCommon("close")} disabled={submitting}
             style={{ background: "none", border: "none", color: "rgba(237,236,234,0.6)", cursor: submitting ? "not-allowed" : "pointer", padding: 4 }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
           </button>
@@ -125,11 +128,11 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18, overflowY: "auto" }}>
           {/* Skill name */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.5)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Skill name</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.5)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{t("upload.name")}</span>
             <input
               value={skillName}
               onChange={(e) => { setSkillName(e.target.value); setError(null); }}
-              placeholder="e.g. Weather lookup"
+              placeholder={t("upload.namePlaceholder")}
               disabled={submitting}
               style={{ height: 38, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, padding: "0 12px", fontSize: 13, color: TEXT, fontFamily: "inherit", outline: "none" }}
               onFocus={(e) => { e.target.style.borderColor = PRIMARY; }}
@@ -137,14 +140,14 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
             />
             {skillName.trim() && (
               <span style={{ fontSize: 11, color: "rgba(237,236,234,0.4)" }}>
-                Ingested as <code style={{ color: ACCENT, fontFamily: "monospace" }}>{slug}/SKILL.md</code>
+                {t("upload.ingestedAs")} <code style={{ color: ACCENT, fontFamily: "monospace" }}>{slug}/SKILL.md</code>
               </span>
             )}
           </div>
 
           {/* Content: file upload */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.5)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Skill content</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.5)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{t("upload.content")}</span>
             <input
               ref={fileInputRef}
               type="file"
@@ -166,19 +169,19 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              {file ? file.name : "Upload a SKILL.md file"}
+              {file ? file.name : t("upload.contentRequired")}
             </button>
             {file && (
               <button onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} disabled={submitting}
                 style={{ alignSelf: "flex-start", background: "none", border: "none", color: "rgba(237,236,234,0.45)", fontSize: 11, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
-                Remove file
+                {tCommon("delete")}
               </button>
             )}
 
             {/* …or paste body, only when no file chosen */}
             {!file && (
               <>
-                <span style={{ fontSize: 11, color: "rgba(237,236,234,0.4)", textAlign: "center" }}>or paste the skill content</span>
+                <span style={{ fontSize: 11, color: "rgba(237,236,234,0.4)", textAlign: "center" }}>{t("upload.content")}</span>
                 <textarea
                   value={body}
                   onChange={(e) => { setBody(e.target.value); setError(null); }}
@@ -196,10 +199,10 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
           {/* Dataset multi-select */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.5)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              Attach to brains{selected.size > 0 ? ` · ${selected.size} selected` : ""}
+              {t("brain")}{selected.size > 0 ? ` · ${selected.size}` : ""}
             </span>
             {datasets.length === 0 ? (
-              <span style={{ fontSize: 13, color: "rgba(237,236,234,0.4)" }}>No brains available.</span>
+              <span style={{ fontSize: 13, color: "rgba(237,236,234,0.4)" }}>{t("upload.noBrains")}</span>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", maxHeight: 200, overflowY: "auto", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10 }}>
                 {datasets.map((d, i) => {
@@ -221,7 +224,7 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
               </div>
             )}
             <span style={{ fontSize: 11, color: "rgba(237,236,234,0.4)" }}>
-              A separate ingestion runs per selected brain — skills are dataset-scoped.
+              {t("upload.description")}
             </span>
           </div>
 
@@ -246,7 +249,7 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
           <button onClick={handleClose} disabled={submitting}
             style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "8px 16px", fontSize: 13, color: "rgba(237,236,234,0.8)", cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-            Cancel
+            {tCommon("cancel")}
           </button>
           <button onClick={handleSubmit} disabled={!canSubmit}
             style={{
@@ -255,7 +258,7 @@ export default function SkillUploadModal({ isOpen, onClose, datasets, instance, 
               color: canSubmit ? "#fff" : "rgba(237,236,234,0.4)", cursor: canSubmit ? "pointer" : "not-allowed",
             }}>
             {submitting && <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite" }} />}
-            {submitting ? "Ingesting…" : selected.size > 1 ? `Add to ${selected.size} brains` : "Add skill"}
+            {submitting ? tCommon("loading") : selected.size > 1 ? t("addToMoreBrains") : t("addSkill")}
           </button>
         </div>
       </div>

@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactElement } from "react";
+import { useLocale, useTranslations } from "next-intl";
+import type { Locale } from "@/i18n/config";
 import SkeletonBar from "@/ui/elements/SkeletonBar";
 import { timeAgo } from "@/utils/timeAgo";
 import type { ChannelSummary } from "./useConnectorChannels";
@@ -26,6 +28,9 @@ export default function ChannelHealthLine({
   summary,
   lastSyncedAt,
 }: ChannelHealthLineProps): ReactElement {
+  const locale = useLocale() as Locale;
+  const t = useTranslations("integrations");
+
   if (!summary) return <SkeletonBar width={110} height={11} />;
 
   if (summary.error) {
@@ -45,7 +50,7 @@ export default function ChannelHealthLine({
     <p className="m-0 text-[12px] text-[var(--color-cognee-fg,#EDECEA)]/55">
       {summary.syncingHere} of {summary.visible} channel{summary.visible === 1 ? "" : "s"} syncing
       {summary.routedAway > 0 && ` · ${summary.routedAway} routed elsewhere`}
-      {lastSyncedAt && ` · last sent ${timeAgo(lastSyncedAt)}`}
+      {lastSyncedAt && ` · ${t("lastSent", { time: timeAgo(lastSyncedAt, locale) })}`}
     </p>
   );
 }

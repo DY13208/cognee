@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useTranslations } from "next-intl";
 import type { GovernanceIndex } from "../useGovernanceIndex";
 import { accessibleDatasetIds, userLabel } from "../useGovernanceIndex";
 import AccessChipList from "./AccessChipList";
@@ -35,6 +36,7 @@ const memBadgeBase = "rounded px-1.5 py-0.5";
 export default function OperatorsRail({
   index, onHoverPrincipal, focusedDatasetId, askingPrincipalId, onOpenSessionMemory,
 }: OperatorsRailProps) {
+  const t = useTranslations("knowledgeGraph");
   // Leaving a hovered row (unmount mid-hover: a dataset switch, a governance
   // refetch) fires no mouseleave, so the last reported principal stuck — and
   // with it the sources rail's ACL dim, permanently, with nothing on screen
@@ -74,7 +76,7 @@ export default function OperatorsRail({
   // "7/7" badge next to every single card would be noise, not signal.
   const restrictedReach = (principalId: string): string | null => {
     const reach = accessibleDatasetIds(index, principalId).size;
-    return reach < index.datasets.length ? `${reach}/${index.datasets.length} datasets` : null;
+    return reach < index.datasets.length ? t("datasetsCount", { count: reach, total: index.datasets.length }) : null;
   };
 
   return (
@@ -83,11 +85,11 @@ export default function OperatorsRail({
     // workspace card's mt-1 land the card's top edge at 10+15+4 = 29px, the
     // same line as the BrainSwitcher chip and the search bar.
     <div className="absolute right-0 top-0 bottom-24 w-[196px] overflow-y-auto p-2.5 text-xs text-[#E9EEF6]">
-      <div className="px-1 text-[10px] leading-[15px] uppercase tracking-widest text-[#7E8CA6]">operators</div>
+      <div className="px-1 text-[10px] leading-[15px] uppercase tracking-widest text-[#7E8CA6]">{t("operators")}</div>
       {showTenantCard && index.tenants[0] && (
         <div className="mt-1 rounded-[10px] border border-dashed border-[#2A3652] p-2.5 text-[#7E8CA6]">
-          <div>⌂ {String(index.tenants[0].name || "organization")}</div>
-          <div className="text-[10.5px]">{index.users.length} member{index.users.length === 1 ? "" : "s"}</div>
+          <div>⌂ {String(index.tenants[0].name || t("organization"))}</div>
+          <div className="text-[10.5px]">{t("membersCount", { count: index.users.length })}</div>
         </div>
       )}
       {index.users.map((u) => {
@@ -109,7 +111,7 @@ export default function OperatorsRail({
                   className={`${memBadgeBase} ml-auto shrink-0 border border-[rgba(245,168,60,.45)] text-[#F5A83C]`}
                   title="session memory — this user's own conversation history; distilled traces land as session_learnings"
                 >
-                  session
+                  {t("session")}
                 </span>
               </div>
               {!ownsEverything(u.id) && restrictedReach(u.id) && (
@@ -125,7 +127,7 @@ export default function OperatorsRail({
               )}
             </div>
             {(agentsByOwner[u.id] || []).map((a) => {
-              const aLabel = String(a.name || "agent");
+              const aLabel = String(a.name || t("agent"));
               return (
                 <div
                   key={a.id}
@@ -141,16 +143,16 @@ export default function OperatorsRail({
                     <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#F5A83C]" />
                     <span className="min-w-0 truncate" title={aLabel}>{aLabel}</span>
                     <span className="ml-auto shrink-0 rounded bg-[#F5A83C] px-1 py-0.5 text-[8px] font-bold uppercase text-[#0E1526]">
-                      agent
+                      {t("agent")}
                     </span>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1 text-[#7E8CA6]">
-                    memory:
+                    {t("memory")}
                     <span
                       className={`${memBadgeBase} border border-solid border-[#E9EEF6] text-[#E9EEF6]`}
                       title="permanent memory — searches its brains (with_memory)"
                     >
-                      permanent
+                      {t("permanent")}
                     </span>
                     {restrictedReach(a.id) && <span className="ml-auto shrink-0">{restrictedReach(a.id)}</span>}
                   </div>
@@ -158,7 +160,7 @@ export default function OperatorsRail({
                     <AccessChipList
                       access={index.access[a.id] || {}}
                       datasets={index.datasets}
-                      principalName={`${aLabel} (agent)`}
+                      principalName={`${aLabel} (${t("agent")})`}
                       focusedDatasetId={focusedDatasetId}
                     />
                   )}

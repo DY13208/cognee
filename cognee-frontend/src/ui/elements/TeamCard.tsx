@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactElement } from "react";
+import { useTranslations } from "next-intl";
 import { avatarColor } from "@/utils/avatarColor";
 
 export interface TeamInfo {
@@ -48,6 +49,7 @@ export default function TeamCard({
   onShare?: () => void;
   onDelete?: () => void;
 }): ReactElement {
+  const t = useTranslations("common");
   const boxStyle: CSSProperties = flat
     ? { padding: "8px 14px 10px", display: "flex", flexDirection: "column", gap: 5 }
     : {
@@ -72,8 +74,8 @@ export default function TeamCard({
               onClick={onShare}
               className="hover:bg-white/10 cursor-pointer"
               style={{ background: "transparent", border: "none", borderRadius: 0, padding: 4, display: "grid", placeItems: "center", color: GREY }}
-              title={`Share with ${team.name}`}
-              aria-label={`Share with ${team.name}`}
+              title={t("shareWith", { name: team.name })}
+              aria-label={t("shareWith", { name: team.name })}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
@@ -86,9 +88,9 @@ export default function TeamCard({
               onClick={onDelete}
               className="hover:bg-white/10 cursor-pointer"
               style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 0, padding: "3px 10px", fontSize: 11, fontWeight: 500, color: "rgba(237,236,234,0.7)" }}
-              title={`Remove ${team.name}'s access`}
+              title={t("removeAccess", { name: team.name })}
             >
-              Delete
+              {t("delete")}
             </button>
           )}
         </span>
@@ -104,9 +106,10 @@ export default function TeamCard({
 const MAX_AVATARS = 4;
 
 function MemberRow({ team, flat }: { team: TeamInfo; flat: boolean }): ReactElement {
+  const t = useTranslations("common");
   const visible = team.members.slice(0, MAX_AVATARS);
   const overflow = team.memberCount - visible.length;
-  const label = overflow > 0 ? `+${overflow} people` : `${team.memberCount} people`;
+  const label = overflow > 0 ? t("peopleMore", { count: overflow }) : t("people", { count: team.memberCount });
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", marginTop: flat ? 18 : 0 }}>
       {visible.map((m) => (

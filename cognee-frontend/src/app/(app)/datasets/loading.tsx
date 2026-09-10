@@ -1,2 +1,6 @@
 import PageLoading from "@/ui/elements/PageLoading";
-export default function Loading() { return <PageLoading name="Brain" />; }
+import { getNavLoadingTitle } from "@/i18n/getNavLoadingTitle";
+
+export default async function Loading() {
+  return <PageLoading name={await getNavLoadingTitle("brain")} />;
+}

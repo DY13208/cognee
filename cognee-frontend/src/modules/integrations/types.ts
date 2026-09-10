@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+export type TranslateFn = (key: string, values?: Record<string, string | number | Date>) => string;
+
 export interface StepDef {
   title: string;
   description: ReactNode;
@@ -20,7 +22,7 @@ export interface SetupConnectorCfg {
   description: string;
   /** Icon shown in the card badge and the modal header (24px) */
   icon: ReactNode;
-  buildSteps: (baseUrl: string, apiKey: string, isInitializing: boolean) => StepDef[];
+  buildSteps: (baseUrl: string, apiKey: string, isInitializing: boolean, t?: TranslateFn) => StepDef[];
 }
 
 /** A connector that is shared by the whole workspace (OAuth), not per-user. */

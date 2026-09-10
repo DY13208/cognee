@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { tokens } from "@/ui/theme/tokens";
 
 // $5/mo workspace base fee — shown in the create-workspace modal.
@@ -17,6 +18,8 @@ interface NameWorkspaceModalProps {
 export default function NameWorkspaceModal({
   name, setName, submitting, error, onSubmit, onClose,
 }: NameWorkspaceModalProps): React.JSX.Element {
+  const t = useTranslations("navigation");
+  const tCommon = useTranslations("common");
   const valid = name.trim().length >= 2 && name.trim().length <= 50;
   return (
     <div
@@ -38,15 +41,17 @@ export default function NameWorkspaceModal({
       >
         <div style={{ marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>
-            Create a new workspace
+            {t("nameWorkspace.title")}
           </h2>
           <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: "4px 0 0" }}>
-            Name your workspace. You can switch between workspaces from the top bar.
+            {t("nameWorkspace.description")}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 14, padding: "10px 12px", borderRadius: 8, background: "rgba(188,155,255,0.1)", border: "1px solid rgba(188,155,255,0.25)" }}>
           <span style={{ fontSize: 12.5, color: "rgba(237,236,234,0.8)", lineHeight: 1.45 }}>
-            A new workspace costs <strong style={{ color: "#EDECEA" }}>{WORKSPACE_PRICE_LABEL}</strong>. You&apos;ll be taken to Stripe to confirm payment — the workspace is created once payment succeeds.
+            {t.rich("nameWorkspace.costNote", {
+              price: <strong style={{ color: "#EDECEA" }}>{WORKSPACE_PRICE_LABEL}</strong>,
+            })}
           </span>
         </div>
         <input
@@ -55,7 +60,7 @@ export default function NameWorkspaceModal({
           onChange={(e) => setName(e.target.value)}
           autoFocus
           maxLength={50}
-          placeholder="Workspace name"
+          placeholder={t("nameWorkspace.placeholder")}
           style={{
             width: "100%",
             boxSizing: "border-box",
@@ -79,14 +84,14 @@ export default function NameWorkspaceModal({
             disabled={submitting}
             style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "transparent", color: "#EDECEA", fontSize: 13, cursor: submitting ? "default" : "pointer" }}
           >
-            Cancel
+            {tCommon("cancel")}
           </button>
           <button
             type="submit"
             disabled={!valid || submitting}
             style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: tokens.purple, color: "#fff", fontSize: 13, fontWeight: 500, cursor: !valid || submitting ? "default" : "pointer", opacity: !valid || submitting ? 0.6 : 1 }}
           >
-            {submitting ? "Redirecting..." : `Continue to payment · ${WORKSPACE_PRICE_LABEL}`}
+            {submitting ? t("nameWorkspace.redirecting") : t("nameWorkspace.continuePayment", { price: WORKSPACE_PRICE_LABEL })}
           </button>
         </div>
       </form>

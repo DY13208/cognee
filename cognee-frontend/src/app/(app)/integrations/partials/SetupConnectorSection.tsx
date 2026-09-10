@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useState, type ReactElement } from "react";
+import { useTranslations } from "next-intl";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
-import type { SetupConnectorCfg } from "@/modules/integrations/types";
+import type { SetupConnectorCfg, TranslateFn } from "@/modules/integrations/types";
 import SetupConnectorCard from "./SetupConnectorCard";
 import SetupWizardModal from "./SetupWizardModal";
 
@@ -14,6 +15,7 @@ interface SetupConnectorSectionProps {
 }
 
 export default function SetupConnectorSection({ cards, connectedKeys = {} }: SetupConnectorSectionProps): ReactElement {
+  const t = useTranslations("integrations");
   const { serviceUrl, apiKey, isInitializing } = useCogniInstance();
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [stepIndexMap, setStepIndexMap] = useState<Partial<Record<string, number>>>({});
@@ -21,8 +23,9 @@ export default function SetupConnectorSection({ cards, connectedKeys = {} }: Set
   const baseUrl = serviceUrl || "https://your-tenant.aws.cognee.ai";
   const resolvedKey = apiKey || "your-api-key";
 
+  const translate: TranslateFn = (key, values) => t(key, values);
   const activeCfg = cards.find(c => c.key === activeKey);
-  const activeSteps = activeCfg ? activeCfg.buildSteps(baseUrl, resolvedKey, isInitializing) : [];
+  const activeSteps = activeCfg ? activeCfg.buildSteps(baseUrl, resolvedKey, isInitializing, translate) : [];
   const currentStep = activeKey ? (stepIndexMap[activeKey] ?? 0) : 0;
 
   const closeModal = useCallback(() => setActiveKey(null), []);

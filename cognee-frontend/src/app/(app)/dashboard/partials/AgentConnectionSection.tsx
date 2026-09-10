@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { trackEvent } from "@/modules/analytics";
 import { SEARCH_SESSION_PREFIX } from "@/modules/sessions/getSessions";
 import type { SessionRow } from "@/modules/sessions/getSessions";
@@ -13,6 +14,7 @@ import { CARDS_CFG, getSteps } from "./agentConnectionSteps";
 import type { AciAgentKey } from "./agentConnectionSteps";
 import { AciCard } from "./AciCard";
 import { AciStepRow } from "./AciStepRow";
+import type { TranslateFn } from "@/modules/integrations/types";
 
 // Index of the "Upload something" step in the claude-code flow — used to
 // auto-advance when a new session is detected while the modal is open.
@@ -40,6 +42,8 @@ export function AgentConnectionSection({
   integrationConnected = {},
 }: AgentConnectionSectionProps): React.ReactElement {
   const router = useRouter();
+  const t = useTranslations("integrations");
+  const tCommon = useTranslations("common");
   const { os } = useOsPreference();
   const [activeKey, setActiveKey] = useState<AciAgentKey | null>(null);
   const [stepIndexMap, setStepIndexMap] = useState<Partial<Record<AciAgentKey, number>>>({});
@@ -49,7 +53,8 @@ export function AgentConnectionSection({
   const baseUrl = serviceUrl ?? "https://your-tenant.aws.cognee.ai";
   const resolvedKey = apiKey ?? "your-api-key";
   const credsCode = `${exportEnvVar(os, "COGNEE_BASE_URL", baseUrl)}\n${exportEnvVar(os, "COGNEE_API_KEY", resolvedKey)}`;
-  const stepOpts = { baseUrl, resolvedKey, credsCode, isInitializing, connectVerified, os };
+  const translate: TranslateFn = (key, values) => t(key, values);
+  const stepOpts = { baseUrl, resolvedKey, credsCode, isInitializing, connectVerified, os, t: translate };
 
   // Detect a new Claude Code session while the modal is open. Derives connection
   // state from the `sessions` prop (circuit-breaker-protected, 15s poll) —
@@ -140,12 +145,12 @@ export function AgentConnectionSection({
             <img src={logoSrc} alt={activeCfg.name} style={{ width: 24, height: 24, objectFit: "contain", flexShrink: 0 }} />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div id="aci-popup-title" style={{ fontSize: 15, fontWeight: 700, color: "#EDECEA", lineHeight: "20px" }}>Connect {activeCfg.name}</div>
-            <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", marginTop: 1 }}>Step {currentStep + 1} of {activeSteps.length}</div>
+            <div id="aci-popup-title" style={{ fontSize: 15, fontWeight: 700, color: "#EDECEA", lineHeight: "20px" }}>{t("connectName", { name: activeCfg.name })}</div>
+            <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", marginTop: 1 }}>{t("stepOf", { current: currentStep + 1, total: activeSteps.length })}</div>
           </div>
           <button
             onClick={() => setActiveKey(null)}
-            aria-label="Close"
+            aria-label={tCommon("close")}
             style={{ background: "none", border: "none", color: "rgba(237,236,234,0.65)", cursor: "pointer", padding: 4, borderRadius: 0, lineHeight: 1, flexShrink: 0 }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

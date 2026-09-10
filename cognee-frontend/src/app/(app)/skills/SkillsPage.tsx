@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import { useFilter } from "@/ui/layout/FilterContext";
 import { TrackPageView } from "@/modules/analytics";
@@ -61,6 +62,7 @@ function TagPill({ label }: { label: string }) {
 }
 
 export default function SkillsPage() {
+  const t = useTranslations("skills");
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset } = useFilter();
 
@@ -115,12 +117,12 @@ export default function SkillsPage() {
       );
       setSkillsByDataset(Object.fromEntries(entries));
     } catch {
-      setError("Failed to load skills.");
+      setError(t("loadFailed"));
     } finally {
       setScanning(false);
       setScanned(true);
     }
-  }, [cogniInstance, datasets]);
+  }, [cogniInstance, datasets, t]);
 
   useEffect(() => {
     if (!cogniInstance || isInitializing || datasets.length === 0) return;
@@ -178,23 +180,24 @@ export default function SkillsPage() {
       {/* ── Header ── */}
       <div style={{ padding: "24px 32px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>Skills</h1>
-          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>Procedural playbooks loaded by the agent, grouped by their maintainer.</p>
+          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>{t("title")}</h1>
+          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>{t("description")}</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button onClick={() => setUploadOpen(true)} disabled={datasets.length === 0}
             className="cursor-pointer"
             style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6, opacity: datasets.length === 0 ? 0.5 : 1, cursor: datasets.length === 0 ? "not-allowed" : "pointer" }}
-            title="Upload a SKILL.md and attach it to brains">
+            title={t("addSkillHint")}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            Add skill
+            {t("addSkill")}
           </button>
           <button onClick={scanAll} disabled={scanning}
             className="hover:bg-white/10 cursor-pointer"
             style={{ background: "rgba(255,255,255,0.06)", color: "rgba(237,236,234,0.7)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
-            title="Refresh">
+            title={t("refresh")}
+            aria-label={t("refresh")}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
               style={scanning ? { animation: "spin 1s linear infinite" } : undefined}>
               <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0115.36-6.36L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 01-15.36 6.36L3 16" />
@@ -208,7 +211,7 @@ export default function SkillsPage() {
         <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", marginInline: 32, marginBottom: 32, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, background: "rgba(0,0,0,0.82)", backdropFilter: "blur(20px)" }}>
           <div style={{ width: 264, flexShrink: 0, borderRight: "1px solid rgba(255,255,255,0.1)", display: "flex", flexDirection: "column" }}>
             <div style={{ height: 44, padding: "0 14px", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Brain</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{t("brain")}</span>
             </div>
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} style={{ padding: "11px 14px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
@@ -218,7 +221,7 @@ export default function SkillsPage() {
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
             <div style={{ height: 44, padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.45)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Scanning brains for skills…</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.45)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{t("scanning")}</span>
             </div>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
@@ -237,7 +240,7 @@ export default function SkillsPage() {
           {/* Column 1 — Brains that have skills */}
           <div style={{ width: 264, flexShrink: 0, borderRight: "1px solid rgba(255,255,255,0.1)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ height: 44, padding: "0 14px", borderBottom: "1px solid rgba(255,255,255,0.1)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Brain</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{t("brain")}</span>
               <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>{datasetsWithSkills.length}</span>
             </div>
             <div style={{ flex: 1, overflowY: "auto" }}>
@@ -275,16 +278,16 @@ export default function SkillsPage() {
                   <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{selectedDatasetName}</span>
                   <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>·</span>
                   <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>
-                    {query ? `${filteredSkills.length} of ${skills.length}` : skills.length} skill{skills.length !== 1 ? "s" : ""}
+                    {query ? `${filteredSkills.length} / ${skills.length}` : skills.length}
                   </span>
                 </>
               ) : (
-                <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Skills</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{t("title")}</span>
               )}
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search name, maintainer, tag…"
+                placeholder={t("searchPlaceholder")}
                 style={{ marginLeft: "auto", width: 220, height: 28, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, paddingInline: 10, fontSize: 12, color: "#EDECEA", fontFamily: "inherit", outline: "none" }}
                 onFocus={(e) => { e.target.style.borderColor = "#6510F4"; }}
                 onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
@@ -297,7 +300,7 @@ export default function SkillsPage() {
               ) : skills.length === 0 ? (
                 <SkillsEmptyState />
               ) : filteredSkills.length === 0 ? (
-                <CenterNote text={`No skills match "${query}"`} />
+                <CenterNote text={t("emptyInBrain")} />
               ) : (
                 filteredSkills.map((skill, i) => {
                   const open = expandedId === skill.id;
@@ -310,7 +313,7 @@ export default function SkillsPage() {
                         onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                       >
                         <ChevronIcon open={open} />
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: skill.isActive ? "#22C55E" : "#D4D4D8", flexShrink: 0 }} title={skill.isActive ? "Active" : "Inactive"} />
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: skill.isActive ? "#22C55E" : "#D4D4D8", flexShrink: 0 }} title={skill.isActive ? t("active") : t("inactive")} />
                         <span style={{ fontSize: 13, fontWeight: 500, color: "#EDECEA", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{skill.name}</span>
                         {skill.version && (
                           <span style={{ fontSize: 10, color: "rgba(237,236,234,0.35)", fontFamily: "monospace" }}>v{skill.version}</span>
@@ -318,8 +321,8 @@ export default function SkillsPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", flexShrink: 0 }}>
                           <button
                             onClick={(e) => { e.stopPropagation(); setShareSkill(skill); }}
-                            title="Add this skill to more brains"
-                            aria-label="Add to more brains"
+                            title={t("addToMoreBrains")}
+                            aria-label={t("addToMoreBrains")}
                             className="hover:bg-white/10 cursor-pointer"
                             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 6, background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(237,236,234,0.6)" }}
                           >
@@ -327,7 +330,7 @@ export default function SkillsPage() {
                               <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                             </svg>
                           </button>
-                          {skill.tags.slice(0, 2).map((t) => <TagPill key={t} label={t} />)}
+                          {skill.tags.slice(0, 2).map((tag) => <TagPill key={tag} label={tag} />)}
                           {skill.declaredTools.length > 0 && (
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, color: "rgba(237,236,234,0.45)" }}>
                               <ToolIcon /> {skill.declaredTools.length}
@@ -335,7 +338,7 @@ export default function SkillsPage() {
                           )}
                           {skill.maintainer
                             ? <MaintainerChip name={skill.maintainer} url={skill.maintainerUrl} />
-                            : <span style={{ fontSize: 11, color: "rgba(237,236,234,0.3)", fontStyle: "italic" }}>no maintainer</span>}
+                            : <span style={{ fontSize: 11, color: "rgba(237,236,234,0.3)", fontStyle: "italic" }}>{t("noMaintainer")}</span>}
                         </div>
                       </div>
 
@@ -350,33 +353,33 @@ export default function SkillsPage() {
                             <p style={{ fontSize: 13, color: "rgba(237,236,234,0.7)", margin: 0, lineHeight: 1.5, maxWidth: 680 }}>{skill.description}</p>
                           )}
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
-                            <DetailField label="Maintainer" value={skill.maintainer || "—"} href={skill.maintainerUrl} />
-                            <DetailField label="License" value={skill.license || "—"} />
-                            <DetailField label="Repository" value={skill.sourceRepoUrl ? "View source" : "—"} href={skill.sourceRepoUrl} />
-                            <DetailField label="Version" value={skill.version ? `v${skill.version}` : "—"} />
-                            <DetailField label="Status" value={skill.isActive ? "Active" : "Inactive"} />
-                            <DetailField label="Brains" value={skill.datasetScope.length ? String(skill.datasetScope.length) : "—"} />
-                            {skill.sourceDir && <DetailField label="Source dir" value={skill.sourceDir} />}
+                            <DetailField label={t("maintainer")} value={skill.maintainer || "—"} href={skill.maintainerUrl} />
+                            <DetailField label={t("license")} value={skill.license || "—"} />
+                            <DetailField label={t("repository")} value={skill.sourceRepoUrl ? t("viewSource") : "—"} href={skill.sourceRepoUrl} />
+                            <DetailField label={t("version")} value={skill.version ? `v${skill.version}` : "—"} />
+                            <DetailField label={t("status")} value={skill.isActive ? t("active") : t("inactive")} />
+                            <DetailField label={t("brain")} value={skill.datasetScope.length ? String(skill.datasetScope.length) : "—"} />
+                            {skill.sourceDir && <DetailField label={t("sourceDir")} value={skill.sourceDir} />}
                           </div>
                           {skill.declaredTools.length > 0 && (
                             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(237,236,234,0.35)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Declared tools</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(237,236,234,0.35)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{t("declaredTools")}</span>
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                {skill.declaredTools.map((t) => (
-                                  <span key={t} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "2px 8px", fontSize: 11, color: "rgba(237,236,234,0.7)", fontFamily: "monospace" }}>{t}</span>
+                                {skill.declaredTools.map((tool) => (
+                                  <span key={tool} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "2px 8px", fontSize: 11, color: "rgba(237,236,234,0.7)", fontFamily: "monospace" }}>{tool}</span>
                                 ))}
                               </div>
                             </div>
                           )}
                           {/* Skill content (procedure body) — lazily fetched from the detail endpoint */}
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(237,236,234,0.35)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Skill content</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(237,236,234,0.35)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{t("skillContent")}</span>
                             {loadingDetail ? (
                               <SkeletonBar width="70%" />
                             ) : procedure ? (
                               <pre style={{ margin: 0, maxHeight: 360, overflow: "auto", background: "rgba(0,0,0,0.45)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "12px 14px", fontSize: 12, lineHeight: 1.55, color: "rgba(237,236,234,0.8)", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{procedure}</pre>
                             ) : (
-                              <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)", fontStyle: "italic" }}>No content body for this skill.</span>
+                              <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)", fontStyle: "italic" }}>{t("noContent")}</span>
                             )}
                           </div>
                         </div>
@@ -392,9 +395,9 @@ export default function SkillsPage() {
       ) : (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", paddingInline: 32, paddingBottom: 32 }}>
           <div style={{ flex: 1, background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 48 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>No skills registered yet</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>{t("emptyTitle")}</span>
             <p style={{ fontSize: 14, color: "rgba(237,236,234,0.35)", margin: 0, maxWidth: 380, textAlign: "center" }}>
-              Skills are scoped to a brain. Once a brain has skills ingested via the cognee skills pipeline, it will appear here — brains without skills are hidden.
+              {t("description")}
             </p>
           </div>
         </div>
@@ -432,6 +435,7 @@ function CenterNote({ text }: { text: string }) {
 }
 
 function SkillsEmptyState() {
+  const t = useTranslations("skills");
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 10, padding: 24 }}>
       <div style={{ width: 44, height: 44, background: "rgba(188,155,255,0.20)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -439,10 +443,7 @@ function SkillsEmptyState() {
           <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.8 2.8-2.1-2.1z" />
         </svg>
       </div>
-      <span style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", fontWeight: 500 }}>No skills in this brain</span>
-      <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)", textAlign: "center", maxWidth: 280 }}>
-        Skills appear here once they are ingested into this brain via the cognee skills pipeline.
-      </span>
+      <span style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", fontWeight: 500 }}>{t("emptyInBrain")}</span>
     </div>
   );
 }

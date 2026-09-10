@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslations } from "next-intl";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import {
   DEFAULT_PIPELINE_SETTINGS,
@@ -108,6 +109,8 @@ function ToggleField({
 }
 
 export default function ExtractionSettingsModal({ onClose }: Props) {
+  const t = useTranslations("navigation");
+  const tCommon = useTranslations("common");
   const { cogniInstance } = useCogniInstance();
   const [values, setValues] = useState<PipelineSettings>(getPipelineSettingsFromStorage);
   const [saved, setSaved] = useState<PipelineSettings>(getPipelineSettingsFromStorage);
@@ -147,7 +150,7 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
       setSaved(values);
       onClose();
     } catch {
-      setError("Failed to save settings. Please try again.");
+      setError(t("extraction.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -182,10 +185,10 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
         {/* Header */}
         <div style={{ marginBottom: 20 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA", margin: 0 }}>
-            Extraction Settings
+            {t("extraction.title")}
           </h2>
           <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: "4px 0 0" }}>
-            Default parameters for knowledge extraction and search
+            {t("extraction.description")}
           </p>
         </div>
 
@@ -195,29 +198,29 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
         {/* Fields */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <SelectField
-            label="Chunk Size"
-            description="Characters per document chunk during ingestion"
+            label={t("extraction.chunkSize")}
+            description={t("extraction.chunkSizeHint")}
             value={values.chunkSize}
             options={CHUNK_SIZE_OPTIONS}
             onChange={(v) => setValues((s) => ({ ...s, chunkSize: v }))}
           />
           <SelectField
-            label="Chunks Per Batch"
-            description="Chunks processed in parallel during cognification"
+            label={t("extraction.chunksPerBatch")}
+            description={t("extraction.chunksPerBatchHint")}
             value={values.chunksPerBatch}
             options={CHUNKS_PER_BATCH_OPTIONS}
             onChange={(v) => setValues((s) => ({ ...s, chunksPerBatch: v }))}
           />
           <SelectField
-            label="Top-K Results"
-            description="Maximum results returned per search query"
+            label={t("extraction.topK")}
+            description={t("extraction.topKHint")}
             value={values.topK}
             options={TOP_K_OPTIONS}
             onChange={(v) => setValues((s) => ({ ...s, topK: v }))}
           />
           <ToggleField
-            label="Source references"
-            description="Attach citations and provenance links to recall answers"
+            label={t("extraction.sourceRefs")}
+            description={t("extraction.sourceRefsHint")}
             checked={values.includeReferences}
             onChange={(v) => setValues((s) => ({ ...s, includeReferences: v }))}
           />
@@ -250,7 +253,7 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
               marginRight: "auto",
             }}
           >
-            Reset
+            {tCommon("reset")}
           </button>
           <button
             onClick={handleSave}
@@ -269,7 +272,7 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
               transition: "background 0.15s",
             }}
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? tCommon("saving") : tCommon("save")}
           </button>
         </div>
       </div>

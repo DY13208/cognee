@@ -1,6 +1,7 @@
 "use client";
 
 import { SegmentedControl } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import { PreferredOs, useOsPreference } from "@/ui/layout/OsPreferenceContext";
 
 // Matches the purple accent + dark glass card styling used throughout the
@@ -15,17 +16,18 @@ function label(text: string, active: boolean): React.ReactNode {
 
 export function OsToggle(): React.JSX.Element {
   const { os, setOs } = useOsPreference();
+  const t = useTranslations("common");
 
   return (
     <SegmentedControl
       size="xs"
-      aria-label="Operating system"
+      aria-label={t("osToggle")}
       color={ACCENT_PURPLE}
       value={os}
       onChange={(value) => setOs(value as PreferredOs)}
       data={[
-        { label: label("Mac", os === "mac"), value: "mac" },
-        { label: label("Windows", os === "windows"), value: "windows" },
+        { label: label(t("mac"), os === "mac"), value: "mac" },
+        { label: label(t("windows"), os === "windows"), value: "windows" },
       ]}
       styles={{ root: { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" } }}
     />

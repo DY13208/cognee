@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { Loader } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import getConnectionStatus from "@/modules/integrations/getConnectionStatus";
 import linkSlackAccount from "@/modules/integrations/linkSlackAccount";
 import { useTenant } from "@/modules/tenant/TenantContext";
@@ -31,14 +32,15 @@ interface LinkSlackPageProps {
  * key against a workspace that has nothing to do with that Slack team.
  */
 export default function LinkSlackPage({ code }: LinkSlackPageProps): ReactElement {
+  const t = useTranslations("integrations.linkSlack");
   const { tenant, availableTenants } = useTenant();
   const tenantId = tenant?.tenant_id ?? null;
   // Same derivation the top bar uses: the tenant list carries the display name,
   // and the active tenant's own name is the fallback before that list resolves.
   const workspaceName =
-    availableTenants.find((t) => t.id === tenantId)?.name ?? tenant?.tenant_name ?? "this workspace";
+    availableTenants.find((item) => item.id === tenantId)?.name ?? tenant?.tenant_name ?? t("thisWorkspace");
   const [phase, setPhase] = useState<Phase>("checking");
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   const codeTeamId = teamIdFromLinkCode(code);
 
@@ -60,13 +62,13 @@ export default function LinkSlackPage({ code }: LinkSlackPageProps): ReactElemen
   const confirm = useCallback(async () => {
     if (!tenantId) return;
     setPhase("linking");
-    setError(null);
+    setFailed(false);
     const result = await linkSlackAccount(tenantId, code);
     if (result.success) {
       setPhase("done");
       return;
     }
-    setError(result.error ?? "Could not connect your account.");
+    setFailed(true);
     setPhase("ready");
   }, [tenantId, code]);
 
@@ -75,13 +77,12 @@ export default function LinkSlackPage({ code }: LinkSlackPageProps): ReactElemen
       <div className="mx-auto w-full max-w-[560px] px-8 pt-10 pb-10">
         <div className={CARD}>
           <h1 className="m-0 mb-2 text-[18px] font-bold tracking-[-0.01em] text-[var(--color-cognee-fg,#EDECEA)]">
-            Connect your Slack account
+            {t("title")}
           </h1>
 
           {!codeTeamId ? (
             <p className="m-0 text-[13px] leading-[1.6] text-[var(--color-cognee-fg,#EDECEA)]/55">
-              This link is missing or malformed. Run <code>/cognee-link</code> in Slack to get a new
-              one; each link works for 10 minutes.
+              {t("invalid")}
             </p>
           ) : phase === "done" ? (
             <div>
@@ -90,25 +91,21 @@ export default function LinkSlackPage({ code }: LinkSlackPageProps): ReactElemen
                 account can see.
               </p>
               <Link href="/integrations" className={LINK}>
-                Back to Integrations
+                {t("back")}
               </Link>
             </div>
           ) : phase === "checking" ? (
             <p className="m-0 flex items-center gap-2 text-[13px] text-[var(--color-cognee-fg,#EDECEA)]/55">
               <Loader size={14} color="#BC9BFF" />
-              Checking this workspace…
+              {t("checking")}
             </p>
           ) : phase === "notConnected" ? (
             <p className="m-0 text-[13px] leading-[1.6] text-[var(--color-cognee-fg,#EDECEA)]/55">
-              <strong className="font-semibold text-[var(--color-cognee-fg,#EDECEA)]">{workspaceName}</strong> has no Slack
-              connection, so there is nothing to link your account to here. Switch to the workspace
-              your team connected Slack in, then open this link again.
+              {t("notConnected")}
             </p>
           ) : phase === "wrongWorkspace" ? (
             <p className="m-0 text-[13px] leading-[1.6] text-[var(--color-cognee-warning,#F59E0B)]">
-              This link came from a different Slack workspace than the one connected to{" "}
-              <strong className="font-semibold">{workspaceName}</strong>. Switch to the matching Cognee
-              workspace at the top of the page, then open the link again.
+              {t("wrongWorkspace")}
             </p>
           ) : (
             <div>
@@ -118,9 +115,9 @@ export default function LinkSlackPage({ code }: LinkSlackPageProps): ReactElemen
                 <code>/cognee-recall</code> answers as you and only from what your account can see.
                 Nobody else in Slack can use your link.
               </p>
-              {error && <p className="m-0 mb-3 text-[13px] text-[var(--color-cognee-danger-fg,#FF8A8A)]">{error}</p>}
+              {failed && <p className="m-0 mb-3 text-[13px] text-[var(--color-cognee-danger-fg,#FF8A8A)]">{t("failed")}</p>}
               <button onClick={() => void confirm()} disabled={phase === "linking"} className={PRIMARY}>
-                {phase === "linking" ? "Connecting…" : "Connect my account"}
+                {phase === "linking" ? t("connecting") : t("connectMine")}
               </button>
             </div>
           )}

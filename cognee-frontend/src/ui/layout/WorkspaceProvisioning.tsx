@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import SkeletonBar from "@/ui/elements/SkeletonBar";
 
 /**
@@ -8,6 +9,7 @@ import SkeletonBar from "@/ui/elements/SkeletonBar";
  * those pages never show broken/empty data against an unready pod.
  */
 export default function WorkspaceProvisioning() {
+  const t = useTranslations("common");
   return (
     <div
       style={{
@@ -37,8 +39,7 @@ export default function WorkspaceProvisioning() {
         <SkeletonBar width={160} height={8} />
       </div>
       <p style={{ margin: 0, fontSize: 14, color: "rgba(237,236,234,0.6)", maxWidth: 360, lineHeight: "22px" }}>
-        Your workspace is being set up — usually takes under a minute.
-        This page unlocks as soon as it&apos;s ready.
+        {t("workspaceProvisioning")}
       </p>
     </div>
   );

@@ -1,20 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import SkeletonBar from "@/ui/elements/SkeletonBar";
 import type { EnrichmentRun } from "@/modules/sessions/getSessions";
 import { formatDate, formatRelativeTime } from "./format";
-
-const INFO_TEXT =
-  "As a session accumulates turns or goes idle, Cognee automatically runs improve(): the session's questions, answers and feedback are bridged into the permanent knowledge graph — weighting existing memories by feedback, persisting the conversation, distilling reusable lessons and enriching the graph. Future sessions recall from the enriched graph.";
+import type { Locale } from "@/i18n/config";
 
 const STATUS_META = {
-  completed: { color: "#22C55E", label: "Completed" },
-  running: { color: "#6510F4", label: "Running" },
-  failed: { color: "#EF4444", label: "Failed" },
+  completed: { color: "#22C55E" },
+  running: { color: "#6510F4" },
+  failed: { color: "#EF4444" },
 } as const;
 
-function InfoIcon() {
+function InfoIcon({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   return (
     <span
@@ -36,7 +35,7 @@ function InfoIcon() {
           fontWeight: 400, letterSpacing: "normal", textTransform: "none",
           boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
         }}>
-          {INFO_TEXT}
+          {text}
         </span>
       )}
     </span>
@@ -53,10 +52,12 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function SelfImprovementCard({ datasetId, runs, loading }: { datasetId: string | null; runs: EnrichmentRun[]; loading: boolean }) {
+  const t = useTranslations("sessions");
+  const locale = useLocale() as Locale;
   const info = runs[0] ?? null;
   const status = info ? STATUS_META[info.status] : null;
-  const lastFull = info ? formatDate(info.created_at) : null;
-  const lastRel = info?.created_at ? formatRelativeTime(info.created_at) : null;
+  const lastFull = info ? formatDate(info.created_at, locale) : null;
+  const lastRel = info?.created_at ? formatRelativeTime(info.created_at, locale) : null;
 
   return (
     <div style={{
@@ -73,8 +74,8 @@ export default function SelfImprovementCard({ datasetId, runs, loading }: { data
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#BC9BFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.2 2.2m8.4 8.4l2.2 2.2M5.6 18.4l2.2-2.2m8.4-8.4l2.2-2.2" />
         </svg>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#BC9BFF", letterSpacing: "0.06em", textTransform: "uppercase" }}>Self-improvement</span>
-        <InfoIcon />
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#BC9BFF", letterSpacing: "0.06em", textTransform: "uppercase" }}>{t("selfImprovement.title")}</span>
+        <InfoIcon text={t("selfImprovement.info")} />
       </div>
 
       {loading ? (
@@ -84,23 +85,23 @@ export default function SelfImprovementCard({ datasetId, runs, loading }: { data
         </div>
       ) : !info ? (
         <span style={{ fontSize: 12, color: "rgba(237,236,234,0.55)", lineHeight: 1.5 }}>
-          No graph enrichment yet. Improve runs automatically once this session accumulates turns or goes idle.
+          {t("selfImprovement.empty")}
         </span>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <Row
-            label="Last graph enrichment"
+            label={t("selfImprovement.lastEnrichment")}
             value={
               <span title={lastFull ?? undefined} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                {status && <span style={{ width: 6, height: 6, borderRadius: "50%", background: status.color, flexShrink: 0 }} title={status.label} />}
+                {status && <span style={{ width: 6, height: 6, borderRadius: "50%", background: status.color, flexShrink: 0 }} title={t(`status.${info.status}`)} />}
                 {lastFull}{lastRel ? ` · ${lastRel}` : ""}
-                {info.status === "running" && <span style={{ fontSize: 11, color: "rgba(188,155,255,0.8)" }}>in progress</span>}
-                {info.status === "failed" && <span style={{ fontSize: 11, color: "#EF4444" }}>failed</span>}
+                {info.status === "running" && <span style={{ fontSize: 11, color: "rgba(188,155,255,0.8)" }}>{t("status.inProgress")}</span>}
+                {info.status === "failed" && <span style={{ fontSize: 11, color: "#EF4444" }}>{t("status.failed")}</span>}
               </span>
             }
           />
           <Row
-            label="Dataset"
+            label={t("dataset")}
             value={info.dataset_name ?? (
               <span style={{ fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace', fontSize: 11 }}>{datasetId}</span>
             )}

@@ -5,6 +5,7 @@ import { CLAUDE_MARKETPLACE_ADD, CLAUDE_PLUGIN_INSTALL, CODEX_HOOKS_ENABLE, CODE
 import { exportEnvVar } from "@/utils/osCommands";
 import type { PreferredOs } from "@/ui/layout/OsPreferenceContext";
 import { useOnboardingTrackEvent } from "../useOnboardingTrackEvent";
+import { useTranslations } from "next-intl";
 
 export interface AgentOnboardingCard {
   title: string;
@@ -33,6 +34,7 @@ export function OnboardingInlineCode({ code, toCopy, loading, placeholder = "Pre
 }) {
   const [copied, setCopied] = useState(false);
   const track = useOnboardingTrackEvent();
+  const t = useTranslations("Setup");
   const copy = () => {
     if (loading) return;
     navigator.clipboard.writeText(toCopy ?? code);
@@ -54,7 +56,7 @@ export function OnboardingInlineCode({ code, toCopy, loading, placeholder = "Pre
         className="cursor-pointer"
         style={{ background: "#27272A", border: "1px solid #3F3F46", borderRadius: 4, padding: "4px 8px", fontSize: 11, color: loading ? "rgba(237,236,234,0.35)" : "rgba(237,236,234,0.65)", flexShrink: 0 }}
       >
-        {copied ? "Copied!" : "Copy"}
+        {copied ? t("copied") : t("copy")}
       </button>
     </div>
   );
@@ -64,6 +66,7 @@ export function OnboardingInlineCode({ code, toCopy, loading, placeholder = "Pre
 // while we wait for the agent's first session, flipping to a solid green dot +
 // "Connected" once a new session is detected in Cognee Cloud.
 export function ConnectStatus({ verified }: { verified: boolean }) {
+  const t = useTranslations("Setup");
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
       <span
@@ -75,7 +78,7 @@ export function ConnectStatus({ verified }: { verified: boolean }) {
         }}
       />
       <span style={{ color: verified ? "#22C55E" : "rgba(237,236,234,0.5)" }}>
-        {verified ? "Connected — activity detected in Cognee Cloud" : "Waiting for a connection…"}
+        {verified ? t("agent.connected") : t("agent.waiting")}
       </span>
     </div>
   );
@@ -91,31 +94,32 @@ export function buildAgentOnboardingCards(params: {
   goToDashboard: () => void;
   os: PreferredOs;
 }): AgentOnboardingCard[] {
+  const t = useTranslations("Setup");
   const { agent, name, baseUrl, credsCode, credsReady, connectVerified, goToDashboard, os } = params;
 
   const credsCard: AgentOnboardingCard = {
-    title: "Copy your API credentials",
-    description: "Open a terminal and run these to point your agent at your Cognee memory.",
-    node: <OnboardingInlineCode code={exportEnvVar(os, "COGNEE_BASE_URL", baseUrl)} toCopy={credsCode} loading={!credsReady} placeholder="Preparing your credentials…" agent={agent} copyTarget="api_credentials" />,
+    title: t("agent.credentialsTitle"),
+    description: t("agent.credentialsDescription"),
+    node: <OnboardingInlineCode code={exportEnvVar(os, "COGNEE_BASE_URL", baseUrl)} toCopy={credsCode} loading={!credsReady} placeholder={t("agent.credentialsPreparing")} agent={agent} copyTarget="api_credentials" />,
   };
   const allSetCard: AgentOnboardingCard = {
-    title: "You're all set",
-    description: "The loop you just saw — upload, exit, reopen, and your agent still remembers — is the whole point. Here's why it works:",
+    title: t("agent.allSet"),
+    description: t("agent.allSetDescription"),
     node: (
       <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 14, borderRadius: 10, background: "rgba(237,236,234,0.04)", border: "1px solid rgba(237,236,234,0.10)" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA" }}>What just happened</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA" }}>{t("agent.whatHappened")}</div>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: "19px", color: "rgba(237,236,234,0.6)" }}>
-            <li>The Cognee plugin hooks into your agent&apos;s lifecycle — no curl or manual API calls — and captures your session as you work.</li>
-            <li>When a session ends (e.g. you <strong style={{ color: "#EDECEA" }}>exit</strong>), it consolidates that session into your Cognee Cloud knowledge graph.</li>
-            <li>On every new session, it automatically recalls your memory back from the cloud.</li>
+            <li>{t("agent.lifeCycle")}</li>
+            <li>{t("agent.sessionEnd")}</li>
+            <li>{t("agent.newSession")}</li>
           </ul>
           <div style={{ fontSize: 13, lineHeight: "19px", color: "rgba(237,236,234,0.6)" }}>
-            That&apos;s why, after running <code>/exit</code> and reopening, your agent still knew what you uploaded — sessions are disposable; your memory isn&apos;t.
+            {t("agent.why")}
           </div>
         </div>
         <button onClick={goToDashboard} className="cursor-pointer" style={{ background: "#BC9BFF", border: "none", borderRadius: 8, padding: "11px 32px", fontSize: 14, fontWeight: 500, color: "#1e1e1c", letterSpacing: "-0.01em" }}>
-          Go to Dashboard →
+          {t("agent.dashboard")}
         </button>
       </div>
     ),
@@ -125,8 +129,8 @@ export function buildAgentOnboardingCards(params: {
     ? [
         credsCard,
         {
-          title: "Install the Cognee plugin",
-          description: "Run these in your terminal one at a time — register the Cognee marketplace, then install the memory plugin.",
+          title: t("agent.installTitle"),
+          description: t("agent.installClaude"),
           node: (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
               <OnboardingInlineCode code={CLAUDE_MARKETPLACE_ADD} agent={agent} copyTarget="marketplace_add" />
@@ -135,16 +139,16 @@ export function buildAgentOnboardingCards(params: {
           ),
         },
         {
-          title: "Upload something to Cognee",
-          description: "Pick one and paste it into Claude — it stores the content in your Cognee memory so you can recall it in the next step.",
+          title: t("agent.uploadTitle"),
+          description: t("agent.uploadDescription", { name: "Claude" }),
           node: (
             <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>Option A · Your existing memory</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{t("agent.optionA")}</div>
                 <OnboardingInlineCode code={UPLOAD_MEMORY_PROMPT} agent={agent} copyTarget="upload_memory_prompt" />
               </div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>Option B · Try it with a sample</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{t("agent.optionB")}</div>
                 <OnboardingInlineCode code={UPLOAD_SAMPLE_PROMPT} agent={agent} copyTarget="upload_sample_prompt" />
               </div>
               <ConnectStatus verified={connectVerified} />
@@ -152,18 +156,18 @@ export function buildAgentOnboardingCards(params: {
           ),
         },
         {
-          title: connectVerified ? "Connected — activity detected" : "Recall it from Cognee",
+          title: connectVerified ? t("agent.detected") : t("agent.recall"),
           description: connectVerified
-            ? "We detected your new session in Cognee Cloud — you're connected. You're all set."
-            : "Now ask Claude a question about what you just uploaded — it should answer from Cognee Cloud. (For the sample, use the question below.) This step completes on its own once your session shows up.",
+            ? t("agent.detectedDescription")
+            : t("agent.recallDescription", { name: "Claude" }),
           node: (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>First, run this to start a fresh session</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{t("agent.freshSession")}</div>
                 <OnboardingInlineCode code="/exit" agent={agent} copyTarget="exit_command" />
               </div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>Then ask</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{t("agent.thenAsk")}</div>
                 <OnboardingInlineCode code={RECALL_SAMPLE_PROMPT} agent={agent} copyTarget="recall_sample_prompt" />
               </div>
               <ConnectStatus verified={connectVerified} />
@@ -175,8 +179,8 @@ export function buildAgentOnboardingCards(params: {
     : [
         credsCard,
         {
-          title: "Install the Cognee plugin",
-          description: "Run these in your terminal one at a time — enable Codex hooks, register the Cognee marketplace, then install the memory plugin.",
+          title: t("agent.installTitle"),
+          description: t("agent.installCodex"),
           node: (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
               <OnboardingInlineCode code={CODEX_HOOKS_ENABLE} agent={agent} copyTarget="hooks_enable" />
@@ -186,16 +190,16 @@ export function buildAgentOnboardingCards(params: {
           ),
         },
         {
-          title: "Upload something to Cognee",
-          description: `Pick one and paste it into ${name} — it stores the content in your Cognee memory so you can recall it in the next step.`,
+          title: t("agent.uploadTitle"),
+          description: t("agent.uploadDescription", { name }),
           node: (
             <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%" }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>Option A · Your existing memory</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{t("agent.optionA")}</div>
                 <OnboardingInlineCode code={UPLOAD_MEMORY_PROMPT} agent={agent} copyTarget="upload_memory_prompt" />
               </div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>Option B · Try it with a sample</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{t("agent.optionB")}</div>
                 <OnboardingInlineCode code={UPLOAD_SAMPLE_PROMPT} agent={agent} copyTarget="upload_sample_prompt" />
               </div>
               <ConnectStatus verified={connectVerified} />
@@ -203,18 +207,18 @@ export function buildAgentOnboardingCards(params: {
           ),
         },
         {
-          title: connectVerified ? "Connected — activity detected" : "Recall it from Cognee",
+          title: connectVerified ? t("agent.detected") : t("agent.recall"),
           description: connectVerified
-            ? "We detected your new session in Cognee Cloud — you're connected. You're all set."
-            : `Now ask ${name} a question about what you just uploaded — it should answer from Cognee Cloud. (For the sample, use the question below.) This step completes on its own once your session shows up.`,
+            ? t("agent.detectedDescription")
+            : t("agent.recallDescription", { name }),
           node: (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>First, run this to start a fresh session</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{t("agent.freshSession")}</div>
                 <OnboardingInlineCode code="/exit" agent={agent} copyTarget="exit_command" />
               </div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>Then ask</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{t("agent.thenAsk")}</div>
                 <OnboardingInlineCode code={RECALL_SAMPLE_PROMPT} agent={agent} copyTarget="recall_sample_prompt" />
               </div>
               <ConnectStatus verified={connectVerified} />

@@ -5,11 +5,19 @@ import {
   MCP_STDIO_CONFIG, HERMES_MCP_CONFIG, genericSkillInstall, fillTemplate,
   UPLOAD_MEMORY_PROMPT, UPLOAD_SAMPLE_PROMPT, RECALL_SAMPLE_PROMPT,
 } from "@/data/prompts";
-import type { SetupConnectorCfg } from "./types";
+import type { SetupConnectorCfg, TranslateFn } from "./types";
 import {
   imgIcon, credStep, ApiIcon,
   installUvStep, InfoBox, ConfigPreview, CursorConfigPreview, GeminiConfigPreview,
 } from "./connectorHelpers";
+
+function optionExisting(t?: TranslateFn): string {
+  return t ? t("optionExistingMemory") : "Option A · Your existing memory";
+}
+
+function optionSample(t?: TranslateFn): string {
+  return t ? t("optionSample") : "Option B · Try it with a sample";
+}
 
 export const AGENT_CARDS: SetupConnectorCfg[] = [
   {
@@ -18,8 +26,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
     cta: "Connect via plugin",
     description: "Give Claude Code persistent memory across sessions.",
     icon: imgIcon("/visuals/logos/claude.svg", "Claude Code"),
-    buildSteps: (baseUrl, apiKey, loading) => [
-      credStep(baseUrl, apiKey, loading),
+    buildSteps: (baseUrl, apiKey, loading, t) => [
+      credStep(baseUrl, apiKey, loading, t),
       {
         title: "Install the Cognee plugin",
         description: "Run these in your terminal one at a time — register the Cognee marketplace, then install the memory plugin.",
@@ -32,8 +40,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
         title: "Upload something to Cognee",
         description: "Pick one and paste it into Claude Code — it stores the content in your Cognee memory so you can recall it next.",
         codeBlocks: [
-          { label: "Option A · Your existing memory", code: UPLOAD_MEMORY_PROMPT },
-          { label: "Option B · Try it with a sample", code: UPLOAD_SAMPLE_PROMPT },
+          { label: optionExisting(t), code: UPLOAD_MEMORY_PROMPT },
+          { label: optionSample(t), code: UPLOAD_SAMPLE_PROMPT },
         ],
       },
       {
@@ -56,8 +64,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
     cta: "Connect via plugin",
     description: "Give Codex persistent memory across sessions.",
     icon: imgIcon("/visuals/logos/codex.svg", "Codex"),
-    buildSteps: (baseUrl, apiKey, loading) => [
-      credStep(baseUrl, apiKey, loading),
+    buildSteps: (baseUrl, apiKey, loading, t) => [
+      credStep(baseUrl, apiKey, loading, t),
       {
         title: "Install the Cognee plugin",
         description: "Run these in your terminal one at a time — enable Codex hooks, register the Cognee marketplace, then install the memory plugin.",
@@ -71,8 +79,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
         title: "Upload something to Cognee",
         description: "Pick one and paste it into Codex — it stores the content in your Cognee memory so you can recall it next.",
         codeBlocks: [
-          { label: "Option A · Your existing memory", code: UPLOAD_MEMORY_PROMPT },
-          { label: "Option B · Try it with a sample", code: UPLOAD_SAMPLE_PROMPT },
+          { label: optionExisting(t), code: UPLOAD_MEMORY_PROMPT },
+          { label: optionSample(t), code: UPLOAD_SAMPLE_PROMPT },
         ],
       },
       {
@@ -95,8 +103,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
     cta: "Connect via prompts",
     description: "Recall your Cognee memory in every OpenClaw conversation.",
     icon: imgIcon("/visuals/logos/openclaw.svg", "OpenClaw"),
-    buildSteps: (baseUrl, apiKey, loading) => [
-      credStep(baseUrl, apiKey, loading),
+    buildSteps: (baseUrl, apiKey, loading, t) => [
+      credStep(baseUrl, apiKey, loading, t),
       // OpenClaw only loads AGENTS.md from its workspace directory, not the project root.
       { title: "Create the workspace AGENTS.md", description: "Run this command to add the Cognee memory instructions to OpenClaw's workspace. An existing AGENTS.md is backed up to AGENTS.md.bak — merge it manually afterwards.", code: "~/.openclaw/workspace/AGENTS.md", codeToCopy: `mkdir -p ~/.openclaw/workspace && [ -f ~/.openclaw/workspace/AGENTS.md ] && cp ~/.openclaw/workspace/AGENTS.md ~/.openclaw/workspace/AGENTS.md.bak; cat > ~/.openclaw/workspace/AGENTS.md << 'COGNEE_EOF'\n${OPENCLAW_PROMPT}\nCOGNEE_EOF` },
       { title: "Test the connection", description: `Open OpenClaw and ask: "What do you know from cognee?" — if it responds with knowledge from your brain, you're connected.` },
@@ -108,8 +116,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
     cta: "Connect via MCP",
     description: "Recall your Cognee memory in every conversation.",
     icon: imgIcon("/visuals/logos/claude.svg", "Claude Desktop"),
-    buildSteps: (baseUrl, apiKey, loading) => [
-      installUvStep(),
+    buildSteps: (baseUrl, apiKey, loading, t) => [
+      installUvStep(t),
       {
         title: "Open the MCP config file",
         description: (
@@ -154,8 +162,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
     cta: "Connect via MCP",
     description: "Ground Cursor's agent in your Cognee memory.",
     icon: imgIcon("/visuals/logos/cursor.svg", "Cursor"),
-    buildSteps: (baseUrl, apiKey, loading) => [
-      installUvStep(),
+    buildSteps: (baseUrl, apiKey, loading, t) => [
+      installUvStep(t),
       {
         title: "Open Cursor's MCP config",
         description: (
@@ -254,8 +262,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
     cta: "Connect via MCP",
     description: "Ground Gemini CLI in your Cognee memory.",
     icon: imgIcon("/visuals/logos/gemini.svg", "Gemini CLI"),
-    buildSteps: (baseUrl, apiKey, loading) => [
-      installUvStep(),
+    buildSteps: (baseUrl, apiKey, loading, t) => [
+      installUvStep(t),
       {
         title: "Open your Gemini config file",
         description: (
@@ -317,8 +325,8 @@ export const AGENT_CARDS: SetupConnectorCfg[] = [
     cta: "Connect via API or MCP",
     description: "Call Cognee directly from any HTTP client or custom agent.",
     icon: <ApiIcon />,
-    buildSteps: (baseUrl, apiKey, loading) => [
-      credStep(baseUrl, apiKey, loading),
+    buildSteps: (baseUrl, apiKey, loading, t) => [
+      credStep(baseUrl, apiKey, loading, t),
       {
         title: "Query the REST API",
         description: "Send a recall query to your Cognee endpoint from any HTTP client or language.",

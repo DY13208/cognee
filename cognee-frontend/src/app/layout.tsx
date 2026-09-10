@@ -10,6 +10,9 @@ import { Notifications } from "@mantine/notifications";
 import { OsPreferenceProvider } from "@/ui/layout/OsPreferenceContext";
 import QueryProvider from "@/modules/query/QueryProvider";
 import RuntimeConfigScript from "@/modules/config/RuntimeConfigScript";
+import { NextIntlClientProvider } from "next-intl";
+import { getMessages } from "@/i18n/getMessages";
+import { getRequestLocale } from "@/i18n/getRequestLocale";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,13 +34,16 @@ export const metadata: Metadata = {
   description: "Build AI memory with knowledge graphs.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = await getRequestLocale();
+  const messages = getMessages(locale);
+
   return (
-    <html lang="en" className="h-full" {...mantineHtmlProps}>
+    <html lang={locale} className="h-full" {...mantineHtmlProps}>
       <head>
         <RuntimeConfigScript />
       </head>
@@ -45,12 +51,14 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
       >
         <QueryProvider>
-          <MantineProvider theme={theme}>
-            <Notifications position="top-right" zIndex={10001} />
-            <OsPreferenceProvider>
-              {children}
-            </OsPreferenceProvider>
-          </MantineProvider>
+          <NextIntlClientProvider locale={locale} messages={messages}>
+            <MantineProvider theme={theme}>
+              <Notifications position="top-right" zIndex={10001} />
+              <OsPreferenceProvider>
+                {children}
+              </OsPreferenceProvider>
+            </MantineProvider>
+          </NextIntlClientProvider>
         </QueryProvider>
       </body>
     </html>

@@ -2,7 +2,9 @@
 
 import type { ReactElement } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import type { SetupConnectorCfg, StepDef } from "@/modules/integrations/types";
+import { translateStepText } from "@/modules/integrations/stepTitleMap";
 import InlineCodeBlock from "./InlineCodeBlock";
 
 interface SetupWizardModalProps {
@@ -15,6 +17,8 @@ interface SetupWizardModalProps {
 
 export default function SetupWizardModal({ cfg, steps, currentStep, onClose, onStepSelect }: SetupWizardModalProps): ReactElement {
   const router = useRouter();
+  const t = useTranslations("integrations");
+  const tCommon = useTranslations("common");
 
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
@@ -23,10 +27,10 @@ export default function SetupWizardModal({ cfg, steps, currentStep, onClose, onS
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
           <div style={{ width: 24, height: 24, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>{cfg.icon}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#EDECEA", lineHeight: "20px" }}>Connect {cfg.name}</div>
-            <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", marginTop: 1 }}>Step {currentStep + 1} of {steps.length}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#EDECEA", lineHeight: "20px" }}>{t("connectName", { name: cfg.name })}</div>
+            <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", marginTop: 1 }}>{t("stepOf", { current: currentStep + 1, total: steps.length })}</div>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(237,236,234,0.65)", cursor: "pointer", padding: 4, borderRadius: 6, lineHeight: 1 }}>
+          <button onClick={onClose} aria-label={tCommon("close")} style={{ background: "none", border: "none", color: "rgba(237,236,234,0.65)", cursor: "pointer", padding: 4, borderRadius: 6, lineHeight: 1 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -34,6 +38,7 @@ export default function SetupWizardModal({ cfg, steps, currentStep, onClose, onS
         {steps.map((step, i) => {
           const isStepActive = currentStep === i;
           const isDone = i < currentStep;
+          const title = translateStepText(step.title, t);
           return (
             <div key={i} className="aci-step-row" data-active={isStepActive ? "true" : undefined} onClick={() => onStepSelect(i)} style={{ borderBottom: i < steps.length - 1 ? "1px solid rgba(255,255,255,0.07)" : "none", cursor: isStepActive ? "default" : "pointer" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, padding: isStepActive ? "14px 20px 0" : "14px 20px" }}>
@@ -43,9 +48,9 @@ export default function SetupWizardModal({ cfg, steps, currentStep, onClose, onS
                     : <span style={{ fontSize: 11, fontWeight: 700, color: isStepActive ? "#fff" : "#A1A1AA", lineHeight: 1 }}>{i + 1}</span>}
                 </div>
                 <span style={{ flex: 1, fontSize: 14, fontWeight: isStepActive ? 500 : 400, color: isDone ? "rgba(237,236,234,0.4)" : isStepActive ? "#EDECEA" : "rgba(237,236,234,0.35)" }}>
-                  {step.title}
+                  {title}
                 </span>
-                {isDone && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", background: "#DCFCE7", color: "#15803D", borderRadius: 100, padding: "2px 8px", flexShrink: 0 }}>Done</span>}
+                {isDone && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", background: "#DCFCE7", color: "#15803D", borderRadius: 100, padding: "2px 8px", flexShrink: 0 }}>{t("stepDone")}</span>}
               </div>
               <div style={{ display: "grid", gridTemplateRows: isStepActive ? "1fr" : "0fr", opacity: isStepActive ? 1 : 0, transition: "grid-template-rows 260ms ease, opacity 200ms ease" }}>
                 <div style={{ overflow: "hidden" }}>
@@ -57,7 +62,7 @@ export default function SetupWizardModal({ cfg, steps, currentStep, onClose, onS
                         {step.codeBlocks.map((cb, j) => (
                           cb.label ? (
                             <div key={j}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{cb.label}</div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#EDECEA", marginBottom: 6 }}>{translateStepText(cb.label, t)}</div>
                               <InlineCodeBlock code={cb.code} toCopy={cb.codeToCopy} loading={cb.loading} />
                             </div>
                           ) : (
@@ -68,8 +73,8 @@ export default function SetupWizardModal({ cfg, steps, currentStep, onClose, onS
                     )}
                     {step.content}
                     {i < steps.length - 1
-                      ? <p style={{ margin: "10px 0 0", fontSize: 12, color: "#C8C8C8" }}>Click step {i + 2} when ready ↓</p>
-                      : <button onClick={(e) => { e.stopPropagation(); onClose(); router.push("/sessions"); }} style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.7)", fontFamily: "inherit", cursor: "pointer" }}>Go to Sessions →</button>}
+                      ? <p style={{ margin: "10px 0 0", fontSize: 12, color: "#C8C8C8" }}>{t("clickStepWhenReady", { step: i + 2 })}</p>
+                      : <button onClick={(e) => { e.stopPropagation(); onClose(); router.push("/sessions"); }} style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.7)", fontFamily: "inherit", cursor: "pointer" }}>{t("goToSessions")}</button>}
                   </div>
                 </div>
               </div>

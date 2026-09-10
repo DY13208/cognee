@@ -1,9 +1,10 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import type { NarrationDisplay } from "../useNarration";
 import TourControl from "./TourControl";
 
-const ALTIMETER_LABELS = ["Business", "Players", "Connections", "Records"];
+const ALTIMETER_KEYS = ["levelBusiness", "levelPlayers", "levelConnections", "levelRecords"] as const;
 
 interface BusinessDockProps {
   narration: NarrationDisplay;
@@ -27,6 +28,7 @@ interface BusinessDockProps {
 export default function BusinessDock({
   narration, altimeter, onAltimeterLevel, live, tourPlaying, onTourStart, onTourStop, recordCount,
 }: BusinessDockProps) {
+  const t = useTranslations("knowledgeGraph");
   return (
     <div
       className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-1.5 px-4 pb-2.5"
@@ -44,20 +46,20 @@ export default function BusinessDock({
       )}
       <div className="pointer-events-auto flex items-center gap-2.5">
         <div className="flex items-center gap-0.5 rounded-[8px] border border-[#2A3652] bg-[#1A2438] p-[3px]">
-          {ALTIMETER_LABELS.map((label, level) => {
+          {ALTIMETER_KEYS.map((key, level) => {
             const active = altimeter.plumbing ? level === 3 : altimeter.level === level;
             const isRecords = level === 3;
             return (
               <button
-                key={label}
+                key={key}
                 type="button"
                 onClick={() => onAltimeterLevel(level)}
-                title={isRecords ? "toggle the raw records layer — chunks, documents and summaries behind the entities" : undefined}
+                title={isRecords ? t("recordsHint") : undefined}
                 className={`rounded-[6px] px-2.5 py-[3px] ${
                   active ? "bg-[#141D33] text-[#E9EEF6]" : "text-[#7E8CA6] hover:text-[#E9EEF6]"
                 }`}
               >
-                {label}
+                {t(key)}
                 {isRecords && recordCount > 0 && (
                   <span className={`ml-1 text-[10px] ${active ? "text-[#43D9E8]" : "text-[#5B6880]"}`}>{recordCount}</span>
                 )}
@@ -67,10 +69,10 @@ export default function BusinessDock({
         </div>
         <span
           role="status"
-          aria-label={live ? "Live updates connected" : "Live updates reconnecting"}
+          aria-label={live ? t("liveConnectedAria") : t("liveReconnectingAria")}
           className={`text-[11px] ${live ? "text-[#43D9E8]" : "text-[#7E8CA6]"}`}
         >
-          {live ? "● LIVE" : "○ live: reconnecting…"}
+          {live ? t("live") : t("liveReconnecting")}
         </span>
         <TourControl isPlaying={tourPlaying} onStart={onTourStart} onStop={onTourStop} />
       </div>

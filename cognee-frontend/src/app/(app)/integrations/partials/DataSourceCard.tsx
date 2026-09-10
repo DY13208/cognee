@@ -2,6 +2,7 @@
 
 import type { ReactElement } from "react";
 import classNames from "classnames";
+import { useTranslations } from "next-intl";
 import type { TeamConnectorCfg, TeamConnectionState } from "@/modules/integrations/types";
 import ConnectorLogo from "./ConnectorLogo";
 import ConnectorStatusBadge from "./ConnectorStatusBadge";
@@ -36,24 +37,37 @@ interface Cta {
 // The whole card is the click target (matching the Agents and More-data-sources
 // grids), so it needs exactly one action. Null means there is nothing this user
 // can do here and the card renders inert.
-function ctaFor(props: DataSourceCardProps, state: TeamConnectionState): Cta | null {
-  if (state.status === "unavailable") return { label: "Retry", variant: "neutral", onClick: props.onRetry };
+function ctaFor(
+  props: DataSourceCardProps,
+  state: TeamConnectionState,
+  labels: { retry: string; reconnect: string; manage: string; connect: string },
+): Cta | null {
+  if (state.status === "unavailable") return { label: labels.retry, variant: "neutral", onClick: props.onRetry };
   if (!props.isOwner) return null;
   if (state.status === "connected") {
     // A degraded connection (CLO-389) is authorized but not working, so the
     // card leads with the fix instead of "Manage" — the actual reconnect lives
     // in the modal, next to the explanation of what it does and does not touch.
     return state.syncStatus === "degraded"
-      ? { label: "Reconnect", variant: "primary", onClick: props.onManageClick }
-      : { label: "Manage", variant: "neutral", onClick: props.onManageClick };
+      ? { label: labels.reconnect, variant: "primary", onClick: props.onManageClick }
+      : { label: labels.manage, variant: "neutral", onClick: props.onManageClick };
   }
-  return { label: "Connect", variant: "primary", onClick: props.onManageClick };
+  return { label: labels.connect, variant: "primary", onClick: props.onManageClick };
 }
 
 export default function DataSourceCard(props: DataSourceCardProps): ReactElement {
   const { cfg, state, channels } = props;
+  const t = useTranslations("integrations");
   const isConnected = state?.status === "connected";
-  const cta = state ? ctaFor(props, state) : null;
+  const cta = state
+    ? ctaFor(props, state, {
+        retry: t("retry"),
+        reconnect: t("reconnect"),
+        manage: t("manage"),
+        connect: t("connect"),
+      })
+    : null;
+  const description = cfg.key === "slack" ? t("slackDesc") : cfg.description;
 
   return (
     <button
@@ -71,13 +85,13 @@ export default function DataSourceCard(props: DataSourceCardProps): ReactElement
         <ConnectorStatusBadge status={state?.status} syncStatus={state?.syncStatus} />
       </div>
 
-      <p className="m-0 text-[13px] text-[var(--color-cognee-fg,#EDECEA)]/55">{cfg.description}</p>
+      <p className="m-0 text-[13px] text-[var(--color-cognee-fg,#EDECEA)]/55">{description}</p>
 
       {isConnected && (
         <div className="flex flex-col gap-1">
           {state?.workspaceName && (
             <p className="m-0 text-[12px] text-[var(--color-cognee-fg,#EDECEA)]/55">
-              Workspace <strong className="font-semibold text-[var(--color-cognee-fg,#EDECEA)]">{state.workspaceName}</strong>
+              {t("workspaceLabel", { name: state.workspaceName })}
             </p>
           )}
           <ChannelHealthLine summary={channels} lastSyncedAt={state?.lastSyncedAt} />

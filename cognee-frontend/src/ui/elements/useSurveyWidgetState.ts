@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import submitSurveyResponse from "@/modules/survey/submitSurveyResponse";
 import { FOLLOWUP_QUESTIONS, NPS_SURVEY_KEY, scoreBucketFor } from "@/modules/survey/surveyConfig";
 import type { ScoreBucket } from "@/modules/survey/types";
@@ -29,6 +30,7 @@ export interface SurveyWidgetState {
 }
 
 export function useSurveyWidgetState(responseId: string, onDone: () => void): SurveyWidgetState {
+  const t = useTranslations("survey");
   const [step, setStep] = useState<SurveyWidgetStep>("score");
   const [score, setScore] = useState<number | null>(null);
   const [answer, setAnswer] = useState("");
@@ -86,12 +88,12 @@ export function useSurveyWidgetState(responseId: string, onDone: () => void): Su
         setStep("thanks");
       } catch (e) {
         console.error("[survey] failed to submit response:", e instanceof Error ? e.message : String(e));
-        setError("Could not send your answer. Please try again.");
+        setError(t("sendFailed"));
       } finally {
         setSending(false);
       }
     },
-    [responseId, score, answer, consentToQuote, sending],
+    [responseId, score, answer, consentToQuote, sending, t],
   );
 
   const skip = useCallback(() => void submit(true), [submit]);

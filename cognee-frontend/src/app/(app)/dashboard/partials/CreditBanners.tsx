@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 interface CreditBannersProps {
   creditsSpentPct: number | null;
   creditsRemainingUsd: number | null;
@@ -38,6 +40,9 @@ export function CreditBanners({
   onDismiss,
   isOwner,
 }: CreditBannersProps): React.ReactElement | null {
+  const t = useTranslations("dashboard");
+  const tCommon = useTranslations("common");
+
   if (showCreditPctBanner && creditsSpentPct !== null) {
     const isOut = creditsSpentPct >= 100;
     const accent = isOut ? "#EF4444" : "#EAB308";
@@ -54,21 +59,21 @@ export function CreditBanners({
           <span style={{ color: accent }}>{WARN_ICON}</span>
           <span style={{ fontSize: 13, color: textColor }}>
             {isOut
-              ? "Your workspace has used all available credits. Agent requests may fail."
-              : `Your workspace has used ${creditsSpentPct}% of available credits.`}
+              ? t("credits.out")
+              : t("credits.usedPct", { pct: creditsSpentPct })}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           {isOwner ? (
             <a href="/billing" style={{ fontSize: 13, fontWeight: 500, color: textColor, textDecoration: "underline", textUnderlineOffset: 3 }}>
-              Top up credits →
+              {t("credits.topUp")}
             </a>
           ) : (
-            <span style={{ fontSize: 13, color: "rgba(237,236,234,0.5)" }}>Ask the workspace owner to top up.</span>
+            <span style={{ fontSize: 13, color: "rgba(237,236,234,0.5)" }}>{t("credits.askOwner")}</span>
           )}
           <button
             onClick={onDismiss}
-            aria-label="Dismiss"
+            aria-label={tCommon("dismiss")}
             style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "rgba(237,236,234,0.4)", lineHeight: 1 }}
           >
             {CLOSE_ICON}
@@ -79,7 +84,7 @@ export function CreditBanners({
   }
 
   if (showLowBalanceBanner) {
-    const balanceLabel = creditsRemainingUsd !== null ? `$${creditsRemainingUsd.toFixed(2)}` : "below $1";
+    const balanceLabel = creditsRemainingUsd !== null ? `$${creditsRemainingUsd.toFixed(2)}` : t("credits.belowOne");
     return (
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -91,20 +96,20 @@ export function CreditBanners({
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ color: "#EF4444" }}>{WARN_ICON}</span>
           <span style={{ fontSize: 13, color: "#FCA5A5" }}>
-            Your workspace credit balance is {balanceLabel}. Agent requests may fail.
+            {t("credits.lowBalance", { balance: balanceLabel })}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           {isOwner ? (
             <a href="/billing" style={{ fontSize: 13, fontWeight: 500, color: "#FCA5A5", textDecoration: "underline", textUnderlineOffset: 3 }}>
-              Top up credits →
+              {t("credits.topUp")}
             </a>
           ) : (
-            <span style={{ fontSize: 13, color: "rgba(237,236,234,0.5)" }}>Ask the workspace owner to top up.</span>
+            <span style={{ fontSize: 13, color: "rgba(237,236,234,0.5)" }}>{t("credits.askOwner")}</span>
           )}
           <button
             onClick={onDismiss}
-            aria-label="Dismiss"
+            aria-label={tCommon("dismiss")}
             style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "rgba(237,236,234,0.4)", lineHeight: 1 }}
           >
             {CLOSE_ICON}
@@ -128,7 +133,7 @@ export function CreditBanners({
             <path d="M20 12a2 2 0 0 1 2-2V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v3a2 2 0 0 1 0 4v3a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3a2 2 0 0 1-2-2z" />
             <line x1="13" y1="5" x2="13" y2="19" />
           </svg>
-          <span style={{ fontSize: 13, color: "#D9C7FF" }}>You have a voucher? Redeem it here.</span>
+          <span style={{ fontSize: 13, color: "#D9C7FF" }}>{t("credits.voucher")}</span>
         </div>
         <a
           href="/billing"
@@ -144,7 +149,7 @@ export function CreditBanners({
             whiteSpace: "nowrap",
           }}
         >
-          Redeem voucher →
+          {t("credits.redeem")}
         </a>
       </div>
     );

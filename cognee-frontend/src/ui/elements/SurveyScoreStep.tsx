@@ -1,6 +1,7 @@
 "use client";
 
 import classNames from "classnames";
+import { useTranslations } from "next-intl";
 import { SURVEY_SCORE_MAX, scoreBucketFor } from "@/modules/survey/surveyConfig";
 import type { ScoreBucket } from "@/modules/survey/types";
 
@@ -23,6 +24,7 @@ export default function SurveyScoreStep({
   selectedScore,
   onSelect,
 }: SurveyScoreStepProps): React.ReactElement {
+  const t = useTranslations("survey");
   return (
     <div>
       <p className="m-0 mb-3.5 text-[13.5px] font-semibold text-cognee-dark">{question}</p>
@@ -47,8 +49,8 @@ export default function SurveyScoreStep({
       </div>
 
       <div className="mb-4 flex justify-between text-[10.5px] text-cognee-placeholder">
-        <span>0 · Not likely</span>
-        <span>10 · Extremely likely</span>
+        <span>{t("notLikely")}</span>
+        <span>{t("extremelyLikely")}</span>
       </div>
     </div>
   );

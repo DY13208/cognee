@@ -2,8 +2,10 @@
 
 import { Flex, Text, Button } from "@mantine/core";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 export default function UpgradeBanner() {
+  const t = useTranslations("common");
   const router = useRouter();
 
   return (
@@ -19,10 +21,10 @@ export default function UpgradeBanner() {
     >
       <div>
         <Text fw={700} size="sm" c="#EDECEA">
-          No active subscription
+          {t("upgradeTitle")}
         </Text>
         <Text size="sm" c="rgba(237,236,234,0.7)">
-          Subscribe to unlock data uploads, search, and all features.
+          {t("upgradeBody")}
         </Text>
       </div>
       <Button
@@ -30,7 +32,7 @@ export default function UpgradeBanner() {
         styles={{ root: { backgroundColor: "#6510F4", color: "#fff" } }}
         onClick={() => router.push("/setup")}
       >
-        Upgrade
+        {t("upgrade")}
       </Button>
     </Flex>
   );

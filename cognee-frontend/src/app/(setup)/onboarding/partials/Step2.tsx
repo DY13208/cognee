@@ -8,6 +8,7 @@ import pollDatasetStatus from "@/modules/datasets/pollDatasetStatus";
 import { setAwaitingDataset, clearAwaitingDataset } from "@/utils/browserStorage";
 import { StepBadge, StepDots, SkipLink } from "./Shared";
 import { useOnboardingTrackEvent } from "../useOnboardingTrackEvent";
+import { useTranslations } from "next-intl";
 
 interface ProcessingStep {
   label: string;
@@ -23,12 +24,13 @@ export function Step2({ files, datasetId, onNext, cogniInstance }: {
   // shows its loading bars until both the instance and the pod are ready.
   cogniInstance: ReturnType<typeof useCogniInstance>["cogniInstance"];
 }) {
+  const t = useTranslations("Setup");
   const { tenantReady } = useTenant();
   const track = useOnboardingTrackEvent();
   const [steps, setSteps] = useState<ProcessingStep[]>([
-    { label: "Setting up workspace", progress: 0, status: "active" },
-    { label: "Uploading files", progress: 0, status: "pending" },
-    { label: "Building knowledge graph", progress: 0, status: "pending" },
+    { label: t("processing.workspace"), progress: 0, status: "active" },
+    { label: t("processing.upload"), progress: 0, status: "pending" },
+    { label: t("processing.graph"), progress: 0, status: "pending" },
   ]);
   const [error, setError] = useState<string | null>(null);
   const [dsId, setDsId] = useState<string | null>(datasetId);
@@ -192,7 +194,7 @@ export function Step2({ files, datasetId, onNext, cogniInstance }: {
       // a dataset that will not finish.
       clearAwaitingDataset();
       if (cancelled()) return;
-      const message = err instanceof Error ? err.message : "Processing failed";
+      const message = err instanceof Error ? err.message : t("processing.genericError");
       setError(message);
       setSteps((prev) => prev.map((s) => s.status === "active" ? { ...s, status: "error" } : s));
       track({ pageName: "Onboarding", eventName: "onboarding_processing_failed", additionalProperties: { step: "2", error: message } });
@@ -224,9 +226,9 @@ export function Step2({ files, datasetId, onNext, cogniInstance }: {
         maxWidth: 560, width: "100%", boxSizing: "border-box",
       }}>
       <StepBadge step={2} total={3} />
-      <h1 style={{ fontSize: 28, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.02em" }}>Building your memory</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', letterSpacing: "-0.02em" }}>{t("processing.title")}</h1>
       <p style={{ fontSize: 15, color: "rgba(237,236,234,0.65)", margin: 0, textAlign: "center", maxWidth: 480, lineHeight: "22px" }}>
-        Cognee is extracting entities, building relationships, and generating embeddings.
+        {t("processing.description")}
       </p>
 
       <div style={{ width: 480, maxWidth: "100%", background: "#2a2a2e", border: "1px solid rgba(188,155,255,0.20)", borderRadius: 12, padding: 24 }}>
@@ -253,9 +255,9 @@ export function Step2({ files, datasetId, onNext, cogniInstance }: {
               <div className="flex-1 flex flex-col gap-1">
                 <div className="flex justify-between">
                   <span style={{ fontSize: 14, fontWeight: 500, color: step.status === "pending" ? "rgba(237,236,234,0.4)" : step.status === "error" ? "#EF4444" : "#EDECEA" }}>{step.label}</span>
-                  {step.status === "done" && <span style={{ fontSize: 12, fontWeight: 500, color: "#22C55E" }}>Done</span>}
+                  {step.status === "done" && <span style={{ fontSize: 12, fontWeight: 500, color: "#22C55E" }}>{t("done")}</span>}
                   {step.status === "active" && <span style={{ fontSize: 12, fontWeight: 500, color: "#BC9BFF" }}>{Math.round(step.progress)}%</span>}
-                  {step.status === "error" && <span style={{ fontSize: 12, fontWeight: 500, color: "#EF4444" }}>Failed</span>}
+                  {step.status === "error" && <span style={{ fontSize: 12, fontWeight: 500, color: "#EF4444" }}>{t("failed")}</span>}
                 </div>
                 <div style={{ height: 4, borderRadius: 2, background: "rgba(188,155,255,0.10)" }}>
                   <div style={{ height: 4, borderRadius: 2, background: step.status === "done" ? "#22C55E" : step.status === "active" ? "#8CFF86" : step.status === "error" ? "#EF4444" : "transparent", width: `${step.progress}%`, transition: "width 0.15s linear" }} />
@@ -275,7 +277,7 @@ export function Step2({ files, datasetId, onNext, cogniInstance }: {
       {allDone && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#22C55E" }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="#22C55E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          Memory built — continuing…
+          {t("processing.complete")}
         </div>
       )}
 

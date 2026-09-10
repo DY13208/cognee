@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { CLAUDE_DESKTOP_MCP_ENTRY, fillTemplate } from "@/data/prompts";
+import type { TranslateFn } from "./types";
 
 const MONO_FONT = 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace';
 
@@ -9,10 +10,10 @@ export function imgIcon(src: string, alt: string) {
   return <img src={src} alt={alt} style={{ width: 24, height: 24, objectFit: "contain" }} />;
 }
 
-export function credStep(baseUrl: string, apiKey: string, loading: boolean) {
+export function credStep(baseUrl: string, apiKey: string, loading: boolean, t?: TranslateFn) {
   return {
-    title: "Set your API credentials",
-    description: "Open a terminal and run these commands to configure your Cognee endpoint and key.",
+    title: t ? t("credentialsTitle") : "Set your API credentials",
+    description: t ? t("credentialsDescription") : "Open a terminal and run these commands to configure your Cognee endpoint and key.",
     code: `export COGNEE_BASE_URL="${baseUrl}"`,
     codeToCopy: `export COGNEE_BASE_URL="${baseUrl}"\nexport COGNEE_API_KEY="${apiKey}"`,
     loading,
@@ -23,18 +24,18 @@ export function ApiIcon() {
 }
 
 /** The "Install uv (provides uvx)" step shared by every MCP-based connector. */
-export function installUvStep() {
+export function installUvStep(t?: TranslateFn) {
   return {
-    title: "Install uv (provides uvx)",
-    description: (
+    title: t ? t("installUvTitle") : "Install uv (provides uvx)",
+    description: t ? t("installUvDescription") : (
       <>
         <strong style={{ color: "#EDECEA" }}>Open your terminal</strong> and{" "}
         <strong style={{ color: "#EDECEA" }}>install uv</strong> using one of the below methods:
       </>
     ),
     codeBlocks: [
-      { label: "Homebrew", code: "brew install uv" },
-      { label: "Install script", code: "curl -LsSf https://astral.sh/uv/install.sh | sh" },
+      { label: t ? t("installUvHomebrew") : "Homebrew", code: "brew install uv" },
+      { label: t ? t("installUvScript") : "Install script", code: "curl -LsSf https://astral.sh/uv/install.sh | sh" },
     ],
   };
 }

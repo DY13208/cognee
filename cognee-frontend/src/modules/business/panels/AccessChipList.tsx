@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { BusinessGraphNode } from "../types";
 import type { AccessSlot } from "../useGovernanceIndex";
 import { permissionCode } from "../useGovernanceIndex";
@@ -27,11 +28,12 @@ interface ChipProps {
 // Read-only: permission editing is a real API call on a future ticket, not
 // something this panel simulates locally (see the module header comment).
 function Chip({ dataset, slot, focused }: ChipProps) {
+  const t = useTranslations("knowledgeGraph");
   const name = String(dataset.name || "dataset");
   if (!slot) {
     return (
       <span
-        title={`${name}: no access`}
+        title={`${name}: ${t("noAccess")}`}
         className={`max-w-full truncate rounded border border-dashed border-[#2A3652] px-1.5 py-0.5 text-[9.5px] text-[#7E8CA6] opacity-60 ${
           focused ? FOCUSED_RING : ""
         }`}
@@ -42,7 +44,7 @@ function Chip({ dataset, slot, focused }: ChipProps) {
   }
   return (
     <span
-      title={slot.owns ? `${name} — owner, full control` : name}
+      title={slot.owns ? `${name} — ${t("ownerFull")}` : name}
       className={`flex max-w-full items-baseline gap-1 rounded border px-1.5 py-0.5 text-[9.5px] ${
         slot.owns ? "border-[#43D9E8]/45 text-[#43D9E8]" : "border-[#2A3652] text-[#7E8CA6]"
       } ${focused ? FOCUSED_RING : ""}`}
@@ -64,6 +66,7 @@ function Chip({ dataset, slot, focused }: ChipProps) {
 export default function AccessChipList({
   access, datasets, principalName, focusedDatasetId,
 }: AccessChipListProps) {
+  const t = useTranslations("knowledgeGraph");
   const [expanded, setExpanded] = useState(false);
   const listId = useId();
   // Nothing to disclose before any dataset exists: an "access · 0/0" row on
@@ -88,10 +91,10 @@ export default function AccessChipList({
         onClick={(e) => { e.stopPropagation(); setExpanded((prev) => !prev); }}
         aria-expanded={expanded}
         aria-controls={listId}
-        aria-label={`${principalName} access: ${granted.length} of ${datasets.length} datasets`}
+        aria-label={`${principalName} ${t("access", { granted: granted.length, total: datasets.length })}`}
         className="text-[9.5px] text-[#7E8CA6] hover:text-[#F5A83C]"
       >
-        access · {granted.length}/{datasets.length} {expanded ? "▾" : "▸"}
+        {t("access", { granted: granted.length, total: datasets.length })} {expanded ? "▾" : "▸"}
       </button>
       {expanded && (
         <div id={listId} className="mt-1 flex flex-wrap items-center gap-1">

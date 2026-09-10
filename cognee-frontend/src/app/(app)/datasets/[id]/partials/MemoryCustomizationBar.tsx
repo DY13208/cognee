@@ -2,6 +2,7 @@
 
 import type { ReactElement } from "react";
 import { Menu, Tooltip } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import type { GraphModel } from "@/modules/graphModels/types";
 import type { CustomPromptsMap } from "@/modules/configuration/userConfiguration";
 import type { OntologyMeta } from "@/modules/ontologies/ontologyApi";
@@ -58,25 +59,27 @@ export default function MemoryCustomizationBar({
   onDeleteOntology: (key: string) => void;
   onUploadOntology: () => void;
 }): ReactElement {
+  const t = useTranslations("datasets");
+  const automatic = t("detail.automatic");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(237,236,234,0.35)", letterSpacing: 0.3, textTransform: "uppercase" }}>Memory customization</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(237,236,234,0.35)", letterSpacing: 0.3, textTransform: "uppercase" }}>{t("memoryBar.title")}</span>
       <div style={{ display: "flex", gap: 16 }}>
         {/* Graph model dropdown */}
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={labelStyle}>Graph Model <Tooltip label="Define entity types and relationships to control how Cognee structures your knowledge graph." withArrow multiline w={240} position="top"><span style={{ display: "inline-flex" }}><InfoIcon /></span></Tooltip></span>
+          <span style={labelStyle}>{t("memoryBar.graphModel")} <Tooltip label={t("memoryBar.graphModelTooltip")} withArrow multiline w={240} position="top"><span style={{ display: "inline-flex" }}><InfoIcon /></span></Tooltip></span>
           <Menu shadow="md" width={220} position="bottom-start" withinPortal>
             <Menu.Target>
               <button className="cursor-pointer hover:bg-white/10" style={triggerStyle}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" /><circle cx="12" cy="18" r="3" /><line x1="8.5" y1="7.5" x2="10.5" y2="16" /><line x1="15.5" y1="7.5" x2="13.5" y2="16" /></svg>
-                {selectedModelId ? (graphModels.find((m) => m.id === selectedModelId)?.name ?? "Automatic") : "Automatic"}
+                {selectedModelId ? (graphModels.find((m) => m.id === selectedModelId)?.name ?? automatic) : automatic}
                 {chevron}
               </button>
             </Menu.Target>
             <Menu.Dropdown style={dropdownStyle}>
-              <Menu.Label style={labelStyle}>Graph Model</Menu.Label>
-              <Menu.Item style={itemStyle} onClick={() => onSelectModel(null)} leftSection={checkOrBlank(selectedModelId === null)} rightSection={<span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>Default</span>}>
-                Automatic
+              <Menu.Label style={labelStyle}>{t("memoryBar.graphModel")}</Menu.Label>
+              <Menu.Item style={itemStyle} onClick={() => onSelectModel(null)} leftSection={checkOrBlank(selectedModelId === null)} rightSection={<span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>{t("memoryBar.default")}</span>}>
+                {automatic}
               </Menu.Item>
               {graphModels.length > 0 && <Menu.Divider style={{ borderColor: "rgba(255,255,255,0.08)" }} />}
               {graphModels.map((model) => (
@@ -86,7 +89,7 @@ export default function MemoryCustomizationBar({
                   onClick={() => onSelectModel(model.id)}
                   leftSection={checkOrBlank(selectedModelId === model.id)}
                   rightSection={
-                    <button onClick={(e) => { e.stopPropagation(); onEditModel(model.id); }} className="cursor-pointer hover:opacity-100" style={{ background: "none", border: "none", padding: 2, opacity: 0.4, transition: "opacity 150ms" }} title="Edit model">{editIcon}</button>
+                    <button onClick={(e) => { e.stopPropagation(); onEditModel(model.id); }} className="cursor-pointer hover:opacity-100" style={{ background: "none", border: "none", padding: 2, opacity: 0.4, transition: "opacity 150ms" }} title={t("memoryBar.editModel")}>{editIcon}</button>
                   }
                 >
                   {model.name}
@@ -94,7 +97,7 @@ export default function MemoryCustomizationBar({
               ))}
               <Menu.Divider style={{ borderColor: "rgba(255,255,255,0.08)" }} />
               <Menu.Item style={{ ...itemStyle, color: "#6510F4", fontWeight: 500 }} onClick={onCreateModel} leftSection={<span style={{ width: 16, textAlign: "center" }}>+</span>}>
-                Create new
+                {t("memoryBar.createNew")}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
@@ -102,19 +105,19 @@ export default function MemoryCustomizationBar({
 
         {/* Custom prompt dropdown */}
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={labelStyle}>Prompt <Tooltip label="Custom instructions that guide how Cognee extracts entities and relationships from your data." withArrow multiline w={240} position="top"><span style={{ display: "inline-flex" }}><InfoIcon /></span></Tooltip></span>
+          <span style={labelStyle}>{t("memoryBar.prompt")} <Tooltip label={t("memoryBar.promptTooltip")} withArrow multiline w={240} position="top"><span style={{ display: "inline-flex" }}><InfoIcon /></span></Tooltip></span>
           <Menu shadow="md" width={220} position="bottom-start" withinPortal>
             <Menu.Target>
               <button className="cursor-pointer hover:bg-white/10" style={triggerStyle}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>
-                {selectedPromptName ?? "Automatic"}
+                {selectedPromptName ?? automatic}
                 {chevron}
               </button>
             </Menu.Target>
             <Menu.Dropdown style={dropdownStyle}>
-              <Menu.Label style={labelStyle}>Custom Prompt</Menu.Label>
-              <Menu.Item style={itemStyle} onClick={() => onSelectPrompt(null)} leftSection={checkOrBlank(selectedPromptName === null)} rightSection={<span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>Default</span>}>
-                Automatic
+              <Menu.Label style={labelStyle}>{t("memoryBar.customPrompt")}</Menu.Label>
+              <Menu.Item style={itemStyle} onClick={() => onSelectPrompt(null)} leftSection={checkOrBlank(selectedPromptName === null)} rightSection={<span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>{t("memoryBar.default")}</span>}>
+                {automatic}
               </Menu.Item>
               {Object.keys(customPrompts).length > 0 && <Menu.Divider style={{ borderColor: "rgba(255,255,255,0.08)" }} />}
               {Object.entries(customPrompts).map(([name, text]) => (
@@ -124,7 +127,7 @@ export default function MemoryCustomizationBar({
                   onClick={() => onSelectPrompt(name)}
                   leftSection={checkOrBlank(selectedPromptName === name)}
                   rightSection={
-                    <button onClick={(e) => { e.stopPropagation(); onEditPrompt(name, text); }} className="cursor-pointer hover:opacity-100" style={{ background: "none", border: "none", padding: 2, opacity: 0.4, transition: "opacity 150ms" }} title="Edit prompt">{editIcon}</button>
+                    <button onClick={(e) => { e.stopPropagation(); onEditPrompt(name, text); }} className="cursor-pointer hover:opacity-100" style={{ background: "none", border: "none", padding: 2, opacity: 0.4, transition: "opacity 150ms" }} title={t("memoryBar.editPrompt")}>{editIcon}</button>
                   }
                 >
                   {name}
@@ -132,7 +135,7 @@ export default function MemoryCustomizationBar({
               ))}
               <Menu.Divider style={{ borderColor: "rgba(255,255,255,0.08)" }} />
               <Menu.Item style={{ ...itemStyle, color: "#6510F4", fontWeight: 500 }} onClick={onCreatePrompt} leftSection={<span style={{ width: 16, textAlign: "center" }}>+</span>}>
-                Create new
+                {t("memoryBar.createNew")}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
@@ -140,19 +143,19 @@ export default function MemoryCustomizationBar({
 
         {/* Ontology dropdown */}
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={labelStyle}>Ontology <Tooltip label="Upload a formal ontology (OWL/RDF) to enforce domain-specific vocabulary and relationships in your knowledge graph." withArrow multiline w={240} position="top"><span style={{ display: "inline-flex" }}><InfoIcon /></span></Tooltip></span>
+          <span style={labelStyle}>{t("memoryBar.ontology")} <Tooltip label={t("memoryBar.ontologyTooltip")} withArrow multiline w={240} position="top"><span style={{ display: "inline-flex" }}><InfoIcon /></span></Tooltip></span>
           <Menu shadow="md" width={260} position="bottom-start" withinPortal>
             <Menu.Target>
               <button className="cursor-pointer hover:bg-white/10" style={triggerStyle}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" /></svg>
-                {selectedOntologyKey ?? "Automatic"}
+                {selectedOntologyKey ?? automatic}
                 {chevron}
               </button>
             </Menu.Target>
             <Menu.Dropdown style={dropdownStyle}>
-              <Menu.Label style={labelStyle}>Ontology</Menu.Label>
+              <Menu.Label style={labelStyle}>{t("memoryBar.ontology")}</Menu.Label>
               <Menu.Item style={itemStyle} onClick={() => onSelectOntology(null)} leftSection={checkOrBlank(selectedOntologyKey === null)}>
-                Automatic
+                {automatic}
               </Menu.Item>
               {Object.keys(ontologies).length > 0 && <Menu.Divider style={{ borderColor: "rgba(255,255,255,0.08)" }} />}
               {Object.entries(ontologies).map(([key, meta]) => (
@@ -162,7 +165,7 @@ export default function MemoryCustomizationBar({
                   onClick={() => onSelectOntology(key)}
                   leftSection={checkOrBlank(selectedOntologyKey === key)}
                   rightSection={
-                    <button onClick={(e) => { e.stopPropagation(); onDeleteOntology(key); }} className="cursor-pointer hover:opacity-100" style={{ background: "none", border: "none", padding: 4, opacity: 0.5, transition: "opacity 150ms", minWidth: 20, minHeight: 20, display: "flex", alignItems: "center", justifyContent: "center" }} title="Delete ontology">{trashIcon}</button>
+                    <button onClick={(e) => { e.stopPropagation(); onDeleteOntology(key); }} className="cursor-pointer hover:opacity-100" style={{ background: "none", border: "none", padding: 4, opacity: 0.5, transition: "opacity 150ms", minWidth: 20, minHeight: 20, display: "flex", alignItems: "center", justifyContent: "center" }} title={t("memoryBar.deleteOntology")}>{trashIcon}</button>
                   }
                 >
                   <span title={meta.filename} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{meta.filename}</span>
@@ -170,7 +173,7 @@ export default function MemoryCustomizationBar({
               ))}
               <Menu.Divider style={{ borderColor: "rgba(255,255,255,0.08)" }} />
               <Menu.Item style={{ ...itemStyle, color: "#6510F4", fontWeight: 500 }} onClick={onUploadOntology} leftSection={<span style={{ width: 16, textAlign: "center" }}>+</span>}>
-                Upload new
+                {t("memoryBar.uploadNew")}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import type { SourceDetail } from "../computeSourceDetail";
 
 interface SourceDetailCardProps {
@@ -13,6 +14,7 @@ interface SourceDetailCardProps {
 // the same right-side slot NodePanel uses — BusinessView renders at most
 // one of the two, entity selection taking priority.
 export default function SourceDetailCard({ detail, onClose }: SourceDetailCardProps) {
+  const t = useTranslations("knowledgeGraph");
   if (!detail) return null;
 
   return (
@@ -27,15 +29,15 @@ export default function SourceDetailCard({ detail, onClose }: SourceDetailCardPr
         </button>
       </div>
       <div className="mt-1 text-xs text-[#7E8CA6]">
-        {detail.entityCount} entities · {detail.docCount} document{detail.docCount === 1 ? "" : "s"}
+        {detail.entityCount} · {detail.docCount} {t("entitiesDocuments")}
         {detail.bridgeCount
-          ? ` · bridges to ${detail.bridgeCount} other source${detail.bridgeCount === 1 ? "" : "s"}`
+          ? ` · ${t("bridgesTo", { name: String(detail.bridgeCount) })}`
           : ""}
       </div>
 
       {detail.typeBreakdown.length > 0 && (
         <>
-          <div className="mt-3 text-xs uppercase tracking-wide text-[#7E8CA6]">kinds of things</div>
+          <div className="mt-3 text-xs uppercase tracking-wide text-[#7E8CA6]">{t("kindsThings")}</div>
           <ul className="mt-1 flex flex-col gap-1">
             {detail.typeBreakdown.map((row) => (
               <li key={row.type} className="flex items-center justify-between gap-2 text-xs">
@@ -50,9 +52,9 @@ export default function SourceDetailCard({ detail, onClose }: SourceDetailCardPr
       {detail.documentNames.length > 0 && (
         <>
           <div className="mt-3 text-xs uppercase tracking-wide text-[#7E8CA6]">
-            records
+            {t("records")}
             {detail.documentTotal > detail.documentNames.length
-              ? ` (${detail.documentNames.length} of ${detail.documentTotal})`
+              ? ` (${detail.documentNames.length}/${detail.documentTotal})`
               : ""}
           </div>
           <ul className="mt-1 flex flex-col gap-1">

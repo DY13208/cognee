@@ -12,6 +12,7 @@ import {
 } from "@/data/prompts";
 import { curlBin, exportEnvVar, homePath } from "@/utils/osCommands";
 import type { PreferredOs } from "@/ui/layout/OsPreferenceContext";
+import type { TranslateFn } from "@/modules/integrations/types";
 
 export interface AciStepDef {
   title: string;
@@ -51,18 +52,21 @@ interface StepOptions {
   isInitializing: boolean;
   connectVerified: boolean;
   os: PreferredOs;
+  t?: TranslateFn;
 }
 
 export function getSteps(key: AciAgentKey, opts: StepOptions): AciStepDef[] {
-  const { baseUrl, resolvedKey, credsCode, isInitializing, connectVerified, os } = opts;
+  const { baseUrl, resolvedKey, credsCode, isInitializing, connectVerified, os, t } = opts;
 
   const credStep: AciStepDef = {
-    title: "Set your API credentials",
-    description: "Open a terminal and run these commands to configure your Cognee endpoint and key.",
+    title: t ? t("credentialsTitle") : "Set your API credentials",
+    description: t ? t("credentialsDescription") : "Open a terminal and run these commands to configure your Cognee endpoint and key.",
     code: exportEnvVar(os, "COGNEE_BASE_URL", baseUrl),
     codeToCopy: credsCode,
     loading: isInitializing,
   };
+  const existingMemory = t ? t("optionExistingMemory") : "Option A · Your existing memory";
+  const sampleMemory = t ? t("optionSample") : "Option B · Try it with a sample";
 
   if (key === "claude-code") return [
     credStep,
@@ -75,8 +79,8 @@ export function getSteps(key: AciAgentKey, opts: StepOptions): AciStepDef[] {
       title: "Upload something to Cognee",
       description: "Pick one and paste it into Claude — it stores the content in your Cognee memory so you can recall it in the next step.",
       codeBlocks: [
-        { label: "Option A · Your existing memory", code: UPLOAD_MEMORY_PROMPT },
-        { label: "Option B · Try it with a sample", code: UPLOAD_SAMPLE_PROMPT },
+        { label: existingMemory, code: UPLOAD_MEMORY_PROMPT },
+        { label: sampleMemory, code: UPLOAD_SAMPLE_PROMPT },
       ],
     },
     {
@@ -103,8 +107,8 @@ export function getSteps(key: AciAgentKey, opts: StepOptions): AciStepDef[] {
       title: "Upload something to Cognee",
       description: "Pick one and paste it into Codex — it stores the content in your Cognee memory so you can recall it in the next step.",
       codeBlocks: [
-        { label: "Option A · Your existing memory", code: UPLOAD_MEMORY_PROMPT },
-        { label: "Option B · Try it with a sample", code: UPLOAD_SAMPLE_PROMPT },
+        { label: existingMemory, code: UPLOAD_MEMORY_PROMPT },
+        { label: sampleMemory, code: UPLOAD_SAMPLE_PROMPT },
       ],
     },
     {

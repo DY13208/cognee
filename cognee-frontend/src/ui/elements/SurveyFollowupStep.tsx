@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 interface SurveyFollowupStepProps {
   score: number;
   question: string;
@@ -29,17 +31,18 @@ export default function SurveyFollowupStep({
   onSkip,
   onSend,
 }: SurveyFollowupStepProps): React.ReactElement {
+  const t = useTranslations("survey");
   return (
     <div>
-      <p className="m-0 mb-3 text-[11px] font-medium text-cognee-placeholder">Your score: {score}/10</p>
+      <p className="m-0 mb-3 text-[11px] font-medium text-cognee-placeholder">{t("yourScore", { score })}</p>
 
       <p className="m-0 mb-3.5 text-[13.5px] font-semibold text-cognee-dark">{question}</p>
 
       <textarea
         value={answer}
         onChange={(e) => onAnswerChange(e.target.value)}
-        placeholder="Optional, but it's the part we actually read."
-        aria-label="Your answer"
+        placeholder={t("placeholder")}
+        aria-label={t("answerAria")}
         className="min-h-[78px] w-full resize-y rounded-lg border border-cognee-border bg-cognee-bg p-2.5 font-sans text-xs leading-relaxed text-cognee-dark outline-none focus:border-cognee-lavender"
       />
 
@@ -51,7 +54,7 @@ export default function SurveyFollowupStep({
             onChange={(e) => onConsentChange(e.target.checked)}
             className="accent-cognee-lavender"
           />
-          OK to quote this publicly (first name only)?
+          {t("quoteConsent")}
         </label>
       )}
 
@@ -59,7 +62,7 @@ export default function SurveyFollowupStep({
 
       <div className="mt-4 flex items-center gap-2.5">
         <button type="button" onClick={onBack} className="mr-auto cursor-pointer bg-transparent p-0 text-xs text-cognee-placeholder hover:text-cognee-secondary">
-          ← Back
+          {t("back")}
         </button>
         <button
           type="button"
@@ -67,7 +70,7 @@ export default function SurveyFollowupStep({
           disabled={sending}
           className="cursor-pointer rounded-md border border-cognee-border bg-transparent px-3.5 py-2 text-[13px] font-medium text-cognee-secondary hover:text-cognee-dark disabled:cursor-not-allowed disabled:opacity-45"
         >
-          Skip
+          {t("skip")}
         </button>
         <button
           type="button"
@@ -75,7 +78,7 @@ export default function SurveyFollowupStep({
           disabled={sending}
           className="cursor-pointer rounded-md bg-cognee-lavender px-3.5 py-2 text-[13px] font-medium text-cognee-lavender-text disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {sending ? "Sending…" : "Send"}
+          {sending ? t("sending") : t("send")}
         </button>
       </div>
     </div>

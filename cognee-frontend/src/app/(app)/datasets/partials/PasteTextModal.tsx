@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactElement } from "react";
+import { useTranslations } from "next-intl";
 import ModalShell from "@/ui/elements/ModalShell";
 
 export default function PasteTextModal({
@@ -16,15 +17,16 @@ export default function PasteTextModal({
   onSubmit: () => void;
   onCancel: () => void;
 }): ReactElement {
+  const t = useTranslations("datasets");
   return (
     <ModalShell onClose={onCancel}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", margin: 0 }}>Paste text</h2>
-      <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>Paste your text below. It will be added as a document to the selected brain.</p>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", margin: 0 }}>{t("pasteText.title")}</h2>
+      <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>{t("pasteText.description")}</p>
       <textarea
         autoFocus
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Paste your text here…"
+        placeholder={t("pasteText.placeholder")}
         rows={8}
         style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "10px 14px", fontSize: 14, color: "#EDECEA", fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }}
         onFocus={(e) => { e.target.style.borderColor = "#6510F4"; e.target.style.boxShadow = "0 0 0 3px rgba(188,155,255,0.10)"; }}
@@ -32,10 +34,10 @@ export default function PasteTextModal({
       />
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button onClick={onCancel} className="cursor-pointer"
-          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.7)", fontFamily: "inherit" }}>Cancel</button>
+          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.7)", fontFamily: "inherit" }}>{t("common.cancel")}</button>
         <button onClick={onSubmit} disabled={!value.trim() || pasting} className="cursor-pointer"
           style={{ background: value.trim() ? "#6510F4" : "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: value.trim() ? "#fff" : "rgba(237,236,234,0.35)", fontFamily: "inherit" }}>
-          {pasting ? "Adding…" : "Add"}
+          {pasting ? t("common.adding") : t("common.add")}
         </button>
       </div>
     </ModalShell>

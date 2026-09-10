@@ -1,9 +1,11 @@
-export function formatDate(dateStr?: string, withTime = false): string {
+import { DEFAULT_LOCALE, type Locale } from "@/i18n/config";
+
+export function formatDate(dateStr?: string, withTime = false, locale: Locale = DEFAULT_LOCALE): string {
   if (!dateStr) return "—";
   const d = new Date(dateStr);
-  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const date = d.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" });
   if (!withTime) return date;
-  const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const time = d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false });
   return `${date}, ${time}`;
 }
 
@@ -23,9 +25,9 @@ export function decodeFilename(name: string): string {
   }
 }
 
-export function formatFileSize(bytes?: number): string {
+export function formatFileSize(bytes?: number, locale: Locale = DEFAULT_LOCALE): string {
   if (bytes == null) return "—";
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024) return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / 1024)} KB`;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / (1024 * 1024))} MB`;
 }

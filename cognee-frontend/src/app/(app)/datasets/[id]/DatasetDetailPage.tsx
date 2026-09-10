@@ -43,6 +43,7 @@ import { inferSchema, generateCustomPrompt } from "@/modules/llm/managementLlmAp
 import { listOntologies, uploadOntology, deleteOntology, type OntologyMeta } from "@/modules/ontologies/ontologyApi";
 import ShareDatasetModal from "@/ui/elements/ShareDatasetModal";
 import { describeProcessingError } from "../processingErrorMessage";
+import { useTranslations } from "next-intl";
 import { v4 as uuid } from "uuid";
 
 interface FileEntry {
@@ -94,6 +95,7 @@ Adhere to the rules strictly. Non-compliance will result in termination.`;
 
 
 export default function DatasetDetailPage({ datasetId }: { datasetId: string }) {
+  const t = useTranslations("datasets");
   const router = useRouter();
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets: contextDatasets } = useFilter();
@@ -201,9 +203,9 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       setOntologies((prev) => { const next = { ...prev }; delete next[key]; return next; });
       if (selectedOntologyKey === key) setSelectedOntologyKey(null);
       setConfirmDeleteOntologyKey(null);
-      notifications.show({ title: "Ontology deleted", message: `"${key}" removed.`, color: "green", autoClose: 4000 });
-    } catch (err) {
-      notifications.show({ title: "Delete failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({ title: t("detail.ontologyDeletedTitle"), message: t("detail.itemRemoved", { name: key }), color: "green", autoClose: 4000 });
+    } catch {
+      notifications.show({ title: t("detail.deleteFailedTitle"), message: t("detail.genericError"), color: "red" });
     } finally {
       setDeletingOntology(false);
     }
@@ -212,7 +214,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
   function handleSelectOntology(key: string | null) {
     const prev = selectedOntologyKey;
     setSelectedOntologyKey(key);
-    notifications.show({ title: "Ontology updated", message: `"${datasetName}" now uses "${key ?? "Automatic"}".`, color: "green", autoClose: 4000 });
+    notifications.show({ title: t("detail.ontologyUpdatedTitle"), message: t("detail.assignmentUpdated", { datasetName, name: key ?? t("detail.automatic") }), color: "green", autoClose: 4000 });
     if (prev !== key && files.length > 0) {
       setGraphOutdated(true);
     }
@@ -226,7 +228,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
   function handleSelectPrompt(name: string | null) {
     const prev = selectedPromptName;
     setSelectedPromptName(name);
-    notifications.show({ title: "Prompt updated", message: `"${datasetName}" now uses "${name ?? "Automatic"}".`, color: "green", autoClose: 4000 });
+    notifications.show({ title: t("detail.promptUpdatedTitle"), message: t("detail.assignmentUpdated", { datasetName, name: name ?? t("detail.automatic") }), color: "green", autoClose: 4000 });
     if (prev !== name && files.length > 0) {
       setGraphOutdated(true);
     }
@@ -252,22 +254,22 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
         const cleanSchema = toCleanSchema(model.schema);
         const graphModelSchema = toGraphModelSchema(cleanSchema);
         const result = await generateCustomPrompt(cogniInstance, graphModelSchema);
-        setEditingPromptName(`${datasetName} Prompt`);
+        setEditingPromptName(t("detail.defaultPromptName", { datasetName }));
         setEditingPromptText(result.customPrompt);
         setShowCreatePromptModal(false);
         setShowPromptEditor(true);
-        notifications.show({ title: "Prompt generated", message: "Review and edit the prompt below.", color: "green", autoClose: 4000 });
+        notifications.show({ title: t("detail.promptGeneratedTitle"), message: t("detail.promptGenerated"), color: "green", autoClose: 4000 });
       }
     } catch (err) {
       console.error("Generate prompt failed:", err);
-      notifications.show({ title: "Generation failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({ title: t("detail.generationFailedTitle"), message: t("detail.genericError"), color: "red" });
     } finally {
       setInferringPrompt(false);
     }
   }
 
   function handleStartBlankPrompt() {
-    setEditingPromptName(`${datasetName} Prompt`);
+    setEditingPromptName(t("detail.defaultPromptName", { datasetName }));
     setEditingPromptText(DEFAULT_EXTRACTION_PROMPT);
     setShowCreatePromptModal(false);
     setShowPromptEditor(true);
@@ -283,9 +285,9 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       if (selectedPromptName === name) setSelectedPromptName(null);
       setConfirmDeletePrompt(false);
       setShowPromptEditor(false);
-      notifications.show({ title: "Prompt deleted", message: `"${name}" removed.`, color: "green", autoClose: 4000 });
-    } catch (err) {
-      notifications.show({ title: "Delete failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({ title: t("detail.promptDeletedTitle"), message: t("detail.itemRemoved", { name }), color: "green", autoClose: 4000 });
+    } catch {
+      notifications.show({ title: t("detail.deleteFailedTitle"), message: t("detail.genericError"), color: "red" });
     } finally {
       setDeletingPrompt(false);
     }
@@ -295,7 +297,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
     if (!cogniInstance) return;
     const name = editingPromptName.trim();
     if (!name) {
-      notifications.show({ title: "Name required", message: "Please enter a prompt name.", color: "yellow" });
+      notifications.show({ title: t("detail.nameRequiredTitle"), message: t("detail.nameRequired"), color: "yellow" });
       return;
     }
     setSavingPrompt(true);
@@ -304,10 +306,10 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       setCustomPrompts((prev) => ({ ...prev, [name]: editingPromptText }));
       setSelectedPromptName(name);
       setShowPromptEditor(false);
-      notifications.show({ title: "Prompt saved", message: `"${name}" saved.`, color: "green", autoClose: 4000 });
+      notifications.show({ title: t("detail.promptSavedTitle"), message: t("detail.itemSaved", { name }), color: "green", autoClose: 4000 });
     } catch (err) {
       console.error("Failed to save prompt:", err);
-      notifications.show({ title: "Failed", message: "Could not save prompt.", color: "red" });
+      notifications.show({ title: t("detail.failedTitle"), message: t("detail.savePromptFailed"), color: "red" });
     } finally {
       setSavingPrompt(false);
     }
@@ -326,14 +328,14 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       assignOntologyToDataset(cogniInstance, datasetId, key).catch((err) => {
         captureException(err, { context: "dataset-detail.assign-ontology-after-upload", datasetId, key });
         notifications.show({
-          title: "Ontology uploaded, but not assigned",
-          message: `"${key}" was uploaded but couldn't be assigned to this dataset automatically. Assign it manually from the dropdown.`,
+          title: t("detail.ontologyUnassignedTitle"),
+          message: t("detail.ontologyUnassigned", { name: key }),
           color: "orange",
         });
       });
-      notifications.show({ title: "Ontology uploaded", message: `"${key}" is ready to use.`, color: "green", autoClose: 4000 });
+      notifications.show({ title: t("detail.ontologyUploadedTitle"), message: t("detail.ontologyReady", { name: key }), color: "green", autoClose: 4000 });
     } catch (err) {
-      notifications.show({ title: "Upload failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({ title: t("detail.uploadFailedTitle"), message: t("detail.genericError"), color: "red" });
       throw err;
     }
   }
@@ -341,9 +343,9 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
   function handleSelectModel(modelId: string | null) {
     const prevModelId = selectedModelId;
     setSelectedModelId(modelId);
-    const modelName = modelId ? graphModels.find((m) => m.id === modelId)?.name ?? "Unknown" : "Automatic";
+    const modelName = modelId ? graphModels.find((m) => m.id === modelId)?.name ?? t("detail.unknownModel") : t("detail.automatic");
     trackEvent({ pageName: "Dataset Detail", eventName: "graph_model_selected", additionalProperties: { dataset_id: datasetId, model_id: modelId ?? "automatic" } });
-    notifications.show({ title: "Graph model updated", message: `"${datasetName}" now uses "${modelName}".`, color: "green", autoClose: 4000 });
+    notifications.show({ title: t("detail.graphModelUpdatedTitle"), message: t("detail.assignmentUpdated", { datasetName, name: modelName }), color: "green", autoClose: 4000 });
     // Mark graph as outdated if the model actually changed and there are files
     if (prevModelId !== modelId && files.length > 0) {
       setGraphOutdated(true);
@@ -388,11 +390,11 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
             // Convert the JSON Schema from the LLM into our internal format
             // Store as-is for now — the editor can display it
             modelSchema = mapInferredSchema(result.graphSchema);
-            notifications.show({ title: "Schema inferred", message: `Detected ${modelSchema.entities.length} entity types from your data.`, color: "green", autoClose: 4000 });
+            notifications.show({ title: t("detail.schemaInferredTitle"), message: t("detail.schemaInferred", { count: modelSchema.entities.length }), color: "green", autoClose: 4000 });
           }
       } catch (err) {
         console.error("Infer schema failed:", err);
-        notifications.show({ title: "Inference failed", message: "Could not infer schema. Starting with blank model.", color: "yellow", autoClose: 4000 });
+        notifications.show({ title: t("detail.inferenceFailedTitle"), message: t("detail.inferenceFailed"), color: "yellow", autoClose: 4000 });
       } finally {
         setInferring(false);
       }
@@ -403,7 +405,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       const cfg = await loadGraphModelsConfig(cogniInstance);
       const newModel: GraphModel = {
         id: newModelId,
-        name: `${datasetName} Schema`,
+        name: t("detail.defaultSchemaName", { datasetName }),
         schema: modelSchema,
         createdAt: now,
         updatedAt: now,
@@ -417,7 +419,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       router.push(`/graph-models/${newModelId}`);
     } catch (err) {
       console.error("Failed to create model:", err);
-      notifications.show({ title: "Failed", message: "Could not create graph model.", color: "red" });
+      notifications.show({ title: t("detail.failedTitle"), message: t("detail.createModelFailed"), color: "red" });
     }
   }
 
@@ -491,8 +493,8 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
 
     if (filesArray.length > MAX_FILES_PER_UPLOAD) {
       notifications.show({
-        title: "Too many files",
-        message: `You selected ${filesArray.length} files. Please upload ${MAX_FILES_PER_UPLOAD} or fewer at a time.`,
+        title: t("detail.tooManyFilesTitle"),
+        message: t("detail.tooManyFiles", { selected: filesArray.length, max: MAX_FILES_PER_UPLOAD }),
         color: "red",
       });
       return;
@@ -523,8 +525,8 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       // surface an error instead of silently no-opping.
       onLimitExceeded: (selected) => {
         notifications.show({
-          title: "Too many files",
-          message: `You selected ${selected.length} files. Please upload ${MAX_FILES_PER_UPLOAD} or fewer at a time.`,
+          title: t("detail.tooManyFilesTitle"),
+          message: t("detail.tooManyFiles", { selected: selected.length, max: MAX_FILES_PER_UPLOAD }),
           color: "red",
         });
       },
@@ -558,19 +560,19 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
           // The pending files live in the upload session, so a reload is what
           // actually finishes them.
           notifications.show({
-            title: "Upload stalled",
+            title: t("detail.uploadStalledTitle"),
             message:
               ctx.filesUploaded > 0
-                ? `Uploaded ${ctx.filesUploaded} of ${filesArray.length} files before the connection stalled. The rest haven't been sent — reload the page to pick up where this left off.`
-                : "The upload stalled before any files were sent. Reload the page to resume it, or try again.",
+                ? t("detail.uploadStalledPartial", { uploaded: ctx.filesUploaded, total: filesArray.length })
+                : t("detail.uploadStalledNone"),
             color: "red",
             autoClose: false,
           });
         } else {
           captureException(error, { datasetId, fileCount: filesArray.length, totalBytes, durationMs: ctx.durationMs });
           notifications.show({
-            title: "Upload failed",
-            message: errorMessage,
+            title: t("detail.uploadFailedTitle"),
+            message: t("detail.genericError"),
             color: "red",
           });
         }
@@ -605,8 +607,12 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
             error_message: errorMessage,
           },
         });
-        const { title, message, isTimeout } = describeProcessingError(error);
-        notifications.show({ title, message, color: isTimeout ? "yellow" : "red" });
+        const { isTimeout } = describeProcessingError(error);
+        notifications.show({
+          title: isTimeout ? t("detail.processingStillBuildingTitle") : t("detail.processingFailedTitle"),
+          message: isTimeout ? t("detail.processingStillBuilding") : t("detail.processingFailed"),
+          color: isTimeout ? "yellow" : "red",
+        });
       },
     });
   }
@@ -668,7 +674,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       refetchStatuses();
     } catch (err) {
       console.error("Re-cognify failed:", err);
-      notifications.show({ title: "Rebuild failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({ title: t("detail.rebuildFailedTitle"), message: t("detail.genericError"), color: "red" });
       onError();
     }
   }
@@ -690,7 +696,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
   const filtered = search ? files.filter((f) => f.name.toLowerCase().includes(search.toLowerCase())) : files;
 
   if (loading || isInitializing) {
-    return <><TrackPageView page="Dataset Detail" additionalProperties={{ dataset_id: datasetId }} /><PageLoading name="Files" /></>;
+    return <><TrackPageView page="Dataset Detail" additionalProperties={{ dataset_id: datasetId }} /><PageLoading name={t("documents.title")} /></>;
   }
 
   return (
@@ -715,30 +721,30 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 22, fontWeight: 700, color: "#EDECEA" }}>{datasetName}</span>
             {datasetName === "default_dataset" && (
-              <span style={{ background: "rgba(188,155,255,0.20)", color: "#BC9BFF", border: "1px solid rgba(188,155,255,0.35)", fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 4 }}>Default</span>
+              <span style={{ background: "rgba(188,155,255,0.20)", color: "#BC9BFF", border: "1px solid rgba(188,155,255,0.35)", fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 4 }}>{t("detail.defaultBadge")}</span>
             )}
           </div>
           <span style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", display: "flex", alignItems: "center", gap: 6 }}>
-            {files.length} documents
+            {t("documents.count", { count: files.length })}
             {datasetStatus === "processing" || processing ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#6510F4", fontWeight: 500 }}>
                 · <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6510F4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}><path d="M21 12a9 9 0 11-6.219-8.56" /></svg>
-                Processing
+                {t("status.running")}
               </span>
             ) : datasetStatus === "failed_insufficient_credits" ? (
-              <Link href="/billing" style={{ color: "#BC9BFF", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2 }}>· Failed — insufficient credits</Link>
+              <Link href="/billing" style={{ color: "#BC9BFF", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2 }}>· {t("status.failed_insufficient_credits")}</Link>
             ) : datasetStatus === "failed" ? (
-              <span style={{ color: "#EF4444", fontWeight: 500 }}>· Failed</span>
+              <span style={{ color: "#EF4444", fontWeight: 500 }}>· {t("status.failed")}</span>
             ) : graphOutdated || datasetStatus === "outdated" ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#D97706", fontWeight: 500 }}>
-                · <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#F59E0B", display: "inline-block" }} /> Outdated
+                · <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#F59E0B", display: "inline-block" }} /> {t("status.outdated")}
               </span>
             ) : datasetStatus === "ready" ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#22C55E", fontWeight: 500 }}>
-                · <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22C55E", display: "inline-block" }} /> Ready
+                · <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22C55E", display: "inline-block" }} /> {t("status.completed")}
               </span>
             ) : files.length === 0 ? (
-              <span style={{ color: "rgba(237,236,234,0.35)" }}>· Empty</span>
+              <span style={{ color: "rgba(237,236,234,0.35)" }}>· {t("status.empty")}</span>
             ) : null}
           </span>
         </div>
@@ -755,7 +761,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
               ) : (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0115.36-6.36L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 01-15.36 6.36L3 16" /></svg>
               )}
-              {syncing ? "Syncing..." : "Sync"}
+              {syncing ? t("detail.syncing") : t("detail.sync")}
             </button>
           )}
           {datasetName !== "default_dataset" && (
@@ -765,7 +771,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
               style={{ background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)", color: "#EF4444", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}
             >
               <TrashIcon />
-              Delete
+              {t("common.delete")}
             </button>
           )}
           <button
@@ -774,7 +780,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
             style={{ background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)", color: "rgba(237,236,234,0.7)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>
-            Share
+            {t("detail.share")}
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -788,12 +794,12 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
           )}
           {combinedUploadProgress.stage === "idle"
-            ? "Upload files"
+            ? t("detail.uploadFiles")
             : combinedUploadProgress.stage === "estimating"
-              ? "Estimating cost..."
+              ? t("detail.estimating")
               : uploadStage === "processing"
-                ? "Building knowledge graph..."
-                : `Uploading ${uploadProgress.filesTotal} ${uploadProgress.filesTotal === 1 ? "file" : "files"}...`}
+                ? t("documents.building")
+                : t("detail.uploadingFiles", { count: uploadProgress.filesTotal })}
           </button>
         </div>
       </div>
@@ -822,8 +828,8 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
         <DeleteConfirmModal
-          title="Delete brain"
-          message={<>Are you sure you want to delete <strong>{datasetName}</strong>? This will permanently remove the dataset and all its files. This action cannot be undone.</>}
+          title={t("deleteBrain.title")}
+          message={t.rich("deleteBrain.message", { name: datasetName, strong: (chunks) => <strong>{chunks}</strong> })}
           onConfirm={handleDeleteDataset}
           onCancel={() => setShowDeleteConfirm(false)}
           busy={deleting}
@@ -869,8 +875,8 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       {/* Delete prompt confirmation modal */}
       {confirmDeletePrompt && (
         <DeleteConfirmModal
-          title="Delete prompt"
-          message={<>Are you sure you want to delete <strong>{editingPromptName.trim() || "this prompt"}</strong>? This action cannot be undone.</>}
+          title={t("deletePrompt.title")}
+          message={t.rich("deletePrompt.message", { name: editingPromptName.trim() || t("deletePrompt.unnamed"), strong: (chunks) => <strong>{chunks}</strong> })}
           onConfirm={handleConfirmDeletePrompt}
           onCancel={() => setConfirmDeletePrompt(false)}
           busy={deletingPrompt}
@@ -880,8 +886,8 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       {/* Delete ontology confirmation modal */}
       {confirmDeleteOntologyKey && (
         <DeleteConfirmModal
-          title="Delete ontology"
-          message={<>Are you sure you want to delete <strong>{confirmDeleteOntologyKey}</strong>? This action cannot be undone.</>}
+          title={t("deleteOntology.title")}
+          message={t.rich("deleteOntology.message", { name: confirmDeleteOntologyKey, strong: (chunks) => <strong>{chunks}</strong> })}
           onConfirm={() => handleDeleteOntology(confirmDeleteOntologyKey)}
           onCancel={() => setConfirmDeleteOntologyKey(null)}
           busy={deletingOntology}
@@ -891,8 +897,8 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
       {/* Delete file confirmation modal */}
       {deleteFileTarget && (
         <DeleteConfirmModal
-          title="Delete file"
-          message={<>Are you sure you want to delete <strong>{decodeFilename(deleteFileTarget.name)}</strong>? This action cannot be undone.</>}
+          title={t("deleteDocument.title")}
+          message={t.rich("deleteDocument.message", { name: decodeFilename(deleteFileTarget.name), strong: (chunks) => <strong>{chunks}</strong> })}
           onConfirm={() => handleDelete(deleteFileTarget.id)}
           onCancel={() => setDeleteFileTarget(null)}
           busy={deletingFileId === deleteFileTarget.id}
@@ -904,7 +910,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="rgba(237,236,234,0.35)" strokeWidth="1.5" /><path d="M10.5 10.5L14 14" stroke="rgba(237,236,234,0.35)" strokeWidth="1.5" strokeLinecap="round" /></svg>
         <input
           type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search files..."
+          placeholder={t("detail.searchPlaceholder")}
           style={{ flex: 1, border: "none", outline: "none", fontSize: 14, color: "#EDECEA", background: "transparent", fontFamily: "inherit" }}
         />
         {search && <button onClick={() => setSearch("")} className="cursor-pointer" style={{ background: "none", border: "none", color: "rgba(237,236,234,0.35)", fontSize: 14 }}>&#10005;</button>}
@@ -942,14 +948,14 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
         <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 1L1 14h14L8 1z" fill="rgba(245,158,11,0.25)" stroke="#F59E0B" strokeWidth="1" /><text x="8" y="12" textAnchor="middle" fontSize="9" fontWeight="700" fill="#FBBF24">!</text></svg>
           <span style={{ flex: 1, fontSize: 13, color: "#FBBF24" }}>
-            Knowledge graph is outdated. The graph model was changed since the last build.
+            {t("detail.outdatedBanner")}
           </span>
           <button
             onClick={() => rebuildGraph(() => { setGraphOutdated(true); setDatasetStatus("outdated"); })}
             className="cursor-pointer hover:bg-yellow-500/20"
             style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 6, padding: "6px 14px", fontSize: 13, fontWeight: 500, color: "#FBBF24", whiteSpace: "nowrap", fontFamily: "inherit" }}
           >
-            Rebuild graph
+            {t("detail.rebuildGraph")}
           </button>
         </div>
       )}
@@ -959,14 +965,14 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
         <div style={{ background: "rgba(101,16,244,0.1)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 1L1 14h14L8 1z" fill="rgba(188,155,255,0.25)" stroke="#BC9BFF" strokeWidth="1" /><text x="8" y="12" textAnchor="middle" fontSize="9" fontWeight="700" fill="#BC9BFF">!</text></svg>
           <span style={{ flex: 1, fontSize: 13, color: "#BC9BFF" }}>
-            Building the knowledge graph failed — your workspace ran out of credits mid-run. Your files are still here.
+            {t("detail.creditsFailedBanner")}
           </span>
           <Link
             href="/billing"
             className="cursor-pointer hover:bg-[#6510F4]/20"
             style={{ background: "rgba(101,16,244,0.2)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 6, padding: "6px 14px", fontSize: 13, fontWeight: 500, color: "#BC9BFF", whiteSpace: "nowrap", textDecoration: "none" }}
           >
-            Go to billing
+            {t("detail.goToBilling")}
           </Link>
         </div>
       )}
@@ -976,14 +982,14 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
         <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 1L1 14h14L8 1z" fill="rgba(239,68,68,0.25)" stroke="#EF4444" strokeWidth="1" /><text x="8" y="12" textAnchor="middle" fontSize="9" fontWeight="700" fill="#F87171">!</text></svg>
           <span style={{ flex: 1, fontSize: 13, color: "#F87171" }}>
-            Building the knowledge graph failed. Your files are still here — you can retry the build.
+            {t("detail.failedBanner")}
           </span>
           <button
             onClick={() => rebuildGraph(() => setDatasetStatus("failed"))}
             className="cursor-pointer hover:bg-red-500/20"
             style={{ background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 6, padding: "6px 14px", fontSize: 13, fontWeight: 500, color: "#F87171", whiteSpace: "nowrap", fontFamily: "inherit" }}
           >
-            Retry build
+            {t("documents.retryBuild")}
           </button>
         </div>
       )}
@@ -995,7 +1001,7 @@ export default function DatasetDetailPage({ datasetId }: { datasetId: string }) 
             <div style={{ width: 52, height: 52, background: "rgba(188,155,255,0.20)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 17V7M12 7L7 12M12 7L17 12" stroke="#6510F4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </div>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#BC9BFF" }}>Drop files to upload</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#BC9BFF" }}>{t("documents.dropToUpload")}</span>
           </div>
         </div>
       )}

@@ -1,0 +1,26 @@
+# Local override for the source-built, bilingual Cognee UI.
+#
+# It deliberately overrides only the `frontend` service from
+# docker-compose.yml. The cognee API, cognee-mcp, PostgreSQL, volumes, ports,
+# networks and profiles remain defined by the base Compose file.
+#
+# Start the full local stack with:
+#   docker compose -f docker-compose.yml -f docker-compose.i18n.yml \
+#     --profile postgres --profile ui --profile mcp up -d --build
+#
+# The image tag is intentionally local and versioned: it cannot be confused
+# with the upstream cognee/cognee-ui image. Bump the local version together
+# with a release so deployed image references remain explicit. Rebuild after
+# changing frontend source, message catalogues or Dockerfile:
+#   docker compose -f docker-compose.yml -f docker-compose.i18n.yml \
+#     --profile ui build --no-cache frontend
+
+services:
+  frontend:
+    # The `ui` profile, port 3000, network and dependency on `cognee` are
+    # inherited from docker-compose.yml.
+    image: cognee/cognee-ui-i18n:0.1.0-local
+    build:
+      context: ./cognee-frontend
+      dockerfile: Dockerfile
+      target: runner

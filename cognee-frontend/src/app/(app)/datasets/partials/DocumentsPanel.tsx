@@ -2,6 +2,7 @@
 
 import { useRef, useState, type ReactElement } from "react";
 import { Loader } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import PageLoading from "@/ui/elements/PageLoading";
 import SkeletonBar from "@/ui/elements/SkeletonBar";
 import EmptyDocIcon from "@/ui/elements/EmptyDocIcon";
@@ -53,6 +54,7 @@ export default function DocumentsPanel<T extends DocRow>({
   onRetryBuild: () => void;
   onRetryDocs: () => void;
 }): ReactElement {
+  const t = useTranslations("datasets");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -77,7 +79,7 @@ export default function DocumentsPanel<T extends DocRow>({
         {isDragOver && selectedId && (
           <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "rgba(101,16,244,0.06)", border: "2px dashed #6510F4", borderRadius: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, pointerEvents: "none" }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 15V3m0 0L8 7m4-4l4 4" stroke="#6510F4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M3 15v4a2 2 0 002 2h14a2 2 0 002-2v-4" stroke="#6510F4" strokeWidth="1.5" strokeLinecap="round" /></svg>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#6510F4" }}>Drop to upload</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#6510F4" }}>{t("documents.dropToUpload")}</span>
           </div>
         )}
 
@@ -88,15 +90,15 @@ export default function DocumentsPanel<T extends DocRow>({
               <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{selectedName}</span>
               <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>·</span>
               <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                {docsLoading ? <SkeletonBar width={36} height={8} /> : processing ? "processing" : <>{docs.length} doc{docs.length !== 1 ? "s" : ""}</>}
+                {docsLoading ? <SkeletonBar width={36} height={8} /> : processing ? t("status.running") : t("documents.count", { count: docs.length })}
               </span>
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-                <button onClick={() => fileInputRef.current?.click()} className="hover:bg-[#5A0ED6] cursor-pointer" style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 500, cursor: "pointer" }}>Add files</button>
-                <button onClick={onPaste} className="hover:bg-[#5A0ED6] cursor-pointer" style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 500, cursor: "pointer" }}>Paste text</button>
+                <button onClick={() => fileInputRef.current?.click()} className="hover:bg-[#5A0ED6] cursor-pointer" style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 500, cursor: "pointer" }}>{t("documents.addFiles")}</button>
+                <button onClick={onPaste} className="hover:bg-[#5A0ED6] cursor-pointer" style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 500, cursor: "pointer" }}>{t("pasteText.action")}</button>
               </div>
             </>
           ) : (
-            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Documents</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{t("documents.title")}</span>
           )}
         </div>
 
@@ -109,7 +111,7 @@ export default function DocumentsPanel<T extends DocRow>({
           <div style={{ padding: "8px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.04)", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <Loader size={12} color="#6510F4" />
             <span style={{ fontSize: 12, color: "#6510F4" }}>
-              {uploadStage === "processing" ? "Building knowledge graph…" : "Uploading…"}
+              {uploadStage === "processing" ? t("documents.building") : t("documents.uploading")}
             </span>
           </div>
         ) : null}
@@ -117,7 +119,7 @@ export default function DocumentsPanel<T extends DocRow>({
           <div style={{ padding: "8px 16px", borderBottom: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <span style={{ fontSize: 12, color: "#EF4444", flex: 1 }}>{uploadError}</span>
             {canRetryBuild && (
-              <button onClick={onRetryBuild} className="cursor-pointer hover:bg-red-500/20" style={{ background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 500, color: "#F87171" }}>Retry build</button>
+              <button onClick={onRetryBuild} className="cursor-pointer hover:bg-red-500/20" style={{ background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 500, color: "#F87171" }}>{t("documents.retryBuild")}</button>
             )}
             <button onClick={onClearUploadError} style={{ background: "none", border: "none", color: "rgba(237,236,234,0.35)", fontSize: 12, cursor: "pointer" }}>✕</button>
           </div>
@@ -128,15 +130,15 @@ export default function DocumentsPanel<T extends DocRow>({
           {!selectedId ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M4 8a2 2 0 012-2h6l2 3h12a2 2 0 012 2v13a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke="rgba(237,236,234,0.2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>Select a brain</span>
+              <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>{t("documents.selectBrain")}</span>
             </div>
           ) : docsLoading ? (
             <PageLoading name="Files" />
           ) : docsError && docs.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 10 }}>
-              <span style={{ fontSize: 13, color: "#F87171", fontWeight: 500 }}>Couldn&rsquo;t load documents</span>
-              <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)", textAlign: "center", maxWidth: 220 }}>Your files are safe — try again.</span>
-              <button onClick={onRetryDocs} className="cursor-pointer hover:bg-white/10" style={{ background: "rgba(255,255,255,0.06)", color: "#EDECEA", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 500 }}>Retry</button>
+              <span style={{ fontSize: 13, color: "#F87171", fontWeight: 500 }}>{t("documents.loadError")}</span>
+              <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)", textAlign: "center", maxWidth: 220 }}>{t("documents.safeRetry")}</span>
+              <button onClick={onRetryDocs} className="cursor-pointer hover:bg-white/10" style={{ background: "rgba(255,255,255,0.06)", color: "#EDECEA", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 500 }}>{t("common.retry")}</button>
             </div>
           ) : docs.length === 0 ? (
             <div
@@ -146,9 +148,9 @@ export default function DocumentsPanel<T extends DocRow>({
               <div style={{ width: 44, height: 44, background: "rgba(188,155,255,0.20)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <EmptyDocIcon />
               </div>
-              <span style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", fontWeight: 500 }}>No documents yet</span>
+              <span style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", fontWeight: 500 }}>{t("documents.empty")}</span>
               <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)", textAlign: "center", maxWidth: 220 }}>
-                Drag &amp; drop files here, or <span style={{ color: "#6510F4", textDecoration: "underline" }}>browse</span>
+                {t("documents.dragDropPrefix")} <span style={{ color: "#6510F4", textDecoration: "underline" }}>{t("documents.browse")}</span>
               </span>
             </div>
           ) : (

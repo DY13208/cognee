@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useTranslations } from "next-intl";
 import { FONT, SANS, T } from "./redesign/mono";
 import type { AciAgentKey, AciCardConfig } from "./agentConnectionSteps";
 
@@ -24,12 +25,21 @@ export function AciCard({
   integrationConnected,
   onCardClick,
 }: AciCardProps): React.ReactElement {
+  const t = useTranslations("dashboard.aci");
+  const tInt = useTranslations("integrations");
   const connected = card.key === "upload" ? hasDocuments : !!integrationConnected[card.key];
   const isActive = activeKey === card.key;
   const isUpload = card.key === "upload";
 
   const logoNode = buildLogoNode(card.key, card.name);
-  const ctaLabel = isUpload ? (connected ? "Add more data" : "Upload data") : "Connect";
+  const ctaLabel = isUpload ? (connected ? t("addMoreData") : t("uploadData")) : t("connect");
+  const name = card.key === "upload" ? t("companyBrain") : card.name;
+  const description =
+    card.key === "claude-code" ? t("claudeDesc")
+    : card.key === "codex" ? t("codexDesc")
+    : card.key === "openclaw" ? t("openclawDesc")
+    : card.key === "api-mcp" ? t("apiMcpDesc")
+    : t("companyBrainDesc");
 
   return (
     <button
@@ -57,19 +67,19 @@ export function AciCard({
       {/* 1. Title + status on one line */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: T.text, letterSpacing: "-0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
-          {card.name}
+          {name}
         </span>
         {connected && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.green }} />
-            <span style={{ ...FONT, fontSize: 11, fontWeight: 500, color: T.green }}>Connected</span>
+            <span style={{ ...FONT, fontSize: 11, fontWeight: 500, color: T.green }}>{tInt("connected")}</span>
           </span>
         )}
       </div>
 
       {/* 2. Description */}
       <span style={{ ...FONT, fontSize: 11.5, color: T.muted, lineHeight: 1.35, marginTop: 3, paddingRight: 78, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {card.description}
+        {description}
       </span>
 
       {/* 3a. Button, bottom-left */}

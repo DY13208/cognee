@@ -2,6 +2,7 @@
 
 import type { ReactElement } from "react";
 import { Tooltip } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import SkeletonBar from "@/ui/elements/SkeletonBar";
 import PlusIcon from "@/ui/elements/PlusIcon";
 
@@ -31,29 +32,7 @@ const STATUS_DOT: Record<BrainStatus, string> = {
   loading: "#D4D4D8",
 };
 
-const STATUS_LABEL: Record<BrainStatus, string> = {
-  pending: "Pending",
-  running: "Processing",
-  completed: "Ready",
-  failed: "Failed",
-  failed_insufficient_credits: "Failed — insufficient credits",
-  empty: "Empty",
-  loading: "Loading",
-};
-
-const STATUS_HINT: Record<BrainStatus, string> = {
-  pending: "Queued, not started yet",
-  running: "Building the knowledge graph",
-  completed: "Processed and ready to query",
-  failed: "Processing failed",
-  failed_insufficient_credits: "Your workspace ran out of credits mid-run — top up on the billing page",
-  empty: "No documents added yet",
-  loading: "Loading",
-};
-
 const OUTDATED_DOT = "#F97316";
-const OUTDATED_LABEL = "Outdated";
-const OUTDATED_HINT = "Config changed — needs rebuilding";
 
 export default function BrainList<T extends BrainListItem>({
   brains,
@@ -70,12 +49,13 @@ export default function BrainList<T extends BrainListItem>({
   onCreate: () => void;
   onDelete: (brain: T) => void;
 }): ReactElement {
+  const t = useTranslations("datasets");
   return (
     <div style={{ width: 312, flexShrink: 0, borderRight: "1px solid rgba(255,255,255,0.1)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ height: 44, padding: "0 14px", borderBottom: "1px solid rgba(255,255,255,0.1)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Brain</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{t("title")}</span>
         <button onClick={onCreate} className="hover:bg-[#5A0ED6] cursor-pointer" style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}>
-          <PlusIcon /> New brain
+          <PlusIcon /> {t("brainList.newBrain")}
         </button>
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
@@ -88,8 +68,8 @@ export default function BrainList<T extends BrainListItem>({
           const processing = ds.status === "pending" || ds.status === "running";
           const isOutdated = outdatedIds.has(ds.id);
           const dotColor = isOutdated ? OUTDATED_DOT : STATUS_DOT[ds.status];
-          const statusLabel = isOutdated ? OUTDATED_LABEL : STATUS_LABEL[ds.status];
-          const statusHint = isOutdated ? OUTDATED_HINT : STATUS_HINT[ds.status];
+          const statusLabel = isOutdated ? t("status.outdated") : t(`status.${ds.status}`);
+          const statusHint = isOutdated ? t("statusHints.outdated") : t(`statusHints.${ds.status}`);
           return (
             <div key={ds.id} onClick={() => onSelect(ds.id)}
               style={{
@@ -124,15 +104,15 @@ export default function BrainList<T extends BrainListItem>({
                 {ds.name}
               </span>
               <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)", flexShrink: 0, minWidth: 16, textAlign: "right" }}>
-                {docsLoadingRow ? <SkeletonBar width={14} height={8} /> : processing ? "processing" : ds.documents}
+                {docsLoadingRow ? <SkeletonBar width={14} height={8} /> : processing ? t("status.running") : ds.documents}
               </span>
               {ds.name !== "default_dataset" && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onDelete(ds); }}
                   style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 500, color: "rgba(237,236,234,0.7)", cursor: "pointer", flexShrink: 0 }}
-                  title="Delete brain"
+                  title={t("brainList.deleteBrain")}
                 >
-                  Delete
+                  {t("common.delete")}
                 </button>
               )}
             </div>

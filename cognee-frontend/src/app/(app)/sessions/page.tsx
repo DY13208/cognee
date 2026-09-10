@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import { TrackPageView } from "@/modules/analytics";
 import SkeletonBar from "@/ui/elements/SkeletonBar";
@@ -20,6 +21,7 @@ import ImproveCard from "./partials/ImproveCard";
 import { useGraphEnrichment } from "./partials/useGraphEnrichment";
 import type { EnrichmentRun } from "@/modules/sessions/getSessions";
 import { parseServerIso, formatDate, formatRelativeTime, durationSeconds, formatDuration } from "./partials/format";
+import type { Locale } from "@/i18n/config";
 
 const ACCENT = "#6510F4";
 const RANGES: TimeRange[] = ["24h", "7d", "30d", "all"];
@@ -92,16 +94,12 @@ function asQA(raw: Record<string, unknown>): QAItem {
 // gets a green "saved entry" look so the two are unmistakable side-by-side.
 const SOURCE_META = {
   recall: {
-    label: "Recall",
-    bodyLabel: "Result",
     bg: "rgba(188,155,255,0.20)",
     border: "rgba(188,155,255,0.35)",
     color: "#BC9BFF",
     icon: <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
   },
   remember: {
-    label: "Remember",
-    bodyLabel: "Saved",
     bg: "rgba(134,239,172,0.18)",
     border: "rgba(134,239,172,0.40)",
     color: "#86EFAC",
@@ -110,6 +108,9 @@ const SOURCE_META = {
 } as const;
 
 function MessageCard({ qa, index }: { qa: QAItem; index: number }) {
+  const t = useTranslations("sessions");
+  const tCommon = useTranslations("common");
+  const locale = useLocale() as Locale;
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -122,7 +123,10 @@ function MessageCard({ qa, index }: { qa: QAItem; index: number }) {
   const positiveFeedback = qa.feedback_score != null && qa.feedback_score > 0;
   const negativeFeedback = qa.feedback_score != null && qa.feedback_score < 0;
   const canExpand = !!qa.answer;
-  const meta = SOURCE_META[qa.source ?? "recall"];
+  const source = qa.source ?? "recall";
+  const meta = SOURCE_META[source];
+  const sourceLabel = source === "remember" ? t("remember") : t("recall");
+  const bodyLabel = source === "remember" ? t("saved") : t("result");
 
   return (
     <div style={{
@@ -153,16 +157,16 @@ function MessageCard({ qa, index }: { qa: QAItem; index: number }) {
             fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
           }}>
             {meta.icon}
-            {meta.label}
+            {sourceLabel}
           </span>
-          <span style={{ fontSize: 11, color: "rgba(237,236,234,0.45)", fontVariantNumeric: "tabular-nums" }}>{formatRelativeTime(qa.time)}</span>
+          <span style={{ fontSize: 11, color: "rgba(237,236,234,0.45)", fontVariantNumeric: "tabular-nums" }}>{formatRelativeTime(qa.time, locale)}</span>
           {positiveFeedback && (
-            <span title={qa.feedback_text || "Positive feedback"} style={{ display: "inline-flex", color: "#22C55E" }}>
+            <span title={qa.feedback_text || t("positiveFeedback")} style={{ display: "inline-flex", color: "#22C55E" }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg>
             </span>
           )}
           {negativeFeedback && (
-            <span title={qa.feedback_text || "Negative feedback"} style={{ display: "inline-flex", color: "#EF4444" }}>
+            <span title={qa.feedback_text || t("negativeFeedback")} style={{ display: "inline-flex", color: "#EF4444" }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V2"/><path d="M9 18.12L10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg>
             </span>
           )}
@@ -175,7 +179,7 @@ function MessageCard({ qa, index }: { qa: QAItem; index: number }) {
           )}
         </div>
         <div style={{ fontSize: 13, lineHeight: 1.55, color: "#EDECEA", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-          {qa.question || <span style={{ color: "rgba(237,236,234,0.35)", fontStyle: "italic" }}>(no question)</span>}
+          {qa.question || <span style={{ color: "rgba(237,236,234,0.35)", fontStyle: "italic" }}>{t("noQuestion")}</span>}
         </div>
       </button>
 
@@ -194,13 +198,13 @@ function MessageCard({ qa, index }: { qa: QAItem; index: number }) {
                 fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
               }}>
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-                {meta.bodyLabel}
+                {bodyLabel}
               </span>
               <span style={{ flex: 1 }} />
               <button
                 onClick={doCopy}
                 className="cursor-pointer"
-                title={copied ? "Copied" : "Copy answer"}
+                title={copied ? tCommon("copied") : t("copyAnswer")}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 4,
                   background: "transparent", border: "1px solid rgba(255,255,255,0.12)",
@@ -212,7 +216,7 @@ function MessageCard({ qa, index }: { qa: QAItem; index: number }) {
                 {copied
                   ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                   : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
-                {copied ? "Copied" : "Copy"}
+                {copied ? tCommon("copied") : tCommon("copy")}
               </button>
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.55, color: "rgba(237,236,234,0.85)", whiteSpace: "pre-wrap", wordBreak: "break-word", fontVariantNumeric: "tabular-nums" }}>
@@ -234,6 +238,7 @@ function MessageCard({ qa, index }: { qa: QAItem; index: number }) {
 }
 
 function Transcript({ qas, traces, enrichmentRuns }: { qas: Record<string, unknown>[]; traces: TraceEntry[]; enrichmentRuns: EnrichmentRun[] }) {
+  const t = useTranslations("sessions");
   // /recall always writes a trace with memory_query=question; /remember/entry never does.
   // Build the recall-question set from traces and tag each QA accordingly.
   // ponytail: heuristic only — replace with an explicit `source` field on SessionQAEntry
@@ -274,7 +279,7 @@ function Transcript({ qas, traces, enrichmentRuns }: { qas: Record<string, unkno
     <div style={{ border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 12, background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.7)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-          Transcript · {items.length} {items.length === 1 ? "turn" : "turns"}
+          {t("transcript")} · {t("transcriptTurns", { count: items.length })}
         </span>
         {items.length > 2 && (
           <div style={{ position: "relative", flex: "0 1 220px" }}>
@@ -283,7 +288,7 @@ function Transcript({ qas, traces, enrichmentRuns }: { qas: Record<string, unkno
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search transcript…"
+              placeholder={t("searchTranscript")}
               style={{
                 width: "100%", boxSizing: "border-box",
                 background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)",
@@ -317,9 +322,10 @@ function Transcript({ qas, traces, enrichmentRuns }: { qas: Record<string, unkno
 }
 
 function ToolInvocations({ traces }: { traces: TraceEntry[] }) {
+  const t = useTranslations("sessions");
   const counts = new Map<string, number>();
-  for (const t of traces) {
-    const name = t.origin_function || "unknown";
+  for (const trace of traces) {
+    const name = trace.origin_function || "unknown";
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   const rows = [...counts.entries()].sort((a, b) => b[1] - a[1]);
@@ -327,7 +333,7 @@ function ToolInvocations({ traces }: { traces: TraceEntry[] }) {
   const max = Math.max(...rows.map(([, c]) => c));
   return (
     <div style={{ border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)" }}>
-      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.7)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Tool invocations</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.7)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{t("toolInvocations")}</span>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {rows.map(([name, count]) => (
           <div key={name} style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -343,7 +349,8 @@ function ToolInvocations({ traces }: { traces: TraceEntry[] }) {
   );
 }
 
-function CopyableId({ value, label }: { value: string; label?: string }) {
+function CopyableId({ value, ariaLabel }: { value: string; ariaLabel?: string }) {
+  const tCommon = useTranslations("common");
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -351,7 +358,7 @@ function CopyableId({ value, label }: { value: string; label?: string }) {
       className="cursor-pointer"
       title={value}
       style={{ background: "none", border: "none", padding: 0, color: copied ? "#22C55E" : "rgba(237,236,234,0.45)", display: "inline-flex", alignItems: "center" }}
-      aria-label={label ? `Copy ${label}` : "Copy"}
+      aria-label={ariaLabel ?? tCommon("copy")}
     >
       {copied
         ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
@@ -366,20 +373,22 @@ function MetaRow({ label, value, copyable }: { label: string; value: React.React
       <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(237,236,234,0.45)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{label}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
         <span style={{ fontSize: 12, color: "rgba(237,236,234,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
-        {copyable && <CopyableId value={copyable} label={label.toLowerCase()} />}
+        {copyable && <CopyableId value={copyable} />}
       </div>
     </div>
   );
 }
 
 function SessionDetailPanel({ detail, refreshNonce }: { detail: SessionDetail; refreshNonce: number }) {
+  const t = useTranslations("sessions");
+  const locale = useLocale() as Locale;
   const dur = durationSeconds(detail);
   const tokens = (detail.tokens_in ?? 0) + (detail.tokens_out ?? 0);
   const lastActivity = detail.ended_at ?? detail.last_activity_at;
-  const startedFull = formatDate(detail.started_at);
-  const startedRel = detail.started_at ? formatRelativeTime(detail.started_at) : null;
-  const lastFull = formatDate(lastActivity);
-  const lastRel = lastActivity ? formatRelativeTime(lastActivity) : null;
+  const startedFull = formatDate(detail.started_at, locale);
+  const startedRel = detail.started_at ? formatRelativeTime(detail.started_at, locale) : null;
+  const lastFull = formatDate(lastActivity, locale);
+  const lastRel = lastActivity ? formatRelativeTime(lastActivity, locale) : null;
 
   const { runs: enrichmentRuns, loading: enrichmentLoading } = useGraphEnrichment(detail.dataset_id, refreshNonce);
 
@@ -387,22 +396,22 @@ function SessionDetailPanel({ detail, refreshNonce }: { detail: SessionDetail; r
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Header */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.35)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Session</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.35)", letterSpacing: "0.08em", textTransform: "uppercase" }}>{t("session")}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <span style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {detail.session_id}
           </span>
-          <CopyableId value={detail.session_id} label="session id" />
+          <CopyableId value={detail.session_id} ariaLabel={t("copySessionId")} />
         </div>
       </div>
 
       {/* Stat cards */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <StatCard label="Observations" value={String(detail.msg_count ?? 0)} />
-        <StatCard label="Tool calls" value={String(detail.tool_calls ?? 0)} />
-        <StatCard label="Tokens" value={tokens.toLocaleString()} />
-        <StatCard label="Cost" value={`$${estimateCostUsd(detail.tokens_in ?? 0, detail.tokens_out ?? 0).toFixed(4)}`} />
-        <StatCard label="Duration" value={formatDuration(dur)} />
+        <StatCard label={t("observations")} value={String(detail.msg_count ?? 0)} />
+        <StatCard label={t("toolCalls")} value={String(detail.tool_calls ?? 0)} />
+        <StatCard label={t("tokens")} value={tokens.toLocaleString()} />
+        <StatCard label={t("cost")} value={`$${estimateCostUsd(detail.tokens_in ?? 0, detail.tokens_out ?? 0).toFixed(4)}`} />
+        <StatCard label={t("duration")} value={formatDuration(dur)} />
       </div>
 
       {/* Session→graph bridge state — the visible improve() signal */}
@@ -410,14 +419,14 @@ function SessionDetailPanel({ detail, refreshNonce }: { detail: SessionDetail; r
 
       {/* Metadata — between KPIs and transcript */}
       <div style={{ border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.7)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Metadata</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.7)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{t("metadata")}</span>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {detail.dataset_id && (
-            <MetaRow label="Dataset" copyable={detail.dataset_id} value={<span style={{ fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace', fontSize: 11 }}>{detail.dataset_id}</span>} />
+            <MetaRow label={t("dataset")} copyable={detail.dataset_id} value={<span style={{ fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace', fontSize: 11 }}>{detail.dataset_id}</span>} />
           )}
-          {detail.last_model && <MetaRow label="Model" value={detail.last_model} />}
-          <MetaRow label="Started" value={<span title={startedFull}>{startedFull}{startedRel ? ` · ${startedRel}` : ""}</span>} />
-          <MetaRow label={detail.ended_at ? "Ended" : "Last active"} value={<span title={lastFull}>{lastFull}{lastRel ? ` · ${lastRel}` : ""}</span>} />
+          {detail.last_model && <MetaRow label={t("model")} value={detail.last_model} />}
+          <MetaRow label={t("started")} value={<span title={startedFull}>{startedFull}{startedRel ? ` · ${startedRel}` : ""}</span>} />
+          <MetaRow label={detail.ended_at ? t("ended") : t("lastActive")} value={<span title={lastFull}>{lastFull}{lastRel ? ` · ${lastRel}` : ""}</span>} />
         </div>
       </div>
 
@@ -432,6 +441,8 @@ function SessionDetailPanel({ detail, refreshNonce }: { detail: SessionDetail; r
 }
 
 export default function SessionsPage() {
+  const t = useTranslations("sessions");
+  const locale = useLocale() as Locale;
   const { cogniInstance, isInitializing } = useCogniInstance();
 
   const [range, setRange] = useState<TimeRange>("30d");
@@ -494,9 +505,9 @@ export default function SessionsPage() {
       {/* Header + range filter */}
       <div style={{ padding: "24px 32px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>Sessions</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>{t("title")}</h1>
           <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span>Agent runs that wrote to your memory</span>
+            <span>{t("description")}</span>
             {loading && !stats ? (
               <>
                 <span>·</span>
@@ -525,7 +536,8 @@ export default function SessionsPage() {
             disabled={refreshing || isInitializing}
             className="hover:bg-white/10 cursor-pointer"
             style={{ background: "rgba(255,255,255,0.06)", color: "rgba(237,236,234,0.7)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
-            title="Refresh"
+            title={t("refresh")}
+            aria-label={t("refresh")}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
               style={refreshing ? { animation: "spin 1s linear infinite" } : undefined}>
@@ -558,7 +570,7 @@ export default function SessionsPage() {
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px 24px 28px" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
-              <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>Select a session to inspect its tools, files, and metadata</span>
+              <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>{t("selectSession")}</span>
             </div>
           </div>
         </div>
@@ -568,9 +580,9 @@ export default function SessionsPage() {
             <div style={{ width: 56, height: 56, background: "rgba(188,155,255,0.20)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4z" /><line x1="7" y1="8" x2="15" y2="8" /><line x1="7" y1="12" x2="12" y2="12" /></svg>
             </div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>No sessions yet</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>{t("empty.title")}</span>
             <p style={{ fontSize: 14, color: "rgba(237,236,234,0.35)", margin: 0, maxWidth: 360, textAlign: "center" }}>
-              When an agent connects to Cognee and reads or writes memory, its session will appear here with tools used, observations, and cost.
+              {t("empty.description")}
             </p>
           </div>
         </div>
@@ -595,7 +607,7 @@ export default function SessionsPage() {
                       <span style={{ fontSize: 13, fontWeight: 500, color: "#EDECEA", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortId(s.session_id)}</span>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
                         <span style={{ fontSize: 11, color: "rgba(237,236,234,0.35)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                          {formatDate(s.last_activity_at || s.started_at)}{s.last_model ? ` · ${s.last_model}` : ""}
+                          {formatDate(s.last_activity_at || s.started_at, locale)}{s.last_model ? ` · ${s.last_model}` : ""}
                         </span>
                         <StatusBadge status={statusLabel(s)} />
                       </div>
@@ -610,17 +622,17 @@ export default function SessionsPage() {
           <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px 24px 28px" }}>
             {!selectedId ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
-                <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>Select a session to inspect its tools, files, and metadata</span>
+                <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>{t("selectSession")}</span>
               </div>
             ) : detailLoading ? (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-                <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>Loading session…</span>
+                <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>{t("loading")}</span>
               </div>
             ) : detail ? (
               <SessionDetailPanel detail={detail} refreshNonce={refreshNonce} />
             ) : (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-                <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>Could not load this session.</span>
+                <span style={{ fontSize: 13, color: "rgba(237,236,234,0.35)" }}>{t("loadError")}</span>
               </div>
             )}
           </div>

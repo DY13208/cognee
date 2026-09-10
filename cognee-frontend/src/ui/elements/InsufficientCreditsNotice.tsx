@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { trackEvent } from "@/modules/analytics";
 
 interface InsufficientCreditsNoticeProps {
@@ -8,13 +9,15 @@ interface InsufficientCreditsNoticeProps {
   onDismiss: () => void;
 }
 
-const OPERATION_LABELS: Record<string, string> = {
-  remember: "upload",
-  cognify: "processing",
-  improve: "processing",
-  search: "search",
-  recall: "search",
-};
+const OPERATION_ACTIONS = {
+  remember: "actionUpload",
+  cognify: "actionProcessing",
+  improve: "actionProcessing",
+  search: "actionSearch",
+  recall: "actionSearch",
+} as const;
+
+type ActionKey = (typeof OPERATION_ACTIONS)[keyof typeof OPERATION_ACTIONS] | "actionLast";
 
 const WARN_ICON = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -43,9 +46,15 @@ export default function InsufficientCreditsNotice({
   operation,
   onDismiss,
 }: InsufficientCreditsNoticeProps): React.ReactElement | null {
+  const t = useTranslations("dashboard.credits");
+  const tCommon = useTranslations("common");
+
   if (!isVisible) return null;
 
-  const actionLabel = operation ? OPERATION_LABELS[operation] ?? operation : "last action";
+  const actionKey: ActionKey =
+    operation && operation in OPERATION_ACTIONS
+      ? OPERATION_ACTIONS[operation as keyof typeof OPERATION_ACTIONS]
+      : "actionLast";
 
   function handleDismiss(): void {
     trackEvent({ pageName: "Insufficient Credits Notice", eventName: "insufficient_credits_notice_dismissed", additionalProperties: { operation: operation ?? "unknown" } });
@@ -69,18 +78,18 @@ export default function InsufficientCreditsNotice({
     >
       <span style={{ color: "#fff", display: "flex", alignItems: "center" }}>{WARN_ICON}</span>
       <span style={{ fontSize: 13, color: "#fff" }}>
-        Your last {actionLabel} failed — your workspace balance is too low.
+        {t("notice", { action: t(actionKey) })}
       </span>
       <a
         href="/billing"
         onClick={handleBillingClick}
         style={{ fontSize: 13, fontWeight: 700, color: "#fff", textDecoration: "underline", textUnderlineOffset: 3, whiteSpace: "nowrap" }}
       >
-        Top up credits →
+        {t("topUp")}
       </a>
       <button
         onClick={handleDismiss}
-        aria-label="Dismiss"
+        aria-label={tCommon("dismiss")}
         className="cursor-pointer"
         style={{ background: "none", border: "none", padding: 2, color: "rgba(255,255,255,0.85)", lineHeight: 1 }}
       >

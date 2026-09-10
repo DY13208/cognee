@@ -1,20 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 
-const USE_CASES = [
-  "A second brain",
-  "Sales & deal intelligence",
-  "Investment & research",
-  "Docs & manuals",
-  "Memory for coding agents",
-] as const;
+const USE_CASES = ["secondBrain", "sales", "investment", "docs", "codingAgents"] as const;
 
 /**
  * Horizontally-scrollable use-case card strip with drag-to-scroll, edge fades,
  * and arrow button affordances. Self-contained — no external props needed.
  */
 export function UseCaseSlider(): React.ReactElement {
+  const t = useTranslations("dashboard.useCases");
   const sliderRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -47,10 +43,10 @@ export function UseCaseSlider(): React.ReactElement {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#EDECEA", letterSpacing: "-0.01em", lineHeight: "24px" }}>
-          What you can build
+          {t("title")}
         </h2>
         <p style={{ margin: "3px 0 0", fontSize: 13, color: "rgba(237,236,234,0.65)" }}>
-          Persistent memory and knowledge graphs for any domain
+          {t("subtitle")}
         </p>
       </div>
 
@@ -76,7 +72,7 @@ export function UseCaseSlider(): React.ReactElement {
         {canScrollLeft && (
           <button
             onClick={() => scrollBy(-320)}
-            aria-label="Scroll use cases left"
+            aria-label={t("scrollLeft")}
             style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", zIndex: 3, width: 36, height: 36, borderRadius: 0, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(20,20,22,0.85)", backdropFilter: "blur(8px)", color: "#EDECEA", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -87,7 +83,7 @@ export function UseCaseSlider(): React.ReactElement {
         {canScrollRight && (
           <button
             onClick={() => scrollBy(320)}
-            aria-label="Scroll use cases right"
+            aria-label={t("scrollRight")}
             style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", zIndex: 3, width: 36, height: 36, borderRadius: 0, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(20,20,22,0.85)", backdropFilter: "blur(8px)", color: "#EDECEA", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -115,9 +111,9 @@ export function UseCaseSlider(): React.ReactElement {
           onMouseLeave={() => { dragging.current = false; sliderRef.current?.classList.remove("is-dragging"); }}
           style={{ display: "flex", gap: 16, padding: "4px 0 8px" }}
         >
-          {USE_CASES.map((title) => (
+          {USE_CASES.map((key) => (
             <a
-              key={title}
+              key={key}
               href="https://docs.cognee.ai"
               target="_blank"
               rel="noopener noreferrer"
@@ -139,7 +135,7 @@ export function UseCaseSlider(): React.ReactElement {
                 lineHeight: 1.25,
                 textTransform: "uppercase",
               }}>
-                {title}
+                {t(key)}
               </span>
             </a>
           ))}

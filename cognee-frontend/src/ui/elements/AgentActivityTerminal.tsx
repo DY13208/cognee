@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+import { useLocale, useTranslations } from "next-intl";
+import type { Locale } from "@/i18n/config";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import { useUser } from "@/modules/users/UserContext";
 import { SEARCH_SESSION_PREFIX } from "@/modules/sessions/getSessions";
@@ -68,6 +70,14 @@ export function ownerDisplayName(email: string | null): string {
   return email.split("@")[0];
 }
 
+// Identity tokens stay English ("You" / "System") for actorColor / ActorDot.
+// Translated labels are applied only at render time.
+function displayActor(actor: string, t: (key: "you" | "system") => string): string {
+  if (actor === "You") return t("you");
+  if (actor === "System") return t("system");
+  return actor;
+}
+
 // Stable per-actor accent so each agent reads as a distinct connection in the
 // log. "You" always gets the brand violet.
 const ACTOR_COLORS = ["#89B4FA", "#A6E3A1", "#F9E2AF", "#F5C2E7", "#94E2D5", "#FAB387", "#B4BEFE", "#F38BA8"];
@@ -81,19 +91,27 @@ export function actorColor(name: string): string {
 // Typed outcome of a memory interaction — this is the core of the evidence
 // model: a recall that returns nothing is "empty" with a reason, never silence.
 type Outcome = "hit" | "empty" | "error" | "running" | "done";
-const OUTCOME_META: Record<Outcome, { color: string; label: string }> = {
-  hit:     { color: "#A6E3A1", label: "hit" },
-  empty:   { color: "#F9E2AF", label: "empty" },
-  error:   { color: "#F38BA8", label: "error" },
-  running: { color: "#F9E2AF", label: "running" },
-  done:    { color: "#A6E3A1", label: "done" },
+const OUTCOME_COLORS: Record<Outcome, string> = {
+  hit: "#A6E3A1",
+  empty: "#F9E2AF",
+  error: "#F38BA8",
+  running: "#F9E2AF",
+  done: "#A6E3A1",
 };
-const FILTER_HELP: Record<"all" | "mine" | "agents" | "searches" | "errors", string> = {
-  all: "Show every memory event in this time range.",
-  mine: "Show searches you typed in this terminal.",
-  agents: "Show searches made by connected agents.",
-  searches: "Show memory lookups and their answers.",
-  errors: "Show failed searches or memory actions.",
+const OUTCOME_LABEL_KEYS: Record<Outcome, "outcomeHit" | "outcomeEmpty" | "outcomeError" | "outcomeRunning" | "outcomeDone"> = {
+  hit: "outcomeHit",
+  empty: "outcomeEmpty",
+  error: "outcomeError",
+  running: "outcomeRunning",
+  done: "outcomeDone",
+};
+type TermFilter = "all" | "mine" | "agents" | "searches" | "errors";
+const FILTER_META: Record<TermFilter, { label: "filterAll" | "filterMine" | "filterAgents" | "filterSearches" | "filterErrors"; help: "helpAll" | "helpMine" | "helpAgents" | "helpSearches" | "helpErrors" }> = {
+  all: { label: "filterAll", help: "helpAll" },
+  mine: { label: "filterMine", help: "helpMine" },
+  agents: { label: "filterAgents", help: "helpAgents" },
+  searches: { label: "filterSearches", help: "helpSearches" },
+  errors: { label: "filterErrors", help: "helpErrors" },
 };
 
 function ActorDot({ name, live }: { name: string; live?: boolean }) {
@@ -103,13 +121,14 @@ function ActorDot({ name, live }: { name: string; live?: boolean }) {
 }
 
 function OutcomeBadge({ outcome }: { outcome: Outcome }) {
-  const m = OUTCOME_META[outcome];
+  const t = useTranslations("dashboard.activity");
+  const color = OUTCOME_COLORS[outcome];
   return (
-    <span style={{ color: m.color, flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+    <span style={{ color, flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
       {outcome === "running"
-        ? <span style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid #313244", borderTopColor: m.color, animation: "term-spin 0.8s linear infinite", display: "inline-block" }} />
+        ? <span style={{ width: 8, height: 8, borderRadius: "50%", border: "1.5px solid #313244", borderTopColor: color, animation: "term-spin 0.8s linear infinite", display: "inline-block" }} />
         : <span>{outcome === "hit" || outcome === "done" ? "✓" : outcome === "error" ? "✗" : "∅"}</span>}
-      {m.label}
+      {t(OUTCOME_LABEL_KEYS[outcome])}
     </span>
   );
 }
@@ -126,34 +145,22 @@ export const DEMO_QUERIES = [
   "Summarize the most important concepts",
 ];
 
+const DEMO_QUERY_KEYS = ["demo0", "demo1", "demo2"] as const;
+
+export function getDemoQueries(t: (key: (typeof DEMO_QUERY_KEYS)[number]) => string): string[] {
+  return DEMO_QUERY_KEYS.map((key) => t(key));
+}
+
 // Typewriter prompts that animate in the search input's placeholder so it's
 // obvious the field accepts free text. Cycled character-by-character.
 // Dataset-agnostic prompts — every one of these should make sense against
 // any cognified corpus (notes, docs, code, research, transcripts, etc.).
 // Avoid domain specifics (Einstein, PR #3076, Auth0, etc.) that produce
 // "no results" on most tenants.
-const PLACEHOLDER_PROMPTS = [
-  "What are the main topics in my data?",
-  "Summarize the most important findings",
-  "Who are the people mentioned here?",
-  "What patterns appear across my notes?",
-  "Give me a high-level overview",
-  "Find connections between the key concepts",
-  "What did I add most recently?",
-  "List the recurring themes",
-  "What entities show up most often?",
-  "Show me the strongest relationships in the graph",
-  "What questions does this data answer?",
-  "Surface anything that looks contradictory",
-  "Compare the most-cited ideas",
-  "What's the most important decision recorded?",
-  "List every project or initiative mentioned",
-  "Which topics are connected to each other?",
-  "What should I review first?",
-  "Summarize each document briefly",
-  "What's missing from my knowledge graph?",
-  "Walk me through this dataset",
-];
+const PLACEHOLDER_KEYS = [
+  "p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9",
+  "p10", "p11", "p12", "p13", "p14", "p15", "p16", "p17", "p18", "p19",
+] as const;
 
 // Entry shape used by the onboarding parent: it kicks off the recalls when
 // cognify finishes and feeds entries in as they settle. The terminal then
@@ -236,13 +243,15 @@ export function AgentActivityTerminal({
   // falls back to firing its own recalls (dashboard demo path).
   onboardingDemo?: OnboardingDemoEntry[] | null;
 }) {
+  const locale = useLocale() as Locale;
+  const t = useTranslations("dashboard.activity");
   const { userMe } = useUser();
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const atBottomRef = useRef(true);
   const demoStartedRef = useRef(false);
   const fetchedQAKeys = useRef<Record<string, string>>({});
-  const [termFilter, setTermFilter] = useState<"all" | "mine" | "agents" | "searches" | "errors">("all");
+  const [termFilter, setTermFilter] = useState<TermFilter>("all");
   // Demo plays exactly once per browser (flag persisted in localStorage).
   // Two trigger points:
   //   - Step 3 of onboarding ("Ask cognee anything"), where the variant is
@@ -269,7 +278,7 @@ export function AgentActivityTerminal({
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [userSelected, setUserSelected] = useState(false);
 
-  // Placeholder typewriter: cycles through PLACEHOLDER_PROMPTS char-by-char
+  // Placeholder typewriter: cycles through PLACEHOLDER_KEYS char-by-char
   // while the input is empty + unfocused + connected. Pauses when the user
   // takes over.
   const [typedPlaceholder, setTypedPlaceholder] = useState("");
@@ -288,7 +297,7 @@ export function AgentActivityTerminal({
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
       if (cancelled) return;
-      const current = PLACEHOLDER_PROMPTS[idx];
+      const current = t(PLACEHOLDER_KEYS[idx]);
       if (mode === "type") {
         setTypingActive(true);
         pos += 1;
@@ -308,7 +317,7 @@ export function AgentActivityTerminal({
         pos -= 1;
         setTypedPlaceholder(current.slice(0, pos));
         if (pos <= 0) {
-          idx = (idx + 1) % PLACEHOLDER_PROMPTS.length;
+          idx = (idx + 1) % PLACEHOLDER_KEYS.length;
           mode = "type";
           timer = setTimeout(tick, 350);
           return;
@@ -321,7 +330,7 @@ export function AgentActivityTerminal({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchInput, inputFocused, cogniInstance]);
+  }, [searchInput, inputFocused, cogniInstance, t]);
 
   const FONT: React.CSSProperties = { fontFamily: 'ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", "Roboto Mono", monospace', fontSize: 12, lineHeight: "19px" };
 
@@ -497,17 +506,18 @@ export function AgentActivityTerminal({
     demoStartedRef.current = true; // never replays within this mount (e.g. after "clear searches")
     let cancelled = false;
     try { localStorage.setItem("cognee-terminal-demo-shown", "1"); } catch {}
-    setDemoEntries(DEMO_QUERIES.map(q => ({ query: q, result: null, status: "idle" as const })));
+    const demoQueries = getDemoQueries(t);
+    setDemoEntries(demoQueries.map(q => ({ query: q, result: null, status: "idle" as const })));
     (async () => {
       const { default: recallKnowledge } = await import("@/modules/datasets/recallKnowledge");
-      for (let i = 0; i < DEMO_QUERIES.length; i++) {
+      for (let i = 0; i < demoQueries.length; i++) {
         if (cancelled) return;
         if (i > 0) await new Promise(r => setTimeout(r, 700));
         if (cancelled) return;
         setDemoEntries(prev => prev.map((e, j) => j === i ? { ...e, status: "running" } : e));
         try {
           const data = await recallKnowledge(cogniInstance, {
-            query: DEMO_QUERIES[i],
+            query: demoQueries[i],
             scope: "graph" as never,
             datasetIds: datasets.map(d => d.id),
           });
@@ -699,13 +709,15 @@ export function AgentActivityTerminal({
         <div style={{ background: "#181825", borderBottom: "1px solid #2A2A3E", padding: "7px 18px", display: "flex", alignItems: "center", gap: 14, minHeight: 30, boxSizing: "border-box" }}>
           {!isOnboarding && (["all", "mine", "agents", "searches", "errors"] as const).map(f => {
             const active = termFilter === f;
+            const filterLabel = t(FILTER_META[f].label);
+            const filterHelp = t(FILTER_META[f].help);
             return (
               <button
                 // Remount on activation so the underline/fade animation replays each click.
                 key={active ? `${f}-active` : f}
                 onClick={() => setTermFilter(f)}
-                title={FILTER_HELP[f]}
-                aria-label={`${f === "all" ? "all events" : f}: ${FILTER_HELP[f]}`}
+                title={filterHelp}
+                aria-label={`${filterLabel}: ${filterHelp}`}
                 className={active ? "term-tab-active" : undefined}
                 style={{
                   background: "none", border: "none", cursor: "pointer",
@@ -713,7 +725,7 @@ export function AgentActivityTerminal({
                   color: active ? "#EDECEA" : "rgba(237,236,234,0.55)",
                   paddingBottom: 2, transition: "color 140ms", textDecoration: "underline dotted rgba(237,236,234,0.25)", textUnderlineOffset: 4,
                 }}>
-                {f === "all" ? "all events" : f}
+                {filterLabel}
               </button>
             );
           })}
@@ -721,34 +733,34 @@ export function AgentActivityTerminal({
             {userQueries.length > 0 && (
               <button
                 onClick={clearSearches}
-                title="Remove only the searches you typed here; saved session history stays intact."
+                title={t("clearSearchesHint")}
                 style={{ background: "none", border: "none", cursor: "pointer", ...FONT, fontSize: 10, color: "rgba(237,236,234,0.55)", padding: 0 }}
               >
-                clear searches
+                {t("clearSearches")}
               </button>
             )}
             {hasRunning && (
-              <div title="At least one memory job is still running." style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div title={t("liveHint")} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#A6E3A1", display: "inline-block", animation: "term-live 1.8s ease-in-out infinite" }} />
-                <span style={{ ...FONT, fontSize: 10, color: "#A6E3A1" }}>live</span>
+                <span style={{ ...FONT, fontSize: 10, color: "#A6E3A1" }}>{t("live")}</span>
               </div>
             )}
             {!isOnboarding && (
               <button
                 onClick={() => onNavigate("/integrations")}
-                title="Connect your own agent to see its searches here"
+                title={t("connectAgentHint")}
                 style={{ display: "flex", alignItems: "center", gap: 5, background: "rgba(203,166,247,0.12)", border: "1px solid rgba(203,166,247,0.35)", borderRadius: 6, padding: "3px 9px", cursor: "pointer", ...FONT, fontSize: 10, color: "#CBA6F7" }}
               >
-                <span style={{ fontSize: 12, lineHeight: "10px" }}>+</span> Connect an agent
+                <span style={{ fontSize: 12, lineHeight: "10px" }}>+</span> {t("connectAgent")}
               </button>
             )}
             {!isOnboarding && (
               <button
                 onClick={() => onNavigate("/sessions")}
-                title="Open the full session log with transcripts and metadata."
+                title={t("sessionsHint")}
                 style={{ background: "none", border: "none", ...FONT, fontSize: 10, color: "rgba(237,236,234,0.55)", cursor: "pointer", padding: 0 }}
               >
-                sessions ↗
+                {t("sessions")}
               </button>
             )}
           </div>
@@ -771,7 +783,7 @@ export function AgentActivityTerminal({
           {dataLoading ? (
             <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#585B70" }}>
               <div style={{ width: 13, height: 13, borderRadius: "50%", border: "1.5px solid #313244", borderTopColor: "#CBA6F7", animation: "term-spin 0.8s linear infinite", flexShrink: 0 }} />
-              <span>Connecting to agent stream…</span>
+              <span>{t("connecting")}</span>
             </div>
           ) : (
             <>
@@ -780,7 +792,7 @@ export function AgentActivityTerminal({
                 <div key={`demo-${i}`} style={{ marginBottom: 16 }}>
                   <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: 0 }}>
                     <span style={{ color: "#585B70", flexShrink: 0 }}>$&nbsp;</span>
-                    <span style={{ color: "#CBA6F7", fontWeight: 700, flexShrink: 0 }}>Claude Code Demo Agent</span>
+                    <span style={{ color: "#CBA6F7", fontWeight: 700, flexShrink: 0 }}>{t("demoAgent")}</span>
                     <span style={{ color: "#585B70" }}>&nbsp;❯&nbsp;&ldquo;</span>
                     <span style={{ color: "#A6E3A1" }}>{entry.query}</span>
                     <span style={{ color: "#585B70" }}>&rdquo;</span>
@@ -789,14 +801,14 @@ export function AgentActivityTerminal({
                     {entry.status === "running" ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ width: 10, height: 10, borderRadius: "50%", border: "1.5px solid #313244", borderTopColor: "#CBA6F7", animation: "term-spin 0.8s linear infinite", flexShrink: 0 }} />
-                        <span style={{ color: "#F9E2AF" }}>searching…</span>
+                        <span style={{ color: "#F9E2AF" }}>{t("searching")}</span>
                       </div>
                     ) : entry.result ? (
                       <div className="term-md"><ReactMarkdown>{entry.result}</ReactMarkdown></div>
                     ) : entry.status === "error" ? (
-                      <span style={{ color: "#6C7086" }}>✗ interrupted</span>
+                      <span style={{ color: "#6C7086" }}>{t("interrupted")}</span>
                     ) : (
-                      <span style={{ color: "#45475A" }}>no results</span>
+                      <span style={{ color: "#45475A" }}>{t("noResults")}</span>
                     )}
                   </div>
                 </div>
@@ -806,26 +818,24 @@ export function AgentActivityTerminal({
                 showDemo ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#585B70" }}>
                     <div style={{ width: 13, height: 13, borderRadius: "50%", border: "1.5px solid #313244", borderTopColor: "#CBA6F7", animation: "term-spin 0.8s linear infinite", flexShrink: 0 }} />
-                    <span>Claude Code Demo connecting…</span>
+                    <span>{t("demoConnecting")}</span>
                   </div>
                 ) : (
                   isOnboarding ? (
-                    <div style={{ color: "#45475A", lineHeight: "22px" }}>Type a question below to query your memory.</div>
+                    <div style={{ color: "#45475A", lineHeight: "22px" }}>{t("typeBelow")}</div>
                   ) : termFilter === "errors" ? (
-                    <div style={{ color: "#45475A", lineHeight: "22px" }}>No errors in this time range.</div>
+                    <div style={{ color: "#45475A", lineHeight: "22px" }}>{t("noErrors")}</div>
                   ) : termFilter === "mine" ? (
-                    <div style={{ color: "#45475A", lineHeight: "22px" }}>You haven&apos;t searched yet — type a query below to start.</div>
+                    <div style={{ color: "#45475A", lineHeight: "22px" }}>{t("notSearchedYet")}</div>
                   ) : (
                     // Default / "agents" / "searches": teach how to populate the log.
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "14px 2px" }}>
-                      <div style={{ color: "#A6ADC8" }}>No agent activity yet.</div>
+                      <div style={{ color: "#A6ADC8" }}>{t("noActivity")}</div>
                       <div style={{ color: "#585B70", lineHeight: "20px", maxWidth: 520 }}>
-                        These rows appear when an agent searches your memory. Connect your own
-                        agent (Claude Code, Codex, Cursor, …) and its recalls will stream here
-                        with the evidence behind each answer.
+                        {t("noActivityHint")}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2 }}>
-                        <span style={{ color: "#45475A" }}>Type a search below to query your memory.</span>
+                        <span style={{ color: "#45475A" }}>{t("typeSearch")}</span>
                       </div>
                     </div>
                   )
@@ -847,12 +857,12 @@ export function AgentActivityTerminal({
                   <div key={`run-${r.pipeline_run_id ?? r.id}`} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
                     <span style={{ width: 9 }} />
                     <ActorDot name={actor} live={isRunning} />
-                    <span style={{ color: "#CDD6F4" }}>{actor}</span>
-                    <span style={{ color: "#585B70" }}>ran</span>
+                    <span style={{ color: "#CDD6F4" }}>{displayActor(actor, t)}</span>
+                    <span style={{ color: "#585B70" }}>{t("ran")}</span>
                     <span style={{ color: "#CBA6F7", fontWeight: 700 }}>{label}</span>
                     {r.dataset_name && <span style={{ color: "#A6E3A1" }}>· {r.dataset_name}</span>}
                     <OutcomeBadge outcome={outcome} />
-                    {r.created_at && <span style={{ color: "#45475A" }}>· {timeAgo(r.created_at)}</span>}
+                    {r.created_at && <span style={{ color: "#45475A" }}>· {timeAgo(r.created_at, locale)}</span>}
                   </div>
                 );
               }
@@ -864,16 +874,16 @@ export function AgentActivityTerminal({
                 const actorName = agentType ?? s.session_id;
                 const isRunning = s.effective_status === "running";
                 const isFailed = s.effective_status === "failed" || s.error_count > 0;
-                const statusLabel = isRunning ? "active" : isFailed ? "errored" : "idle";
+                const statusLabel = isRunning ? t("active") : isFailed ? t("errored") : t("idle");
                 const statusColor = isFailed ? "#F38BA8" : isRunning ? "#A6E3A1" : "#585B70";
                 return (
                   <div key={`session-${s.session_id}`} style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0 12px", fontSize: 11, whiteSpace: "nowrap" }}>
                     <ActorDot name={actorName} live={isRunning} />
-                    <span style={{ color: "#6C7086", flexShrink: 0 }}>{actorName}</span>
+                    <span style={{ color: "#6C7086", flexShrink: 0 }}>{displayActor(actorName, t)}</span>
                     <span style={{ color: statusColor, flexShrink: 0 }}>{statusLabel}</span>
-                    {s.error_count > 0 && <span style={{ color: "#F38BA8", flexShrink: 0 }}>{s.error_count} error{s.error_count !== 1 ? "s" : ""}</span>}
+                    {s.error_count > 0 && <span style={{ color: "#F38BA8", flexShrink: 0 }}>{t("errorCount", { count: s.error_count })}</span>}
                     {(s.tokens_in + s.tokens_out) > 0 && <span style={{ color: "#45475A", flexShrink: 0 }}>{(s.tokens_in + s.tokens_out).toLocaleString()} tok</span>}
-                    {s.last_activity_at && <span style={{ color: "#45475A", flexShrink: 0 }}>{timeAgo(s.last_activity_at)}</span>}
+                    {s.last_activity_at && <span style={{ color: "#45475A", flexShrink: 0 }}>{timeAgo(s.last_activity_at, locale)}</span>}
                     <span style={{ flex: 1, height: 1, background: "#2A2A3E", minWidth: 24 }} />
                   </div>
                 );
@@ -892,12 +902,12 @@ export function AgentActivityTerminal({
               let reason = "";
               let body: React.ReactNode = null;
               if (ev.kind === "userQuery") {
-                const scope = selectedDataset ? selectedDataset.name : `${datasets.length} ${datasets.length === 1 ? "brain" : "brains"}`;
+                const scope = selectedDataset ? selectedDataset.name : t("brainsScope", { count: datasets.length });
                 if (ev.searching) { outcome = "running"; }
-                else if (ev.error) { outcome = "error"; reason = ev.errorMessage || "check your connection"; }
+                else if (ev.error) { outcome = "error"; reason = t("checkConnection"); }
                 else if (ev.results && ev.results.length > 0) {
                   outcome = "hit";
-                  reason = `${ev.results.length} ${ev.results.length === 1 ? "brain" : "brains"} answered · searched ${scope}`;
+                  reason = t("brainsAnswered", { count: ev.results.length, scope });
                   body = (
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                       {ev.results.map((r, i) => (
@@ -908,20 +918,20 @@ export function AgentActivityTerminal({
                       ))}
                     </div>
                   );
-                } else { outcome = "empty"; reason = `no brain returned relevant knowledge · searched ${scope}`; }
+                } else { outcome = "empty"; reason = t("noBrainReturned", { scope }); }
               } else {
                 const isRemember = ev.source === "remember";
                 if (ev.answer && !isNoAnswer(ev.answer)) {
                   outcome = "hit";
-                  reason = isRemember ? "agent saved this to memory" : "agent assembled context from memory";
+                  reason = isRemember ? t("agentSaved") : t("agentAssembled");
                   body = <div className="term-md"><ReactMarkdown>{ev.answer}</ReactMarkdown></div>;
                 } else if (ev.answer) {
                   outcome = "empty";
-                  reason = isRemember ? "saved with no usable content" : "recall returned no usable context";
+                  reason = isRemember ? t("savedNoContent") : t("recallNoContext");
                   body = <span style={{ color: "#6C7086" }}>{ev.answer.length > 200 ? `${ev.answer.slice(0, 200)}…` : ev.answer}</span>;
                 } else {
                   outcome = "done";
-                  reason = isRemember ? "entry recorded · no answer attached" : "query recorded · answer not captured in trace";
+                  reason = isRemember ? t("entryRecorded") : t("queryRecorded");
                 }
               }
 
@@ -940,11 +950,11 @@ export function AgentActivityTerminal({
                   >
                     {expandable ? <Chevron open={open} /> : <span style={{ width: 9 }} />}
                     <ActorDot name={actor} live={outcome === "running"} />
-                    <span style={{ color: isUser ? "#CBA6F7" : "#CDD6F4", fontWeight: 700, wordBreak: "break-word" }}>{actor}</span>
+                    <span style={{ color: isUser ? "#CBA6F7" : "#CDD6F4", fontWeight: 700, wordBreak: "break-word" }}>{displayActor(actor, t)}</span>
                     <span style={{ color: "#585B70" }}>{ev.kind === "agentQuery" ? ev.source : "recall"}</span>
                     <span style={{ color: "#A6E3A1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}>&ldquo;{query}&rdquo;</span>
                     <OutcomeBadge outcome={outcome} />
-                    <span style={{ color: "#45475A", flexShrink: 0 }}>· {timeAgo(new Date(ts).toISOString())}</span>
+                    <span style={{ color: "#45475A", flexShrink: 0 }}>· {timeAgo(new Date(ts).toISOString(), locale)}</span>
                   </div>
                   {/* Collapsed: one-line reason (the evidence summary). Expanded: full body. */}
                   {!open && reason && outcome !== "running" && (
@@ -953,9 +963,9 @@ export function AgentActivityTerminal({
                   {open && (
                     <div style={{ marginLeft: 16, marginTop: 6, paddingLeft: 12, borderLeft: "2px solid #2A2A3E", display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ color: "#6C7086", fontSize: 11 }}>
-                        <span style={{ color: "#45475A" }}>evidence:&nbsp;</span>{reason}
+                        <span style={{ color: "#45475A" }}>{t("evidence")}&nbsp;</span>{reason}
                       </div>
-                      {body ?? <span style={{ color: "#45475A" }}>No relevant knowledge found.</span>}
+                      {body ?? <span style={{ color: "#45475A" }}>{t("noRelevant")}</span>}
                     </div>
                   )}
                 </div>
@@ -975,7 +985,7 @@ export function AgentActivityTerminal({
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
               <span style={{ ...FONT, fontSize: 10, color: "#6C7086", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                Search your memory
+                {t("searchMemory")}
               </span>
             </div>
             <div style={{ display: "flex", alignItems: "center" }}>
@@ -984,7 +994,7 @@ export function AgentActivityTerminal({
                 {!searchInput && (
                   <span style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", gap: 0, pointerEvents: "none", whiteSpace: "nowrap" }}>
                     <span style={{ color: "#45475A" }}>
-                      {cogniInstance ? typedPlaceholder : "Connect an agent to search your memory…"}
+                      {cogniInstance ? typedPlaceholder : t("connectToSearch")}
                     </span>
                     {/* Cursor only while the typewriter is actively writing/erasing — no
                         idle blinking. Solid block (no animation): typing motion conveys life. */}

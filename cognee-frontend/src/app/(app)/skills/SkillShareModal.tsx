@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import Modal from "@/ui/elements/Modal/Modal";
 import type { CogneeInstance } from "@/modules/instances/types";
 import type { Skill } from "@/modules/skills/types";
@@ -30,6 +31,8 @@ const PRIMARY = "#6510F4";
 const TEXT = "#EDECEA";
 
 export default function SkillShareModal({ isOpen, onClose, skill, sourceDatasetId, datasets, instance, onShared }: SkillShareModalProps) {
+  const t = useTranslations("skills");
+  const tCommon = useTranslations("common");
   const [full, setFull] = useState<Skill | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -47,9 +50,9 @@ export default function SkillShareModal({ isOpen, onClose, skill, sourceDatasetI
     setLoadingDetail(true);
     getSkill(instance, sourceDatasetId, skill.id)
       .then(setFull)
-      .catch(() => setError("Could not load the skill content to share."))
+      .catch(() => setError(t("loadFailed")))
       .finally(() => setLoadingDetail(false));
-  }, [isOpen, skill, instance, sourceDatasetId]);
+  }, [isOpen, skill, instance, sourceDatasetId, t]);
 
   if (!skill) return null;
 
@@ -74,7 +77,7 @@ export default function SkillShareModal({ isOpen, onClose, skill, sourceDatasetI
 
   async function handleSubmit() {
     if (!instance || !full || !skill) return;
-    if (selected.size === 0) { setError("Select at least one brain."); return; }
+    if (selected.size === 0) { setError(t("upload.brainRequired")); return; }
 
     setSubmitting(true);
     setError(null);
@@ -90,7 +93,7 @@ export default function SkillShareModal({ isOpen, onClose, skill, sourceDatasetI
       const r = settled[i];
       return r.status === "fulfilled"
         ? { id: d.id, name: d.name, ok: true }
-        : { id: d.id, name: d.name, ok: false, error: (r.reason as Error)?.message ?? "Failed" };
+        : { id: d.id, name: d.name, ok: false, error: tCommon("genericError") };
     });
 
     setResults(perDataset);
@@ -108,10 +111,10 @@ export default function SkillShareModal({ isOpen, onClose, skill, sourceDatasetI
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 16, fontWeight: 600, color: TEXT }}>Add “{skill.name}” to more brains</span>
-            <span style={{ fontSize: 12, color: "rgba(237,236,234,0.5)" }}>Copies this skill into the selected brains.</span>
+            <span style={{ fontSize: 16, fontWeight: 600, color: TEXT }}>{t("share.title", { name: skill.name })}</span>
+            <span style={{ fontSize: 12, color: "rgba(237,236,234,0.5)" }}>{t("share.description")}</span>
           </div>
-          <button onClick={handleClose} aria-label="Close" disabled={submitting}
+          <button onClick={handleClose} aria-label={tCommon("close")} disabled={submitting}
             style={{ background: "none", border: "none", color: "rgba(237,236,234,0.6)", cursor: submitting ? "not-allowed" : "pointer", padding: 4 }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
           </button>
@@ -120,10 +123,10 @@ export default function SkillShareModal({ isOpen, onClose, skill, sourceDatasetI
         {/* Body */}
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.5)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-            Brains{selected.size > 0 ? ` · ${selected.size} selected` : ""}
+            {t("brain")}{selected.size > 0 ? ` · ${selected.size}` : ""}
           </span>
           {targets.length === 0 ? (
-            <span style={{ fontSize: 13, color: "rgba(237,236,234,0.4)" }}>This skill is already in every available brain.</span>
+            <span style={{ fontSize: 13, color: "rgba(237,236,234,0.4)" }}>{t("share.alreadyEverywhere")}</span>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", maxHeight: 260, overflowY: "auto", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10 }}>
               {targets.map((d, i) => {
@@ -140,7 +143,7 @@ export default function SkillShareModal({ isOpen, onClose, skill, sourceDatasetI
             </div>
           )}
 
-          {loadingDetail && <span style={{ fontSize: 12, color: "rgba(237,236,234,0.4)" }}>Loading skill content…</span>}
+          {loadingDetail && <span style={{ fontSize: 12, color: "rgba(237,236,234,0.4)" }}>{t("share.loadingContent")}</span>}
           {error && (
             <div style={{ background: "rgba(239,68,68,0.16)", border: "1px solid rgba(239,68,68,0.6)", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#FCA5A5" }}>{error}</div>
           )}
@@ -161,12 +164,12 @@ export default function SkillShareModal({ isOpen, onClose, skill, sourceDatasetI
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
           <button onClick={handleClose} disabled={submitting}
             style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "8px 16px", fontSize: 13, color: "rgba(237,236,234,0.8)", cursor: submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-            Cancel
+            {tCommon("cancel")}
           </button>
           <button onClick={handleSubmit} disabled={!canSubmit}
             style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, fontFamily: "inherit", border: "none", background: canSubmit ? PRIMARY : "rgba(255,255,255,0.08)", color: canSubmit ? "#fff" : "rgba(237,236,234,0.4)", cursor: canSubmit ? "pointer" : "not-allowed" }}>
             {submitting && <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", animation: "spin 0.7s linear infinite" }} />}
-            {submitting ? "Adding…" : selected.size > 1 ? `Add to ${selected.size} brains` : "Add to brain"}
+            {submitting ? tCommon("loading") : t("addToMoreBrains")}
           </button>
         </div>
       </div>

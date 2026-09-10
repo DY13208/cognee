@@ -2,10 +2,11 @@
 
 import { useCurrentUser } from "@/modules/users/useCurrentUser";
 import { Avatar, Divider, Flex, Stack, Text, TextInput } from "@mantine/core";
+import { useTranslations } from "next-intl";
 import Image from "next/image";
-import { tokens } from "@/ui/theme/tokens";
 
 export default function ProfileWidget() {
+  const t = useTranslations("settings.profile");
   const { data: user } = useCurrentUser();
 
   return (
@@ -19,8 +20,8 @@ export default function ProfileWidget() {
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: "1.375rem" }}>
-        <h2 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>Profile</h2>
-        <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>Your personal account information</p>
+        <h2 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>{t("title")}</h2>
+        <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>{t("description")}</p>
       </div>
       <Flex align="center" gap="1rem" mb="1.5rem">
         <Avatar size="lg">
@@ -39,7 +40,7 @@ export default function ProfileWidget() {
       <Divider mb="1rem" style={{ borderColor: "rgba(255,255,255,0.08)" }} />
       <Stack gap="0.75rem">
         <TextInput
-          label="Name"
+          label={t("name")}
           value={user?.name ?? ""}
           disabled
           classNames={{ input: "!h-[2.75rem] !border-cognee-border" }}
@@ -54,7 +55,7 @@ export default function ProfileWidget() {
           }}
         />
         <TextInput
-          label="Email"
+          label={t("email")}
           value={user?.email ?? ""}
           disabled
           classNames={{ input: "!h-[2.75rem] !border-cognee-border" }}
@@ -70,7 +71,7 @@ export default function ProfileWidget() {
         />
       </Stack>
       <Text size="sm" style={{ color: "rgba(237,236,234,0.35)" }} mt="1rem">
-        Profile information is managed by your authentication provider.
+        {t("managedHint")}
       </Text>
     </Stack>
   );

@@ -1,20 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useTranslations } from "next-intl";
 import type { ZoomTransform } from "d3";
 import type { BusinessCanvasHandle } from "./canvas/BusinessCanvas";
 import type { BrainState } from "./sceneTypes";
 
 const STEP_DWELL_MS = 5000;
-
-const STEP_TEXTS: Array<(brain: BrainState | null) => string> = [
-  (brain) => (brain
-    ? `this is your business — ${brain.typeNodes.length} kind${brain.typeNodes.length === 1 ? "" : "s"} of things across ${brain.sourceNames.length} source${brain.sourceNames.length === 1 ? "" : "s"}, one connected model`
-    : "this is your business — one connected model"),
-  () => "zoom in, and the people, accounts, and records behind each kind take shape",
-  () => "every line here is a real connection — how one record relates to another",
-  () => "at the deepest level: every record your agents can actually search",
-];
 
 export interface BusinessTour {
   isPlaying: boolean;
@@ -35,6 +27,7 @@ export function useBusinessTour(
   narrate: (text: string, color?: string) => void,
   brainState: BrainState | null,
 ): BusinessTour {
+  const t = useTranslations("knowledgeGraph");
   const [isPlaying, setIsPlaying] = useState(false);
   const cancelledRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -56,8 +49,16 @@ export function useBusinessTour(
     cancelledRef.current = false;
     preTourTransformRef.current = canvasRef.current?.getTransform() ?? null;
     setIsPlaying(true);
+    const texts = [
+      brainState
+        ? t("intro", { kindCount: brainState.typeNodes.length, sourceCount: brainState.sourceNames.length })
+        : t("tourIntroFallback"),
+      t("tourZoom"),
+      t("tourLines"),
+      t("tourDeep"),
+    ];
     const runStep = (index: number): void => {
-      if (cancelledRef.current || index >= STEP_TEXTS.length) {
+      if (cancelledRef.current || index >= texts.length) {
         // Finished (or already cancelled): the snapshot is only for
         // interruptions — a completed tour stays where it ended.
         preTourTransformRef.current = null;
@@ -65,11 +66,11 @@ export function useBusinessTour(
         return;
       }
       canvasRef.current?.goToAltimeterLevel(index);
-      narrate(STEP_TEXTS[index](brainState), "#43D9E8");
+      narrate(texts[index], "#43D9E8");
       timeoutRef.current = setTimeout(() => runStep(index + 1), STEP_DWELL_MS);
     };
     runStep(0);
-  }, [canvasRef, narrate, brainState]);
+  }, [canvasRef, narrate, brainState, t]);
 
   useEffect(() => () => {
     cancelledRef.current = true;

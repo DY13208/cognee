@@ -11,6 +11,7 @@ import { listSessions, getSessionDetail, SEARCH_SESSION_PREFIX, type SessionRow 
 import { TrackPageView, trackEvent } from "@/modules/analytics";
 import BrainSelector from "@/ui/elements/BrainSelector";
 import { isInsufficientCreditsError } from "@/utils/insufficientCredits";
+import { useTranslations } from "next-intl";
 
 interface SearchResultItem {
   search_result?: string[];
@@ -53,7 +54,7 @@ interface Conversation {
 
 // ── Result normalization ──
 
-function normalizeResults(data: SearchResultItem[]): string {
+function normalizeResults(data: SearchResultItem[], noResults: string): string {
   const parts: string[] = [];
   for (const raw of data) {
     const r = raw as SearchResultItem;
@@ -80,7 +81,7 @@ function normalizeResults(data: SearchResultItem[]): string {
       try { parts.push(JSON.stringify(raw)); } catch { parts.push(String(raw)); }
     }
   }
-  return parts.join("\n\n") || "No results found.";
+  return parts.join("\n\n") || noResults;
 }
 
 // ── Markdown result renderer ──
@@ -162,16 +163,16 @@ function MarkdownContent({ text }: { text: string }) {
 
 // ── Date grouping ──
 
-function dateLabel(dateStr: string): string {
+function dateLabel(dateStr: string, labels: { today: string; yesterday: string; week: string; month: string; older: string }): string {
   const d = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return "This week";
-  if (diffDays < 30) return "This month";
-  return "Older";
+  if (diffDays === 0) return labels.today;
+  if (diffDays === 1) return labels.yesterday;
+  if (diffDays < 7) return labels.week;
+  if (diffDays < 30) return labels.month;
+  return labels.older;
 }
 
 // ── Convert legacy GET /v1/search entries → read-only Conversation[] ──
@@ -180,7 +181,7 @@ function dateLabel(dateStr: string): string {
 
 const LEGACY_PREFIX = "hist-";
 
-function legacyToConversations(entries: SearchHistoryEntry[]): Conversation[] {
+function legacyToConversations(entries: SearchHistoryEntry[], noResults: string): Conversation[] {
   return entries.map((e) => {
     // Some legacy /v1/search rows come back with no query text — and the
     // same vintage of rows can lack created_at too (both pre-date the
@@ -196,7 +197,7 @@ function legacyToConversations(entries: SearchHistoryEntry[]): Conversation[] {
       updatedAt: ts,
       messages: [
         { id: `hu-${e.id}`, role: "user" as const, content: query, timestamp: ts },
-        { id: `ha-${e.id}`, role: "assistant" as const, content: e.answer || "No results found.", dataset: e.dataset_name, timestamp: ts },
+        { id: `ha-${e.id}`, role: "assistant" as const, content: e.answer || noResults, dataset: e.dataset_name, timestamp: ts },
       ],
     };
   });
@@ -212,7 +213,7 @@ function qaTimestamp(time: string | null, fallback: string): string {
   return Number.isNaN(ms) ? fallback : new Date(ms).toISOString();
 }
 
-function sessionToConversation(s: SessionRow, qasRaw: Record<string, unknown>[]): Conversation | null {
+function sessionToConversation(s: SessionRow, qasRaw: Record<string, unknown>[], noResults: string): Conversation | null {
   const fallbackTs = s.started_at ?? new Date().toISOString();
   const qas = qasRaw
     .map((qa) => {
@@ -230,7 +231,7 @@ function sessionToConversation(s: SessionRow, qasRaw: Record<string, unknown>[])
     const ts = qaTimestamp(qa.time, fallbackTs);
     return [
       { id: `${s.session_id}-u${i}`, role: "user" as const, content: qa.question, timestamp: ts },
-      { id: `${s.session_id}-a${i}`, role: "assistant" as const, content: qa.answer || "No results found.", timestamp: ts },
+      { id: `${s.session_id}-a${i}`, role: "assistant" as const, content: qa.answer || noResults, timestamp: ts },
     ];
   });
   return {
@@ -257,6 +258,7 @@ function SendIcon({ active }: { active: boolean }) {
 // ── Main ──
 
 export default function SearchPage() {
+  const t = useTranslations("search");
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { hasAccess } = useTenant();
   const { selectedDataset, datasets } = useFilter();
@@ -296,7 +298,7 @@ export default function SearchPage() {
     getSearchHistory(cogniInstance)
       .then((entries) => {
         if (cancelled) return;
-        const convos = legacyToConversations(entries);
+        const convos = legacyToConversations(entries, t("noResults"));
         setLegacyConvos(convos);
         if (convos.length > 0) setActiveConvoId((prev) => prev || convos[0].id);
       })
@@ -316,7 +318,7 @@ export default function SearchPage() {
           getSessionDetail(cogniInstance, s.session_id)
             .then((detail) => {
               if (cancelled || !detail) return;
-              const convo = sessionToConversation(s, detail.qas ?? []);
+              const convo = sessionToConversation(s, detail.qas ?? [], t("noResults"));
               if (!convo) return;
               setHistoryConvos((prev) =>
                 [...prev.filter((c) => c.id !== convo.id), convo]
@@ -331,7 +333,7 @@ export default function SearchPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [cogniInstance, isInitializing]);
+  }, [cogniInstance, isInitializing, t]);
 
   // Ensure a dataset is always selected — default to the first one
   const effectiveDataset = selectedDataset || datasets[0] || null;
@@ -348,7 +350,7 @@ export default function SearchPage() {
 
   function newConversation() {
     const id = `${SESSION_PREFIX}${Date.now()}`;
-    const convo: Conversation = { id, title: "New conversation", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    const convo: Conversation = { id, title: t("newConversation"), messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     setSessionConvos((prev) => [convo, ...prev]);
     setActiveConvoId(id);
     setInput("");
@@ -412,7 +414,7 @@ export default function SearchPage() {
         datasetIds: searchDatasetIds,
       });
       const resultData = (Array.isArray(data) ? data : []) as SearchResultItem[];
-      const content = normalizeResults(resultData);
+      const content = normalizeResults(resultData, t("noResults"));
       const datasetLabel = resultData[0]?.dataset_name || selectedDataset?.name;
 
       setSessionConvos((prev) =>
@@ -436,7 +438,7 @@ export default function SearchPage() {
         setSessionConvos((prev) =>
           prev.map((c) => {
             if (c.id !== finalConvoId) return c;
-            return { ...c, messages: c.messages.map((m) => m.id === loadingMsg.id ? { ...m, content: err instanceof Error ? err.message : "Search failed", loading: false, error: true } : m) };
+            return { ...c, messages: c.messages.map((m) => m.id === loadingMsg.id ? { ...m, content: err instanceof Error ? err.message : t("failed"), loading: false, error: true } : m) };
           })
         );
       }
@@ -453,11 +455,7 @@ export default function SearchPage() {
     }
   };
 
-  const suggestions = [
-    "What are the main entities?",
-    "Summarize the uploaded documents",
-    "What relationships exist in the data?",
-  ];
+  const suggestions = [t("suggestions.entities"), t("suggestions.summary"), t("suggestions.relationships")];
 
   const isEmpty = messages.length === 0;
 
@@ -465,7 +463,7 @@ export default function SearchPage() {
   const grouped: { label: string; items: Conversation[] }[] = [];
   const labelOrder: string[] = [];
   for (const c of allConversations) {
-    const lbl = dateLabel(c.updatedAt);
+    const lbl = dateLabel(c.updatedAt, { today: t("dates.today"), yesterday: t("dates.yesterday"), week: t("dates.thisWeek"), month: t("dates.thisMonth"), older: t("dates.older") });
     if (!labelOrder.includes(lbl)) { labelOrder.push(lbl); grouped.push({ label: lbl, items: [] }); }
     grouped.find((g) => g.label === lbl)!.items.push(c);
   }
@@ -477,8 +475,8 @@ export default function SearchPage() {
       {/* Header */}
       <div style={{ padding: "24px 32px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>Search</h1>
-          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>Ask questions about your knowledge graph and agent memory.</p>
+          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>{t("title")}</h1>
+          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>{t("description")}</p>
         </div>
       </div>
 
@@ -490,12 +488,12 @@ export default function SearchPage() {
         <div style={{ width: 260, borderRight: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", flexShrink: 0 }}>
           {/* Sidebar header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "#EDECEA" }}>History</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#EDECEA" }}>{t("history")}</span>
             <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={newConversation} className="cursor-pointer rounded p-1" style={{ background: "none", border: "none", color: "#BC9BFF", display: "flex" }} title="New conversation">
+              <button onClick={newConversation} className="cursor-pointer rounded p-1" style={{ background: "none", border: "none", color: "#BC9BFF", display: "flex" }} title={t("newConversation")} aria-label={t("newConversation")}>
                 <PlusIcon />
               </button>
-              <button onClick={() => setSidebarOpen(false)} className="cursor-pointer rounded p-1" style={{ background: "none", border: "none", color: "rgba(237,236,234,0.5)", display: "flex" }} title="Close sidebar">
+              <button onClick={() => setSidebarOpen(false)} className="cursor-pointer rounded p-1" style={{ background: "none", border: "none", color: "rgba(237,236,234,0.5)", display: "flex" }} title={t("closeHistory")} aria-label={t("closeHistory")}>
                 <SidebarIcon />
               </button>
             </div>
@@ -505,7 +503,7 @@ export default function SearchPage() {
           <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
             {allConversations.length === 0 && (
               <div style={{ padding: "24px 12px", textAlign: "center" }}>
-                <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>No conversations yet</span>
+                <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>{t("noConversations")}</span>
               </div>
             )}
             {grouped.map((group) => (
@@ -551,7 +549,7 @@ export default function SearchPage() {
         {/* Sidebar toggle when collapsed */}
         {!sidebarOpen && (
           <div style={{ padding: "10px 12px 0" }}>
-            <button onClick={() => setSidebarOpen(true)} className="cursor-pointer rounded p-1.5" style={{ background: "none", border: "none", color: "rgba(237,236,234,0.5)", display: "flex" }} title="Open history">
+            <button onClick={() => setSidebarOpen(true)} className="cursor-pointer rounded p-1.5" style={{ background: "none", border: "none", color: "rgba(237,236,234,0.5)", display: "flex" }} title={t("openHistory")} aria-label={t("openHistory")}>
               <SidebarIcon />
             </button>
           </div>
@@ -561,7 +559,7 @@ export default function SearchPage() {
         <div style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}>
           {isEmpty && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16 }}>
-              <h2 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', textAlign: "center" }}>What are you looking for today?</h2>
+              <h2 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif', textAlign: "center" }}>{t("emptyPrompt")}</h2>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 8 }}>
                 {suggestions.map((s) => (
                   <button
@@ -655,7 +653,7 @@ export default function SearchPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={hasAccess ? "Ask a question about your data..." : "Subscribe to use search..."}
+                placeholder={hasAccess ? t("placeholder") : t("subscribePlaceholder")}
                 rows={1}
                 style={{ flex: 1, border: "none", outline: "none", fontSize: 14, color: "#EDECEA", fontFamily: "inherit", background: "transparent", resize: "none", minHeight: 24, maxHeight: 120 }}
                 onInput={(e) => { const t = e.target as HTMLTextAreaElement; t.style.height = "24px"; t.style.height = t.scrollHeight + "px"; }}

@@ -1,8 +1,10 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useNavbar } from "./NavbarContext";
 
 export default function MobileMenuButton() {
+  const t = useTranslations("navigation");
   const { isOpen, toggle } = useNavbar();
 
   if (isOpen) return null;
@@ -10,7 +12,7 @@ export default function MobileMenuButton() {
   return (
     <button
       onClick={toggle}
-      aria-label="Open navigation"
+      aria-label={t("openNav")}
       style={{
         position: "fixed",
         bottom: "1.25rem",
