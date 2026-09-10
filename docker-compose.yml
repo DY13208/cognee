@@ -37,7 +37,7 @@ services:
       # Allows the container to reach your local machine using "host.docker.internal" instead of "localhost"
       - "host.docker.internal:host-gateway"
     ports:
-      - 8000:8000
+      - 8320:8000
       - 5678:5678 # Debugger port
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -98,7 +98,7 @@ services:
     ports:
       # Host ports differ from the main `cognee` service so both can run together
       # (the MCP server still listens on 8000 inside the container).
-      - "8001:8000" # MCP port
+      - "8321:8000" # MCP port
       - "5679:5678" # MCP debugger port
     healthcheck:
       # The MCP runtime image is python-slim (no curl), so probe with urllib.
@@ -136,7 +136,7 @@ services:
       cognee:
         condition: service_healthy
     ports:
-      - 3000:3000
+      - 3030:3000
     networks:
       - cognee-network
 
@@ -155,7 +155,7 @@ services:
       - ./cognee-frontend/src:/app/src
       - ./cognee-frontend/public:/app/public
     ports:
-      - 3000:3000
+      - 3030:3000
       # - 9229:9229 # Debugging
     networks:
       - cognee-network
@@ -177,7 +177,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: postgres
+    container_name: cognee-postgres
     restart: always
     profiles:
       - postgres
@@ -191,7 +191,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - 5432:5432
+      - 35432:5432
     networks:
       - cognee-network
     healthcheck:
