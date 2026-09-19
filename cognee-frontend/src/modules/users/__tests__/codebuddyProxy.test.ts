@@ -6,6 +6,27 @@ jest.mock("@/modules/config/serverRuntimeConfig", () => ({
 }));
 
 describe("CodeBuddy server proxy", () => {
+  it.each([
+    [502, "Bad Gateway", "provider_unavailable"],
+    [500, "Internal error", "provider_unavailable"],
+    [503, JSON.stringify({ detail: "WorkBuddy login is not configured" }), "not_configured"],
+  ])("classifies upstream status %s without exposing its body", async (status, body, errorCode) => {
+    const upstream = new Response(body as string, { status: status as number });
+    Object.defineProperty(upstream.headers, "getSetCookie", { value: () => [] });
+    const fetchSpy = jest.spyOn(global, "fetch").mockResolvedValue(upstream);
+    const logSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const response = await proxyCodeBuddy(new Request("https://127.0.0.1:3030/oauth/login"), "login");
+      expect(response.headers.get("location")).toBe(`/local-login?error=${errorCode}`);
+      expect(await response.text()).toBe("");
+      expect(logSpy).toHaveBeenCalledWith("WorkBuddy OAuth proxy failed", {
+        action: "login", status, errorCode,
+      });
+    } finally {
+      fetchSpy.mockRestore();
+      logSpy.mockRestore();
+    }
+  });
   it("forwards callback fields in a body and carries every cookie back to the browser", async () => {
     const headers = new Headers({ location: "https://127.0.0.1:3030/" });
     headers.append("Set-Cookie", "auth_token=session; Path=/; Secure; HttpOnly");

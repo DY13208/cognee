@@ -139,6 +139,7 @@ services:
       # host-mapped API port (this compose publishes 8320:8000).
       - COGNEE_BACKEND_URL=${COGNEE_BACKEND_URL:-}
       - COGNEE_BACKEND_PORT=${COGNEE_BACKEND_PORT:-8320}
+      - COGNEE_INTERNAL_BACKEND_URL=${COGNEE_INTERNAL_BACKEND_URL:-http://cognee:8000}
     depends_on:
       cognee:
         condition: service_healthy
@@ -159,6 +160,7 @@ services:
     environment:
       - COGNEE_BACKEND_URL=${COGNEE_BACKEND_URL:-}
       - COGNEE_BACKEND_PORT=${COGNEE_BACKEND_PORT:-8320}
+      - COGNEE_INTERNAL_BACKEND_URL=${COGNEE_INTERNAL_BACKEND_URL:-http://cognee:8000}
     volumes:
       - ./cognee-frontend/src:/app/src
       - ./cognee-frontend/public:/app/public

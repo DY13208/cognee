@@ -28,7 +28,13 @@ export async function proxyCodeBuddy(request: Request, action: "login" | "callba
       headers.set("Location", location);
       return new Response(null, { status: 303, headers });
     }
-    headers.set("Location", "/local-login?error=not_configured");
+    // Only the backend's explicit configuration error means setup is missing.
+    const detail = upstream.status === 503
+      ? await upstream.json().catch(() => null) : null;
+    const errorCode = detail?.detail === "WorkBuddy login is not configured"
+      ? "not_configured" : "provider_unavailable";
+    console.warn("WorkBuddy OAuth proxy failed", { action, status: upstream.status, errorCode });
+    headers.set("Location", `/local-login?error=${errorCode}`);
     return new Response(null, { status: 303, headers });
   } catch {
     return new Response(null, {
