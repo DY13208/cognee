@@ -248,7 +248,7 @@ def test_oauth_identity_migration_roundtrip():
 
 
 @pytest.mark.asyncio
-async def test_approved_brain_shared_read_only_with_current_and_future_users(monkeypatch):
+async def test_approved_brain_shared_read_write_with_current_and_future_users(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         for table in (
@@ -284,11 +284,52 @@ async def test_approved_brain_shared_read_only_with_current_and_future_users(mon
         await sharing.grant_shared_read(future)  # Repeated login must not duplicate ACLs.
         async with sessions() as session:
             rows = (await session.execute(select(ACL, Permission.name).join(Permission))).all()
-            assert len(rows) == 2
+            assert len(rows) == 4
             assert {acl.principal_id for acl, _ in rows} == {existing.id, future.id}
             assert all(
-                acl.dataset_id == shared_id and permission == "read" for acl, permission in rows
+                acl.dataset_id == shared_id and permission in {"read", "write"}
+                for acl, permission in rows
             )
             assert (await session.get(Dataset, shared_id)).owner_id == owner_id
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_mindmap_includes_shared_dataset_and_excludes_private_dataset(monkeypatch):
+    from cognee.api.v1.visualize import memory_provenance as provenance
+    from cognee.infrastructure.databases import relational
+    from cognee.infrastructure.databases.relational import Base
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(
+        relational, "get_relational_engine", lambda: SimpleNamespace(get_async_session=sessions)
+    )
+    monkeypatch.setattr(provenance, "_read_agents", AsyncMock(return_value=[]))
+    monkeypatch.setattr(provenance, "_read_sessions", AsyncMock(return_value=[]))
+    monkeypatch.setattr(provenance, "_read_roles_and_grants", AsyncMock(return_value=([], [])))
+    owner, reader, shared, private = uuid4(), uuid4(), uuid4(), uuid4()
+    try:
+        async with sessions() as session:
+            session.add_all(
+                [
+                    Dataset(id=shared, owner_id=owner, name="Shared"),
+                    Dataset(id=private, owner_id=owner, name="Private"),
+                ]
+            )
+            await session.commit()
+        nodes, _ = await provenance.get_memory_provenance_graph(
+            scope_user_ids=[reader], scope_dataset_ids=[shared]
+        )
+        ids = {node_id for node_id, _ in nodes}
+        assert f"dataset:{shared}" in ids
+        assert f"dataset:{private}" not in ids
+        nodes, _ = await provenance.get_memory_provenance_graph(
+            scope_user_ids=[owner], scope_dataset_ids=[]
+        )
+        assert not any(node_id.startswith("dataset:") for node_id, _ in nodes)
     finally:
         await engine.dispose()

@@ -614,6 +614,7 @@ async def get_memory_provenance_graph(
     include_memory: bool = False,
     scope_tenant_ids: Optional[List[Any]] = None,
     scope_user_ids: Optional[List[Any]] = None,
+    scope_dataset_ids: Optional[List[Any]] = None,
 ) -> Tuple[List[Node], List[EdgeData]]:
     """Read live relational data and project it into a provenance ``(nodes, edges)``.
 
@@ -636,7 +637,9 @@ async def get_memory_provenance_graph(
     from cognee.modules.data.models import Dataset
     from cognee.modules.users.models import Tenant, User
 
-    scoped = scope_tenant_ids is not None or scope_user_ids is not None
+    scoped = (
+        scope_dataset_ids is not None or scope_tenant_ids is not None or scope_user_ids is not None
+    )
 
     tenants: List[Dict[str, Any]] = []
     users: List[Dict[str, Any]] = []
@@ -670,7 +673,9 @@ async def get_memory_provenance_graph(
             )
 
         dataset_stmt = select(Dataset).options(joinedload(Dataset.data))
-        if scope_tenant_ids is not None:
+        if scope_dataset_ids is not None:
+            dataset_stmt = dataset_stmt.where(Dataset.id.in_(scope_dataset_ids))
+        elif scope_tenant_ids is not None:
             dataset_stmt = dataset_stmt.where(Dataset.tenant_id.in_(scope_tenant_ids))
         elif scope_user_ids is not None:
             dataset_stmt = dataset_stmt.where(Dataset.owner_id.in_(scope_user_ids))
@@ -742,6 +747,7 @@ async def visualize_memory_provenance(
     include_memory: bool = False,
     scope_tenant_ids: Optional[List[Any]] = None,
     scope_user_ids: Optional[List[Any]] = None,
+    scope_dataset_ids: Optional[List[Any]] = None,
 ) -> str:
     """Render the live memory-provenance graph to a self-contained HTML file.
 
@@ -757,6 +763,7 @@ async def visualize_memory_provenance(
         include_memory=include_memory,
         scope_tenant_ids=scope_tenant_ids,
         scope_user_ids=scope_user_ids,
+        scope_dataset_ids=scope_dataset_ids,
     )
     html = await cognee_network_visualization(graph_data, destination_file_path)
     if destination_file_path:
@@ -768,6 +775,7 @@ async def get_memory_provenance_payload(
     include_memory: bool = False,
     scope_tenant_ids: Optional[List[Any]] = None,
     scope_user_ids: Optional[List[Any]] = None,
+    scope_dataset_ids: Optional[List[Any]] = None,
 ) -> dict:
     """The live memory-provenance graph as a JSON-safe dict, for a client
     that renders it itself instead of an embedded HTML page.
@@ -790,5 +798,6 @@ async def get_memory_provenance_payload(
         include_memory=include_memory,
         scope_tenant_ids=scope_tenant_ids,
         scope_user_ids=scope_user_ids,
+        scope_dataset_ids=scope_dataset_ids,
     )
     return build_visualization_payload(graph_data)

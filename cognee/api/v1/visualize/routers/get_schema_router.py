@@ -173,11 +173,15 @@ def get_schema_router() -> APIRouter:
             scope_tenant_ids = None
             scope_user_ids = [user.id]
 
+        from cognee.modules.users.permissions.methods import get_all_user_permission_datasets
+
         try:
+            readable = await get_all_user_permission_datasets(user, "read")
             html = await visualize_memory_provenance(
                 include_memory=include_memory,
                 scope_tenant_ids=scope_tenant_ids,
                 scope_user_ids=scope_user_ids,
+                scope_dataset_ids=[dataset.id for dataset in readable],
             )
             return HTMLResponse(html)
         except Exception as exc:
@@ -232,11 +236,15 @@ def get_schema_router() -> APIRouter:
             scope_tenant_ids = None
             scope_user_ids = [user.id]
 
+        from cognee.modules.users.permissions.methods import get_all_user_permission_datasets
+
         try:
+            readable = await get_all_user_permission_datasets(user, "read")
             payload = await get_memory_provenance_payload(
                 include_memory=include_memory,
                 scope_tenant_ids=scope_tenant_ids,
                 scope_user_ids=scope_user_ids,
+                scope_dataset_ids=[dataset.id for dataset in readable],
             )
             return JSONResponse(status_code=200, content=payload)
         except Exception as exc:

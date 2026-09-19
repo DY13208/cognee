@@ -86,7 +86,7 @@ WorkBuddy login alone does not discover or join an organization.
 ### Share selected existing brains with every WorkBuddy user
 
 Set `CODEBUDDY_SHARED_DATASET_IDS` on the backend to a comma-separated list of
-approved dataset UUIDs. Every successful WorkBuddy login grants **read only** on
+approved dataset UUIDs. Every successful WorkBuddy login grants **read and write** on
 that exact list, including future users. Other datasets remain private, newly
 created datasets are not automatically added, ownership stays unchanged, and
 anonymous visitors still cannot access the data. Datasets must be in the same

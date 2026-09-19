@@ -1,4 +1,4 @@
-"""Read-only grants for the explicit, operator-approved shared dataset list."""
+"""Read and write grants for the explicit, operator-approved shared dataset list."""
 
 import os
 from uuid import UUID
@@ -27,9 +27,10 @@ async def grant_shared_read(user: User) -> int:
         if any(dataset.tenant_id != user.tenant_id for dataset in datasets):
             raise ValueError("CodeBuddy shared datasets must belong to the user's tenant")
         existing_ids = [dataset.id for dataset in datasets]
-    # Reuse the existing idempotent ACL grant implementation; never grant write/share/delete.
+    # Grant editing on the approved datasets without granting share/delete permissions.
     for dataset_id in existing_ids:
         await give_permission_on_dataset(user, dataset_id, "read")
+        await give_permission_on_dataset(user, dataset_id, "write")
     return len(existing_ids)
 
 
