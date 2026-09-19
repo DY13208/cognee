@@ -143,7 +143,7 @@ services:
       cognee:
         condition: service_healthy
     ports:
-      - 3030:3000
+      - 127.0.0.1:3031:3000
     networks:
       - cognee-network
 
@@ -232,6 +232,27 @@ services:
     networks:
       - cognee-network
 
+
+  # 公网 HTTPS 入口：宿主 3030 -> 容器 443，终结 TLS 后按路径分发。
+  # 保留 :3030 端口号是为了让已登记的 OAuth 回调
+  # https://xx.stillgroup.net:3030/oauth/callback 不用重新登记。
+  # 证书放 certs/（已 gitignore）。与 mind-map 项目用的是同一张
+  # xx.stillgroup.net 证书 —— 换证时【两个项目都要替换】。
+  codebuddy-https:
+    image: nginx:1.27-alpine
+    container_name: codebuddy-https
+    restart: unless-stopped
+    profiles:
+      - ui
+    ports:
+      - "3030:443"
+    volumes:
+      - ./docker/codebuddy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - frontend
+    networks:
+      - cognee-network
 
 networks:
   cognee-network:
