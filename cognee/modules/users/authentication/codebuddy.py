@@ -19,6 +19,9 @@ from cognee.infrastructure.databases.relational import get_relational_engine
 from cognee.modules.users.authentication.codebuddy_sharing import grant_shared_read
 from cognee.modules.users.authentication.session_settings import codebuddy_enabled, session_settings
 from cognee.modules.users.models import OAuthIdentity, User
+from cognee.shared.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 STATE_COOKIE = "codebuddy_oauth_state"
 STATE_TTL = 600
@@ -149,6 +152,7 @@ async def fetch_userinfo(config: CodeBuddyConfig, code: str, verifier: str) -> d
         auth = httpx.BasicAuth(config.client_id, config.client_secret)
     else:
         data["client_secret"] = config.client_secret
+    stage = "token"
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
             token_response = await client.post(
@@ -161,6 +165,7 @@ async def fetch_userinfo(config: CodeBuddyConfig, code: str, verifier: str) -> d
                 raise OAuthError("token_failed")
             if str(token.get("token_type", "Bearer")).lower() != "bearer":
                 raise OAuthError("token_failed")
+            stage = "userinfo"
             response = await client.get(
                 config.userinfo_endpoint,
                 headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
@@ -168,7 +173,14 @@ async def fetch_userinfo(config: CodeBuddyConfig, code: str, verifier: str) -> d
             response.raise_for_status()
             profile = response.json()
     except (httpx.HTTPError, ValueError) as error:
-        # Never log provider bodies, URLs containing codes, or access/refresh tokens.
+        # Only fixed stage, exception class and status: never provider bodies or URLs.
+        status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+        logger.warning(
+            "WorkBuddy OAuth request failed: stage=%s status=%s error_type=%s",
+            stage,
+            status,
+            type(error).__name__,
+        )
         raise OAuthError("provider_unavailable") from error
     if not isinstance(profile, dict):
         raise OAuthError("invalid_profile")
