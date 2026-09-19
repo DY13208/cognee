@@ -1,13 +1,13 @@
-import os
 from functools import lru_cache
-from fastapi_users import models
 
+from fastapi_users import models
 from fastapi_users.authentication import (
-    JWTStrategy,
     AuthenticationBackend,
+    JWTStrategy,
 )
 
-from .api_bearer import api_bearer_transport, APIJWTStrategy
+from .api_bearer import APIJWTStrategy, api_bearer_transport
+from .session_settings import session_settings
 
 
 @lru_cache
@@ -15,8 +15,7 @@ def get_api_auth_backend():
     transport = api_bearer_transport
 
     def get_jwt_strategy() -> JWTStrategy[models.UP, models.ID]:
-        secret = os.getenv("FASTAPI_USERS_JWT_SECRET", "super_secret")
-        lifetime_seconds = int(os.getenv("JWT_LIFETIME_SECONDS", "3600"))
+        secret, lifetime_seconds = session_settings()
 
         return APIJWTStrategy(secret, lifetime_seconds=lifetime_seconds)
 

@@ -73,7 +73,7 @@ export function LocalProvider({ children }: { children: React.ReactNode }) {
           signal: controller.signal,
         });
 
-        if (meResponse.status === 401 || meResponse.status === 403) {
+        if (meResponse.status === 401) {
           // Not authenticated — redirect to local login
           window.location.href = "/local-login";
           return;

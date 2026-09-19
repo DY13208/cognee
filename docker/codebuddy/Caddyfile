@@ -1,0 +1,19 @@
+{
+    auto_https disable_redirects
+    default_sni 127.0.0.1
+}
+
+https://127.0.0.1 {
+    tls internal
+    # Do not enable access logging: callback query strings contain OAuth codes.
+    handle_path /backend/* {
+        reverse_proxy cognee:8000 {
+            # FastAPI's canonical-slash redirects see the internal HTTP path.
+            # Keep them on the public HTTPS origin and preserve the API prefix.
+            header_down Location "^https?://[^/]+(/api/.*)$" "https://127.0.0.1:3030/backend$1"
+        }
+    }
+    handle {
+        reverse_proxy frontend:3000
+    }
+}

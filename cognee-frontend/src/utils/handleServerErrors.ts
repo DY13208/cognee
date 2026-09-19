@@ -7,7 +7,7 @@ export default function handleServerErrors(
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
     // Local mode: redirect to local login on auth failures
-    if ((response.status === 401 || response.status === 403) && !useCloud) {
+    if (response.status === 401 && !useCloud) {
       if (typeof window !== "undefined") {
         window.location.href = "/local-login";
       }

@@ -1,16 +1,18 @@
 "use server";
 
 import CogneeUser from "./CogneeUser";
+import { cookies } from "next/headers";
+import { getServerBackendUrl } from "@/modules/config/serverRuntimeConfig";
 
 export default async function getLocalUser(): Promise<CogneeUser | null> {
-  // In local mode, we can't use Auth0 session.
-  // Return a placeholder user — the actual auth is handled by
-  // the backend cookie, not a server-side session.
-  // The LocalProvider already verified auth via /api/v1/users/me.
-  return {
-    id: "local",
-    name: "Local User",
-    email: "local@cognee.local",
-    picture: "",
-  };
+  try {
+    const response = await fetch(`${getServerBackendUrl()}/api/v1/auth/codebuddy/me`, {
+      headers: { cookie: (await cookies()).toString() },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok ? await response.json() : null;
+  } catch {
+    return null;
+  }
 }

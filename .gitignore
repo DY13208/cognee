@@ -213,3 +213,6 @@ rendered.yaml
 
 # enola code-graph snapshots (written into any repository enola scans)
 .enola/
+
+# Local OAuth client credentials and test TLS artifacts.
+.env.codebuddy.local

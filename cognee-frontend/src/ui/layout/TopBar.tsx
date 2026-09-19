@@ -7,7 +7,6 @@ import getLocalUser from "@/modules/users/getLocalUser";
 import CogneeUser from "@/modules/users/CogneeUser";
 import isCloudEnvironment from "@/utils/isCloudEnvironment";
 
-import Image from "next/image";
 import Link from "next/link";
 import HelpMenu from "./HelpMenu";
 import ProfileMenu from "./ProfileMenu";
@@ -96,12 +95,10 @@ export default function TopBar() {
 
   return (
     <header className="flex items-center justify-between flex-shrink-0" style={{ height: 53, paddingInline: 24, position: "relative", zIndex: 300, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-      {/* Left: logo + breadcrumbs */}
+      {/* Left: breadcrumbs */}
       <div className="flex items-center" style={{ gap: 8 }}>
-        {/* Logo fixed-width box so workspace aligns with right edge of navbar (240px - 24px padding) */}
-        <div style={{ width: 240, flexShrink: 0, display: "flex", alignItems: "center" }}>
-          <Image src="/cognee-logo-black.svg" alt="Cognee" width={110} height={24} style={{ flexShrink: 0, filter: "invert(1)" }} />
-        </div>
+        {/* Keep workspace breadcrumbs aligned with the content area. */}
+        <div aria-hidden="true" style={{ width: 240, flexShrink: 0 }} />
 
         {/* 1. Workspace switcher */}
         <Dropdown

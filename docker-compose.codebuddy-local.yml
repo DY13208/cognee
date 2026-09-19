@@ -1,0 +1,24 @@
+# Local HTTPS OAuth test deployment. Use together with docker-compose.yml.
+services:
+  cognee:
+    env_file:
+      - .env.codebuddy.local
+  frontend:
+    ports: !reset []
+    environment:
+      COGNEE_INTERNAL_BACKEND_URL: http://cognee:8000
+      COGNEE_BACKEND_URL: https://127.0.0.1:3030/backend
+  codebuddy-https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3030:443"
+    volumes:
+      - ./docker/codebuddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - codebuddy_tls:/data
+    networks:
+      - cognee-network
+    depends_on:
+      - frontend
+volumes:
+  codebuddy_tls:
