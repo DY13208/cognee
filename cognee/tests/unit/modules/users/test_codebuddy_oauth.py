@@ -183,10 +183,30 @@ def test_callback_establishes_secure_session_and_logout_clears_it(monkeypatch):
         assert "provider-secret" not in result.text
         logout = client.post("/api/v1/auth/logout")
         assert "Max-Age=0" in logout.headers["set-cookie"]
+        auth_routes = importlib.import_module("cognee.api.v1.users.routers.get_auth_router")
+        authenticate = AsyncMock(return_value=SimpleNamespace(id="password-user"))
+        monkeypatch.setattr(auth_routes, "authenticate_user", authenticate)
         password_login = client.post(
             "/api/v1/auth/login", data={"username": "old", "password": "old"}
         )
-        assert password_login.status_code == 403
+        assert password_login.status_code == 200
+        authenticate.assert_awaited_once_with("old", "old")
+        password_cookie = password_login.headers["set-cookie"]
+        assert "Secure" in password_cookie and "HttpOnly" in password_cookie
+        assert "Domain=" not in password_cookie
+        assert "Max-Age=604800" in password_cookie
+        password_token = password_login.json()["access_token"]
+        claims = jwt.decode(
+            password_token,
+            oauth.session_settings()[0],
+            algorithms=["HS256"],
+            audience="fastapi-users:auth",
+        )
+        assert claims["sub"] == "password-user"
+        authenticate.return_value = None
+        rejected = client.post("/api/v1/auth/login", data={"username": "old", "password": "wrong"})
+        assert rejected.status_code == 400
+        assert "set-cookie" not in rejected.headers
 
 
 def test_refuse_shared_global_backend(monkeypatch):

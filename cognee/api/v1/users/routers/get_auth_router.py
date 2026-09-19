@@ -23,8 +23,6 @@ def get_auth_router():
         credentials: Annotated[OAuth2PasswordRequestForm, Depends()],
     ):
         """Login — POST /api/v1/auth/login."""
-        if codebuddy_enabled():
-            raise HTTPException(status_code=403, detail="Use Login WorkBuddy")
         user = await authenticate_user(credentials.username, credentials.password)
 
         if user is None:
@@ -39,8 +37,8 @@ def get_auth_router():
             value=token,
             max_age=strategy.lifetime_seconds,
             path=default_transport.cookie_path,
-            domain=default_transport.cookie_domain,
-            secure=default_transport.cookie_secure,
+            domain=None if codebuddy_enabled() else default_transport.cookie_domain,
+            secure=codebuddy_enabled() or default_transport.cookie_secure,
             httponly=default_transport.cookie_httponly,
             samesite=default_transport.cookie_samesite,
         )

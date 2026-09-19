@@ -1,6 +1,8 @@
 "use client";
 
-import { Flex, Text, Title, Button } from "@mantine/core";
+import { useState } from "react";
+import { getLocalApiUrl } from "@/modules/users/getLocalApiUrl";
+import { Flex, Text, Title, Button, TextInput, PasswordInput, Divider } from "@mantine/core";
 import AuthCard from "@/ui/elements/Auth/AuthCard";
 
 const ERRORS: Record<string, string> = {
@@ -17,7 +19,34 @@ const ERRORS: Record<string, string> = {
 };
 
 export default function LocalSignInForm({ errorCode }: { errorCode?: string }) {
-  const error = errorCode ? ERRORS[errorCode] || "登录失败，请重新登录。" : null;
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setLoginError(null);
+    setLoading(true);
+    try {
+      const response = await fetch(`${getLocalApiUrl()}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        credentials: "include",
+        body: new URLSearchParams({ username: email.trim(), password }).toString(),
+      });
+      if (!response.ok) {
+        setLoginError(response.status === 400 || response.status === 401
+          ? "邮箱或密码不正确，或账号已停用。" : "登录失败，请稍后重试。");
+        return;
+      }
+      window.location.assign("/");
+    } catch {
+      setLoginError("无法连接登录服务，请稍后重试。");
+    } finally {
+      setLoading(false);
+    }
+  }
+  const error = loginError || (errorCode ? ERRORS[errorCode] || "登录失败，请重新登录。" : null);
   return (
     <AuthCard>
       <Flex className="flex-col gap-[0.75rem] items-center">
@@ -26,7 +55,7 @@ export default function LocalSignInForm({ errorCode }: { errorCode?: string }) {
           登录知识库
         </Title>
         <Text size="sm" className="!text-[#EDECEA]/85 !font-light !text-center">
-          使用 WorkBuddy 账号登录
+          使用邮箱密码或 WorkBuddy 账号登录
         </Text>
       </Flex>
       {error && (
@@ -35,6 +64,19 @@ export default function LocalSignInForm({ errorCode }: { errorCode?: string }) {
           {error}
         </Text>
       )}
+      <form onSubmit={handleSubmit} className="w-full flex flex-col gap-3">
+        <TextInput label="邮箱" type="email" autoComplete="username" required
+          classNames={{ label: "!text-[#EDECEA]/85", input: "!bg-white/[0.06] !border-white/15 !text-[#EDECEA]" }}
+          value={email} onChange={(event) => setEmail(event.currentTarget.value)} />
+        <PasswordInput label="密码" autoComplete="current-password" required
+          classNames={{ label: "!text-[#EDECEA]/85", input: "!bg-white/[0.06] !border-white/15", innerInput: "!text-[#EDECEA]" }}
+          value={password} onChange={(event) => setPassword(event.currentTarget.value)} />
+        <Button type="submit" fullWidth loading={loading} h="2.75rem" radius="md"
+          className="!bg-[#BC9BFF] !text-[#1e1e1c] hover:!bg-[#A87CFF]">
+          账号密码登录
+        </Button>
+      </form>
+      <Divider label="或" className="w-full" />
       <Button component="a" href="/oauth/login" fullWidth h="2.75rem" radius="md" mt="xs"
         className="!bg-[#BC9BFF] !text-[#1e1e1c] hover:!bg-[#A87CFF] !transition-colors !border-none">
         Login WorkBuddy

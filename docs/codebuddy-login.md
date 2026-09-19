@@ -32,8 +32,9 @@ contain a stable `sub` or `id`. Only name and email profile fields are stored.
 
 The session lifetime is seconds (604800 = seven days), fixed from login rather
 than sliding. Changes apply after backend restart and a new login. Rotating
-`CODEBUDDY_SESSION_SECRET` invalidates existing Cognee sessions. The old password
-login endpoint is disabled when WorkBuddy is enabled; API keys still work.
+`CODEBUDDY_SESSION_SECRET` invalidates existing Cognee sessions. Email/password login remains available alongside WorkBuddy; both use the same
+session lifetime and secure cookies when WorkBuddy is enabled. Existing password
+accounts retain their original data and permissions. API keys still work.
 
 Set `COGNEE_INTERNAL_BACKEND_URL=http://cognee:8000` on the frontend for server
 requests, separately from the browser-visible `COGNEE_BACKEND_URL`. The public
