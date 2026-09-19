@@ -163,7 +163,7 @@ services:
       - ./cognee-frontend/src:/app/src
       - ./cognee-frontend/public:/app/public
     ports:
-      - 3030:3000
+      - 3032:3000
       # - 9229:9229 # Debugging
     networks:
       - cognee-network

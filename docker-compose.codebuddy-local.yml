@@ -1,24 +1,20 @@
-# Local HTTPS OAuth test deployment. Use together with docker-compose.yml.
-services:
-  cognee:
-    env_file:
-      - .env.codebuddy.local
-  frontend:
-    ports: !reset []
-    environment:
-      COGNEE_INTERNAL_BACKEND_URL: http://cognee:8000
-      COGNEE_BACKEND_URL: https://127.0.0.1:3030/backend
-  codebuddy-https:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3030:443"
-    volumes:
-      - ./docker/codebuddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - codebuddy_tls:/data
-    networks:
-      - cognee-network
-    depends_on:
-      - frontend
-volumes:
-  codebuddy_tls:
+# 已废弃（2026-09-19）。
+#
+# 这个 overlay 原本用来起一个 Caddy 做「本地 HTTPS OAuth 测试」：
+#   - caddy:2-alpine + tls internal（Caddy 内部 CA，浏览器不信任）
+#   - 只绑 127.0.0.1:3030，所以外部访问不到
+#   - 依赖 .env.codebuddy.local（该文件不存在）
+#
+# 真正的公网 HTTPS 入口现在已并入 docker-compose.yml 的 codebuddy-https 服务：
+#   - nginx:1.27-alpine + 真实证书（certs/），宿主 3030 -> 容器 443
+#   - /backend/* 反代 cognee:8000（剥前缀），其余（含 /oauth/callback）反代 frontend:3000
+#   - 用 upstream ... resolve，上游重建换 IP 也能自动跟上
+#
+# 【不要】再把本文件叠加到 docker-compose.yml 上：
+# 它里面的 codebuddy-https 会用 caddy 覆盖同名服务、抢回 127.0.0.1:3030，
+# 且因缺少 .env.codebuddy.local 而直接启动失败。
+#
+# 原 Caddyfile 保留在 docker/codebuddy/Caddyfile，仅作历史参考，已无人使用。
+
+services: {}
+volumes: {}
