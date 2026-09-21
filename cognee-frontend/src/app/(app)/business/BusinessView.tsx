@@ -14,7 +14,6 @@ import type { BusinessEntity } from "@/modules/business/sceneTypes";
 import HoverTooltip from "@/modules/business/panels/HoverTooltip";
 import type { SceneHit } from "@/modules/business/canvas/businessHitTest";
 import NodePanel from "@/modules/business/panels/NodePanel";
-import CPDTreePanel from "@/modules/business/CPDTreePanel";
 import SourceDetailCard from "@/modules/business/panels/SourceDetailCard";
 import { computeSourceDetail } from "@/modules/business/computeSourceDetail";
 import { computeWhatIfRemoval } from "@/modules/business/computeWhatIfRemoval";
@@ -327,9 +326,6 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
         background: "radial-gradient(1200px 700px at 50% 42%, #141D33, #0E1526)",
       }}
     >
-      {scene.activeDatasetId === "dd3aa689-ec26-5887-9730-310eec869d1c" && (
-        <CPDTreePanel instance={cogniInstance} datasetId={scene.activeDatasetId} />
-      )}
       <BusinessCanvas
         ref={canvasRef}
         brainState={scene.brainState}
