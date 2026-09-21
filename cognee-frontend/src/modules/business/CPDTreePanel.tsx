@@ -125,7 +125,8 @@ export default function CPDTreePanel({
               <div style={{ marginTop: 12, color: "#62d9dc" }}>
                 来源 v{tree.revision} · {tree.goalCount} 个目标 ·{" "}
                 {tree.goalEdgeCount} 条目标分解关系 · {tree.referenceCount}{" "}
-                个链接入口 · 本图层级完整
+                个链接入口 ·{" "}
+                {tree.complete ? "本图层级完整" : "本图层级不完整，仍展示已连接目标"}
               </div>
             )}
           </header>

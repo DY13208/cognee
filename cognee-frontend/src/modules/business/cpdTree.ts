@@ -33,6 +33,20 @@ export interface CPDTree {
 }
 const ROOM = "room-yk3tz4aj";
 const ROOT = "313047eb-0c98-4abb-a1ce-933b1081e234";
+
+function pickRoot(nodes: CPDNode[], parents: Map<string, string>): CPDNode {
+  const parentless = nodes.filter((n) => !parents.has(n.id));
+  if (!parentless.length) throw new Error("公司运营根节点缺失或重复");
+  const preferred = parentless.filter((n) => n.sourceUid === ROOT);
+  if (preferred.length === 1) return preferred[0];
+  const named = parentless.filter((n) => n.name.includes("公司运营"));
+  if (named.length === 1) return named[0];
+  if (parentless.length === 1) return parentless[0];
+  const goals = parentless.filter((n) => n.kind === "goal");
+  if (goals.length === 1) return goals[0];
+  throw new Error("公司运营根节点缺失或重复");
+}
+
 export function buildCPDTree(graph: CPDGraph): CPDTree {
   if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges))
     throw new Error("目标树返回格式不完整");
@@ -65,39 +79,34 @@ export function buildCPDTree(graph: CPDGraph): CPDTree {
       };
     });
   if (!nodes.length) throw new Error("本图尚未完成导入，请刷新后重试");
-  if (
-    new Set(nodes.map((n) => n.id)).size !== nodes.length ||
-    new Set(nodes.map((n) => n.sourceKey)).size !== nodes.length
-  )
+  if (new Set(nodes.map((n) => n.id)).size !== nodes.length)
     throw new Error("目标树包含重复来源节点");
-  const versions = new Set(nodes.map((n) => n.revision));
-  if (versions.size !== 1)
-    throw new Error("目标树包含多个来源版本，暂不展示完整性结论");
-  const roots = nodes.filter((n) => n.sourceUid === ROOT);
-  if (roots.length !== 1) throw new Error("公司运营根节点缺失或重复");
-  const root = roots[0],
-    byId = new Map(nodes.map((n) => [n.id, n])),
+  const byId = new Map(nodes.map((n) => [n.id, n])),
     children = new Map(nodes.map((n) => [n.id, [] as CPDNode[]]));
   const parents = new Map<string, string>();
   let goalEdgeCount = 0;
   for (const e of graph.edges) {
     if (e.label !== "has_subgoal" && e.label !== "has_detail_reference")
       continue;
-    if (!byId.has(e.source) && !byId.has(e.target)) continue;
     const parent = byId.get(e.source),
       child = byId.get(e.target);
-    if (!parent || !child) throw new Error("目标树关系端点不完整");
+    if (!parent && !child) continue;
+    if (!parent || !child) continue;
     if (
       parent.kind !== "goal" ||
       (e.label === "has_subgoal") !== (child.kind === "goal")
     )
-      throw new Error("目标与入口关系类型不匹配");
-    if (parents.has(e.target)) throw new Error("目标树层级存在重复父关系");
-    if (e.target === root.id) throw new Error("根节点存在反向关系或循环");
+      continue;
+    if (parents.has(e.target)) continue;
     parents.set(e.target, e.source);
     children.get(e.source)!.push(child);
     if (e.label === "has_subgoal") goalEdgeCount++;
   }
+  const root = pickRoot(nodes, parents);
+  if (parents.get(root.id)) throw new Error("根节点存在反向关系或循环");
+  let complete =
+    new Set(nodes.map((n) => n.sourceKey)).size === nodes.length &&
+    new Set(nodes.map((n) => n.revision)).size === 1;
   for (const n of nodes) {
     const kids = children.get(n.id)!;
     kids.sort((a, b) =>
@@ -112,7 +121,7 @@ export function buildCPDTree(graph: CPDGraph): CPDTree {
       !Number.isFinite(n.expectedChildren) ||
       kids.length !== n.expectedChildren
     )
-      throw new Error("本图下级节点不完整，请等待导入完成后刷新");
+      complete = false;
   }
   const seen = new Set<string>(),
     visiting = new Set<string>();
@@ -124,17 +133,17 @@ export function buildCPDTree(graph: CPDGraph): CPDTree {
     visiting.delete(id);
   }
   walk(root.id);
-  if (seen.size !== nodes.length)
-    throw new Error("目标树层级不完整，存在未连接节点");
+  if (seen.size !== nodes.length) complete = false;
+  const visible = nodes.filter((n) => seen.has(n.id));
   return {
-    nodes,
+    nodes: visible,
     root,
     children,
-    goalCount: nodes.filter((n) => n.kind === "goal").length,
-    referenceCount: nodes.filter((n) => n.kind === "map_reference").length,
+    goalCount: visible.filter((n) => n.kind === "goal").length,
+    referenceCount: visible.filter((n) => n.kind === "map_reference").length,
     goalEdgeCount,
     revision: root.revision,
-    complete: true,
+    complete,
   };
 }
 export function visibleCPDRows(
