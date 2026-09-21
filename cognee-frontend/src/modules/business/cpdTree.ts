@@ -1,11 +1,29 @@
-export interface CPDGraph {
-  nodes: Array<{
-    id: string;
-    type?: string;
-    label?: string;
-    properties?: Record<string, unknown>;
-  }>;
-  edges: Array<{ source: string; target: string; label: string }>;
+export interface CompanyTreeApiNode {
+  id: string;
+  name: string;
+  kind: "goal" | "map_reference";
+  sourceKey?: string;
+  sourceUid?: string;
+  sourceUri?: string;
+  revision?: string;
+  note?: string;
+  linkedUri?: string;
+  position?: string;
+  expectedChildren?: number;
+  childrenComplete?: boolean;
+}
+export interface CompanyTreeApiEdge {
+  source: string;
+  target: string;
+  label: string;
+}
+export interface CompanyTreeApi {
+  nodes: CompanyTreeApiNode[];
+  edges: CompanyTreeApiEdge[];
+  rootId?: string | null;
+  revision?: string;
+  complete?: boolean;
+  missing?: string[];
 }
 export interface CPDNode {
   id: string;
@@ -31,121 +49,63 @@ export interface CPDTree {
   revision: string;
   complete: boolean;
 }
-const ROOM = "room-yk3tz4aj";
-const ROOT = "313047eb-0c98-4abb-a1ce-933b1081e234";
 
-function pickRoot(nodes: CPDNode[], parents: Map<string, string>): CPDNode {
-  const parentless = nodes.filter((n) => !parents.has(n.id));
-  if (!parentless.length) throw new Error("公司运营根节点缺失或重复");
-  const preferred = parentless.filter((n) => n.sourceUid === ROOT);
-  if (preferred.length === 1) return preferred[0];
-  const named = parentless.filter((n) => n.name.includes("公司运营"));
-  if (named.length === 1) return named[0];
-  if (parentless.length === 1) return parentless[0];
-  const goals = parentless.filter((n) => n.kind === "goal");
-  if (goals.length === 1) return goals[0];
-  throw new Error("公司运营根节点缺失或重复");
+function asNode(n: CompanyTreeApiNode): CPDNode {
+  return {
+    id: n.id,
+    name: n.name,
+    sourceKey: n.sourceKey || "",
+    sourceUid: n.sourceUid || "",
+    sourceUri: n.sourceUri || "",
+    revision: n.revision || "",
+    kind: n.kind,
+    note: n.note || "",
+    linkedUri: n.linkedUri || "",
+    position: n.position || "",
+    expectedChildren: Number(n.expectedChildren),
+    childrenComplete: n.childrenComplete === true,
+  };
 }
 
-export function buildCPDTree(graph: CPDGraph): CPDTree {
-  if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges))
+export function treeFromCompanyTreeApi(dto: CompanyTreeApi): CPDTree {
+  if (!Array.isArray(dto.nodes) || !Array.isArray(dto.edges))
     throw new Error("目标树返回格式不完整");
-  const nodes: CPDNode[] = graph.nodes
-    .filter(
-      (n) =>
-        n.properties?.source_room === ROOM &&
-        n.properties?.source_scope === "company_model_only",
-    )
-    .map((n) => {
-      const p = n.properties!;
-      if (p.cpd_kind !== "goal" && p.cpd_kind !== "map_reference")
-        throw new Error("存在未识别的本图节点类型");
-      return {
-        id: n.id,
-        name:
-          p.source_text_html === ""
-            ? "未命名关联脑图"
-            : String(n.label || p.name || ""),
-        sourceKey: String(p.source_key || ""),
-        sourceUid: String(p.source_uid || ""),
-        sourceUri: String(p.source_uri || ""),
-        revision: String(p.source_revision || ""),
-        kind: p.cpd_kind,
-        note: String(p.source_note || ""),
-        linkedUri: String(p.linked_map_uri || ""),
-        position: String(p.source_position || ""),
-        expectedChildren: Number(p.source_child_count),
-        childrenComplete: p.source_children_complete === true,
-      };
-    });
-  if (!nodes.length) throw new Error("本图尚未完成导入，请刷新后重试");
-  if (new Set(nodes.map((n) => n.id)).size !== nodes.length)
-    throw new Error("目标树包含重复来源节点");
-  const byId = new Map(nodes.map((n) => [n.id, n])),
-    children = new Map(nodes.map((n) => [n.id, [] as CPDNode[]]));
-  const parents = new Map<string, string>();
+  if (!dto.nodes.length || !dto.rootId)
+    throw new Error("本图尚未完成导入，请刷新后重试");
+  const nodes = dto.nodes.map(asNode);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const root = byId.get(dto.rootId);
+  if (!root) throw new Error("公司运营根节点缺失或重复");
+  const children = new Map(nodes.map((n) => [n.id, [] as CPDNode[]]));
   let goalEdgeCount = 0;
-  for (const e of graph.edges) {
-    if (e.label !== "has_subgoal" && e.label !== "has_detail_reference")
-      continue;
+  for (const e of dto.edges) {
     const parent = byId.get(e.source),
       child = byId.get(e.target);
-    if (!parent && !child) continue;
     if (!parent || !child) continue;
-    if (
-      parent.kind !== "goal" ||
-      (e.label === "has_subgoal") !== (child.kind === "goal")
-    )
-      continue;
-    if (parents.has(e.target)) continue;
-    parents.set(e.target, e.source);
     children.get(e.source)!.push(child);
     if (e.label === "has_subgoal") goalEdgeCount++;
   }
-  const root = pickRoot(nodes, parents);
-  if (parents.get(root.id)) throw new Error("根节点存在反向关系或循环");
-  let complete =
-    new Set(nodes.map((n) => n.sourceKey)).size === nodes.length &&
-    new Set(nodes.map((n) => n.revision)).size === 1;
   for (const n of nodes) {
-    const kids = children.get(n.id)!;
-    kids.sort((a, b) =>
+    children.get(n.id)!.sort((a, b) =>
       a.position < b.position
         ? -1
         : a.position > b.position
           ? 1
           : a.id.localeCompare(b.id),
     );
-    if (
-      !n.childrenComplete ||
-      !Number.isFinite(n.expectedChildren) ||
-      kids.length !== n.expectedChildren
-    )
-      complete = false;
   }
-  const seen = new Set<string>(),
-    visiting = new Set<string>();
-  function walk(id: string) {
-    if (visiting.has(id)) throw new Error("目标树存在循环");
-    visiting.add(id);
-    seen.add(id);
-    for (const n of children.get(id)!) walk(n.id);
-    visiting.delete(id);
-  }
-  walk(root.id);
-  if (seen.size !== nodes.length) complete = false;
-  const visible = nodes.filter((n) => seen.has(n.id));
   return {
-    nodes: visible,
+    nodes,
     root,
     children,
-    goalCount: visible.filter((n) => n.kind === "goal").length,
-    referenceCount: visible.filter((n) => n.kind === "map_reference").length,
+    goalCount: nodes.filter((n) => n.kind === "goal").length,
+    referenceCount: nodes.filter((n) => n.kind === "map_reference").length,
     goalEdgeCount,
-    revision: root.revision,
-    complete,
+    revision: dto.revision || root.revision,
+    complete: dto.complete === true,
   };
 }
+
 export function visibleCPDRows(
   tree: CPDTree,
   expanded: Set<string>,

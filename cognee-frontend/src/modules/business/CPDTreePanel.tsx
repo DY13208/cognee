@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { CogneeInstance } from "@/modules/instances/types";
-import { buildCPDTree, visibleCPDRows, type CPDGraph } from "./cpdTree";
+import { treeFromCompanyTreeApi, visibleCPDRows, type CompanyTreeApi } from "./cpdTree";
 
 function safeSourceUrl(value: string): string | undefined {
   try {
@@ -29,10 +29,10 @@ export default function CPDTreePanel({
     queryKey: ["cpd-company-tree", instance.instanceId, datasetId],
     queryFn: async () => {
       const r = await instance.fetch(
-        `/v1/datasets/${encodeURIComponent(datasetId)}/graph`,
+        `/v1/datasets/${encodeURIComponent(datasetId)}/company-tree`,
       );
       if (!r.ok) throw new Error(`读取目标树失败（HTTP ${r.status}）`);
-      return buildCPDTree((await r.json()) as CPDGraph);
+      return treeFromCompanyTreeApi((await r.json()) as CompanyTreeApi);
     },
     enabled: open,
     staleTime: 30000,

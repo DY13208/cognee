@@ -21,7 +21,7 @@ from cognee.modules.users.authentication.redact_websocket_query_secrets import (
 from cognee.api.v1.cloud.routers import get_checks_router
 from cognee.api.v1.permissions.routers import get_permissions_router
 from cognee.api.v1.settings.routers import get_settings_router
-from cognee.api.v1.datasets.routers import get_datasets_router
+from cognee.api.v1.datasets.routers import get_company_tree_router, get_datasets_router
 from cognee.api.v1.cognify.routers import get_cognify_router
 from cognee.api.v1.search.routers import get_search_router
 from cognee.api.v1.ontologies.routers.get_ontology_router import get_ontology_router
@@ -273,6 +273,7 @@ app.include_router(
 )
 
 app.include_router(get_datasets_router(), prefix="/api/v1/datasets", tags=["datasets"])
+app.include_router(get_company_tree_router(), prefix="/api/v1/datasets", tags=["datasets"])
 
 app.include_router(get_ontology_router(), prefix="/api/v1/ontologies", tags=["ontologies"])
 
