@@ -12,6 +12,10 @@ ENV UV_COMPILE_BYTECODE=1
 # Copy from the cache instead of linking since it's a mounted volume
 ENV UV_LINK_MODE=copy
 
+# Large binary wheels can take longer than uv's 30-second default when
+# Docker Desktop is downloading through a slow or high-latency connection.
+ENV UV_HTTP_TIMEOUT=300
+
 # Set build argument
 ARG DEBUG
 

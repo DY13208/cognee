@@ -89,6 +89,17 @@ function KeyIcon({ active }: { active: boolean }) {
   );
 }
 
+function McpIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={active ? "#BC9BFF" : "rgba(255,255,255,0.5)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="6" width="18" height="12" rx="2" />
+      <path d="M7 9L4 12L7 15" />
+      <path d="M17 9L20 12L17 15" />
+      <line x1="13" y1="8" x2="11" y2="16" />
+    </svg>
+  );
+}
+
 // -- Navigation data --
 
 // Routes that require the tenant pod — dimmed/locked while it provisions.
@@ -132,6 +143,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "CONNECT",
     items: [
       { text: "Integrations", link: "/integrations", icon: IntegrationsIcon },
+      { text: "MCP Access", link: "/mcp-access", icon: McpIcon },
       { text: "API Keys", link: "/api-keys", icon: KeyIcon },
     ],
   },

@@ -59,6 +59,7 @@ const ROUTE_LABELS: Record<string, string> = {
   // correctly showed "Mindmap" for identical content.
   "/business": "Mindmap",
   "/integrations": "Integrations",
+  "/mcp-access": "MCP Access",
   "/api-keys": "API Keys",
   "/settings": "Settings",
   "/onboarding": "Onboarding", "/members": "Members",
