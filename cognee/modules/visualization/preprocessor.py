@@ -58,6 +58,20 @@ _STAGE_BY_TYPE: Dict[str, str] = {
     "TextSummary": "summary",
     "GlobalContextSummary": "context",
     "Entity": "entity",
+    # Custom CPD DataPoint classes keep their domain type in storage. The
+    # business canvas renders the entity stage, not arbitrary custom types.
+    # CPDModel is a batch container and deliberately remains "other".
+    "Goal": "entity",
+    "Plan": "entity",
+    "Task": "entity",
+    "Actor": "entity",
+    "BusinessObject": "entity",
+    "Metric": "entity",
+    "GoalCondition": "entity",
+    "Observation": "entity",
+    "Evaluation": "entity",
+    "ActionRun": "entity",
+    "Evidence": "entity",
     "EntityType": "type",
     "DatabaseSchema": "schema",
     "SchemaTable": "schema",

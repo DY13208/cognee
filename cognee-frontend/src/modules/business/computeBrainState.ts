@@ -182,6 +182,12 @@ function buildTypeLayer(
   semanticLinks: SemanticLink[],
 ): { typeNodes: TypeNode[]; typeLinks: TypeLink[] } {
   const typeName: Record<string, string> = {};
+  // Custom DataPoints (Goal, Plan, ...) already carry their business type.
+  // Generic Entity nodes still resolve through is_a/instance_of below;
+  // an explicit type edge also takes precedence over the custom class name.
+  entities.forEach((n) => {
+    if (n.type && n.type !== "Entity") typeName[n.id] = n.type;
+  });
   links.forEach((l) => {
     const s = byId[l._sid], t = byId[l._tid];
     if (s && t && s.stage === "entity" && t.stage === "type" &&
