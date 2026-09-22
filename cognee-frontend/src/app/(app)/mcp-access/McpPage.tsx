@@ -22,16 +22,14 @@ function mcpHttpUrlFromPage(): string {
 
 type ConfigTab = "cursor" | "http";
 
-function buildHttpMcpConfig(mcpUrl: string, apiKey: string): string {
+function buildHttpMcpConfig(mcpUrl: string): string {
   return JSON.stringify(
     {
       mcpServers: {
         cognee: {
-          type: "http",
+          type: "streamable-http",
           url: mcpUrl,
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
+          disabled: false,
         },
       },
     },
@@ -108,7 +106,9 @@ export default function McpPage() {
 
   const [keysLoading, setKeysLoading] = useState(true);
   const [resolvedKey, setResolvedKey] = useState<string>("");
-  const [tab, setTab] = useState<ConfigTab>("cursor");
+  // Prefer the already-running HTTP service. Starting through uvx is useful as
+  // a fallback, but its first run downloads Cognee's large dependency tree.
+  const [tab, setTab] = useState<ConfigTab>("http");
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [mcpHttpUrl, setMcpHttpUrl] = useState("http://localhost:3030/mcp");
 
@@ -164,10 +164,7 @@ export default function McpPage() {
     [baseUrl, displayKey],
   );
 
-  const httpConfig = useMemo(
-    () => buildHttpMcpConfig(mcpHttpUrl, displayKey),
-    [mcpHttpUrl, displayKey],
-  );
+  const httpConfig = useMemo(() => buildHttpMcpConfig(mcpHttpUrl), [mcpHttpUrl]);
 
   const activeConfig = tab === "cursor" ? cursorConfig : httpConfig;
 
@@ -251,12 +248,12 @@ export default function McpPage() {
           <line x1="12" y1="8" x2="12.01" y2="8" />
         </svg>
         <span style={{ fontSize: 13, color: "#EDECEA", lineHeight: "20px" }}>
-          One config connects Cursor, Claude Desktop, and other MCP clients to your Cognee
-          memory. Access follows your account and API key permissions.
+          Use the HTTP configuration for WorkBuddy and other Streamable HTTP clients. The uvx
+          configuration is a fallback for clients that only support local stdio processes.
         </span>
       </div>
 
-      {!hasRealKey && !keysLoading && (
+      {tab === "cursor" && !hasRealKey && !keysLoading && (
         <div
           style={{
             display: "flex",
@@ -332,8 +329,8 @@ export default function McpPage() {
         <div style={{ display: "flex", gap: 8 }}>
           {(
             [
-              { id: "cursor" as const, label: "Cursor / uvx" },
-              { id: "http" as const, label: "HTTP (same origin)" },
+              { id: "http" as const, label: "HTTP / WorkBuddy (recommended)" },
+              { id: "cursor" as const, label: "Cursor / uvx (stdio)" },
             ] as const
           ).map((item) => {
             const active = tab === item.id;
@@ -390,8 +387,45 @@ export default function McpPage() {
               <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
             <span style={{ fontSize: 12.5, color: "rgba(237,236,234,0.75)", lineHeight: 1.55 }}>
-              URL follows this page&apos;s address in real time ({mcpHttpUrl}). Requires the MCP
-              container (`docker compose --profile mcp up`).
+              Connects to the already-running MCP service at {mcpHttpUrl}, so there is no uvx
+              download or cold start. Public deployments must protect this endpoint at the
+              reverse proxy or network layer; an API key header alone does not secure the MCP
+              transport.
+            </span>
+          </div>
+        )}
+
+        {tab === "cursor" && (
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              background: "rgba(180, 83, 9, 0.12)",
+              border: "1px solid rgba(251, 191, 36, 0.28)",
+              borderRadius: 8,
+              padding: "12px 14px",
+              alignItems: "flex-start",
+            }}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#FBBF24"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ flexShrink: 0, marginTop: 1 }}
+            >
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <span style={{ fontSize: 12.5, color: "rgba(237,236,234,0.75)", lineHeight: 1.55 }}>
+              The first uvx launch downloads Cognee&apos;s dependency environment and may take
+              several minutes. Pre-warm it with `uvx cognee-mcp --help`, or use the recommended
+              HTTP configuration instead.
             </span>
           </div>
         )}
@@ -406,7 +440,8 @@ export default function McpPage() {
             fontFamily: MONO,
             fontSize: 12.5,
             lineHeight: 1.7,
-            color: loadingCreds ? "rgba(237,236,234,0.45)" : "#EDECEA",
+            color:
+              tab === "cursor" && loadingCreds ? "rgba(237,236,234,0.45)" : "#EDECEA",
             whiteSpace: "pre",
           }}
         >
@@ -470,7 +505,7 @@ export default function McpPage() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>
-              MCP HTTP (follows page URL)
+              MCP Streamable HTTP (follows page URL)
             </span>
             <div
               style={{
