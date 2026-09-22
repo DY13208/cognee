@@ -84,6 +84,7 @@ export interface BusinessCamera {
 export function useBusinessCamera(
   canvasRef: RefObject<HTMLCanvasElement | null>,
   onLevelChange?: (level: number, plumbing: boolean) => void,
+  interactionsEnabled = true,
 ): BusinessCamera {
   const transformRef = useRef<ZoomTransform>(zoomIdentity);
   const zoomBehaviorRef = useRef<ReturnType<typeof d3zoom<HTMLCanvasElement, unknown>> | null>(null);
@@ -96,6 +97,8 @@ export function useBusinessCamera(
   // be its own version of the render-loop-restart bug.
   const onLevelChangeRef = useRef(onLevelChange);
   onLevelChangeRef.current = onLevelChange;
+  const interactionsEnabledRef = useRef(interactionsEnabled);
+  interactionsEnabledRef.current = interactionsEnabled;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -106,6 +109,10 @@ export function useBusinessCamera(
     // zoom-on-scroll is what this graph's users reach for first.
     const behavior = d3zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([0.25, 8])
+      .filter((event) => {
+        if (!interactionsEnabledRef.current) return false;
+        return (!event.ctrlKey || event.type === "wheel") && !event.button;
+      })
       .on("zoom", (event) => {
         transformRef.current = event.transform;
         lastInteractionRef.current = performance.now();

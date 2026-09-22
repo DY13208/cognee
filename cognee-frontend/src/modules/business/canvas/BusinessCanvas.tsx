@@ -86,6 +86,10 @@ interface BusinessCanvasProps {
   // while the marker itself is hovered, null when it isn't — the caller
   // feeds this into the same state OperatorsRail's own hover already sets.
   onHoverAgent?: (agentId: string | null) => void;
+  // When a full-page overlay (company tree) is on top, the canvas must not
+  // take wheel/drag — d3-zoom is bound to the canvas and will otherwise
+  // zoom the hidden graph while the overlay tries to scroll.
+  pointerEventsDisabled?: boolean;
 }
 
 // Ports the canvas half of the Business view: the draw loop draws through
@@ -102,7 +106,7 @@ const BusinessCanvas = forwardRef<BusinessCanvasHandle, BusinessCanvasProps>(fun
     brainState, selectedId, onSelectEntity, onHover, onHoverMove, onBackgroundClick, spotlight, focusSets,
     onLevelChange, sourceCardRefs, activeDatasetId, onGrowth,
     answeredIds, pathIds, pathEdgeKeys,
-    askingAgent, hoveredPrincipalId, onHoverAgent,
+    askingAgent, hoveredPrincipalId, onHoverAgent, pointerEventsDisabled,
   },
   ref,
 ) {
@@ -187,7 +191,7 @@ const BusinessCanvas = forwardRef<BusinessCanvasHandle, BusinessCanvasProps>(fun
   const namesWithEntitiesRef = useRef(namesWithEntities);
   namesWithEntitiesRef.current = namesWithEntities;
   const { transformRef, levelRef, plumbingRef, lastInteractionRef, fitToEntities, goToAltimeterLevel, centerOnWorld, applyTransform } =
-    useBusinessCamera(canvasRef, onLevelChange);
+    useBusinessCamera(canvasRef, onLevelChange, !pointerEventsDisabled);
   const activeIds = useViewportActiveIds(brain.entities, transformRef, width, height);
   const { newbornAt } = useBusinessSimulation(
     brain.entities,
@@ -506,7 +510,11 @@ const BusinessCanvas = forwardRef<BusinessCanvasHandle, BusinessCanvasProps>(fun
     // to the document — after a few zoom in/out cycles it accumulates
     // enough to trigger the browser's native swipe-back navigation, kicking
     // the user out of Business entirely to whatever page they visited before.
-    <div ref={containerRef} className="bv-canvas-layer absolute inset-0 overscroll-none">
+    <div
+      ref={containerRef}
+      className={`bv-canvas-layer absolute inset-0 overscroll-none${pointerEventsDisabled ? " pointer-events-none" : ""}`}
+      aria-hidden={pointerEventsDisabled || undefined}
+    >
       <canvas
         ref={canvasRef}
         className="absolute inset-0 cursor-grab overscroll-none"

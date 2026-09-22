@@ -314,6 +314,9 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
     [scene.brainState, setSpotlight, narrate],
   );
 
+  const [companyTreeOpen, setCompanyTreeOpen] = useState(true);
+  const showCompanyTree = scene.activeDatasetId === "dd3aa689-ec26-5887-9730-310eec869d1c";
+
   return (
     // text-[12px] is this view's base size, and the only way to size raw
     // <button>/<input> elements here: Mantine's element reset
@@ -327,11 +330,16 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
         background: "radial-gradient(1200px 700px at 50% 42%, #141D33, #0E1526)",
       }}
     >
-      {scene.activeDatasetId === "dd3aa689-ec26-5887-9730-310eec869d1c" && (
-        <CPDTreePanel instance={cogniInstance} datasetId={scene.activeDatasetId} />
+      {showCompanyTree && (
+        <CPDTreePanel
+          instance={cogniInstance}
+          datasetId={scene.activeDatasetId}
+          onOpenChange={setCompanyTreeOpen}
+        />
       )}
       <BusinessCanvas
         ref={canvasRef}
+        pointerEventsDisabled={showCompanyTree && companyTreeOpen}
         brainState={scene.brainState}
         selectedId={selection.selectedEntity?.id ?? null}
         onSelectEntity={(entity, shiftKey) => {

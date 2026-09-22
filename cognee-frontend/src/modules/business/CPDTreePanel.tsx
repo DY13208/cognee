@@ -17,9 +17,11 @@ function safeSourceUrl(value: string): string | undefined {
 export default function CPDTreePanel({
   instance,
   datasetId,
+  onOpenChange,
 }: {
   instance: CogneeInstance;
   datasetId: string;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(true),
     [search, setSearch] = useState(""),
@@ -40,6 +42,9 @@ export default function CPDTreePanel({
     throwOnError: false,
   });
   const tree = query.data;
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
   useEffect(() => {
     if (tree) {
       setExpanded(new Set([tree.root.id]));
@@ -77,22 +82,34 @@ export default function CPDTreePanel({
       {open && (
         <section
           aria-label="公司目标树"
+          onWheel={(e) => e.stopPropagation()}
           style={{
             position: "absolute",
-            top: 66,
-            left: 14,
-            right: 14,
-            bottom: 18,
+            inset: 0,
             zIndex: 30,
+            isolation: "isolate",
+            pointerEvents: "auto",
             background: "#101b2d",
-            border: "1px solid #34445f",
-            borderRadius: 14,
             display: "flex",
             flexDirection: "column",
-            boxShadow: "0 12px 40px #0006",
             overflow: "hidden",
+            overscrollBehavior: "contain",
           }}
         >
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              margin: "66px 14px 18px",
+              background: "#101b2d",
+              border: "1px solid #34445f",
+              borderRadius: 14,
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 12px 40px #0006",
+              overflow: "hidden",
+            }}
+          >
           <header
             style={{ padding: "18px 22px", borderBottom: "1px solid #2a3652" }}
           >
@@ -199,7 +216,7 @@ export default function CPDTreePanel({
                   display: "flex",
                   flex: 1,
                   minHeight: 0,
-                  flexWrap: "wrap",
+                  minWidth: 0,
                 }}
               >
                 <div
@@ -207,9 +224,11 @@ export default function CPDTreePanel({
                   aria-label="目标层级"
                   style={{
                     flex: "2 1 440px",
+                    minHeight: 0,
+                    minWidth: 0,
                     overflowY: "auto",
+                    overscrollBehavior: "contain",
                     padding: "12px 14px",
-                    minHeight: 150,
                   }}
                 >
                   {rows.length === 0 && (
@@ -314,9 +333,12 @@ export default function CPDTreePanel({
                     style={{
                       flex: "1 1 250px",
                       maxWidth: 390,
+                      minHeight: 0,
+                      minWidth: 0,
                       padding: 22,
                       borderLeft: "1px solid #2a3652",
                       overflowY: "auto",
+                      overscrollBehavior: "contain",
                       background: "#142034",
                     }}
                   >
@@ -394,6 +416,7 @@ export default function CPDTreePanel({
               </div>
             </>
           )}
+          </div>
         </section>
       )}
     </>
