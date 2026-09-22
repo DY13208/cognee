@@ -36,7 +36,14 @@ export function getLocalApiUrl(): string {
   }
 
   if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:${port}`;
+    // HTTPS UI entry (codebuddy-https on :3030, or public TLS) proxies the API
+    // at same-origin `/backend`. Port 8320 is plain HTTP only — deriving
+    // `https://{host}:8320` makes the browser fail the TLS handshake and the
+    // LocalProvider surfaces "Cannot connect to local Cognee backend".
+    if (window.location.protocol === "https:") {
+      return stripTrailingSlash(`${window.location.origin}/backend`);
+    }
+    return `http://${window.location.hostname}:${port}`;
   }
 
   return `http://localhost:${port}`;

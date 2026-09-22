@@ -52,6 +52,29 @@ describe("getLocalApiUrl", () => {
     expect(getLocalApiUrl()).toBe("http://127.0.0.1:8320");
   });
 
+  it("uses same-origin /backend when the UI is served over HTTPS", () => {
+    // jsdom cannot replaceState across origins; stub location fields instead.
+    const loc = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...loc,
+        protocol: "https:",
+        hostname: "127.0.0.1",
+        host: "127.0.0.1:3030",
+        origin: "https://127.0.0.1:3030",
+        href: "https://127.0.0.1:3030/",
+      },
+    });
+    renderRuntimeConfig(null, "8320");
+
+    try {
+      expect(getLocalApiUrl()).toBe("https://127.0.0.1:3030/backend");
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: loc });
+    }
+  });
+
   it("keeps an explicitly configured API URL unchanged", () => {
     process.env.NEXT_PUBLIC_LOCAL_API_URL = "https://api.example.com";
 
