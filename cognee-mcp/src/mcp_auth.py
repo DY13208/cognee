@@ -128,7 +128,7 @@ class McpApiKeyMiddleware(BaseHTTPMiddleware):
         path = request.url.path or ""
         if request.method == "OPTIONS":
             return await call_next(request)
-        if (path.rstrip("/").endswith("/health") or path.endswith("/health"):
+        if path.rstrip("/").endswith("/health") or path.endswith("/health"):
             return await call_next(request)
         # WorkBuddy / Cursor probe OAuth discovery before MCP initialize; do not
         # treat those as authenticated API calls.
