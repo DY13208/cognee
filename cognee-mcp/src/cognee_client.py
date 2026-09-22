@@ -114,19 +114,78 @@ class CogneeClient:
     def _get_headers(self, include_content_type: bool = True) -> Dict[str, str]:
         """Get headers for API requests.
 
-        Uses X-Api-Key + X-Tenant-Id for tenant APIs (cloud),
-        falls back to Bearer token for local/self-hosted backends.
+        Prefer the per-request MCP client key (ContextVar) so each Cursor
+        connection acts as that user. Fall back to the process-level
+        ``api_token`` from ``--api-token`` / ``COGNEE_API_KEY``.
+
+        Local/self-hosted and tenant APIs both accept ``X-Api-Key``.
         """
         headers: Dict[str, str] = {}
         if include_content_type:
             headers["Content-Type"] = "application/json"
-        if self.api_token:
+
+        try:
+            from .mcp_auth import get_request_api_key
+        except ImportError:
+            from mcp_auth import get_request_api_key
+
+        token = get_request_api_key() or self.api_token
+        if token:
+            headers["X-Api-Key"] = token
             if self.tenant_id:
-                headers["X-Api-Key"] = self.api_token
                 headers["X-Tenant-Id"] = self.tenant_id
-            else:
-                headers["Authorization"] = f"Bearer {self.api_token}"
         return headers
+
+    async def api_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: Any = None,
+        params: Optional[Dict[str, Any]] = None,
+        raw_body: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Proxy an authenticated HTTP call to the Cognee API.
+
+        ``path`` must start with ``/api/`` (or be a known absolute API path).
+        """
+        if not self.use_api:
+            raise RuntimeError(
+                "api_request requires API mode (set COGNEE_BASE_URL / --api-url). "
+                "Direct mode has no HTTP surface to proxy."
+            )
+
+        method_upper = (method or "GET").upper()
+        clean_path = (path or "").strip()
+        if not clean_path.startswith("/"):
+            clean_path = "/" + clean_path
+        if not clean_path.startswith("/api/"):
+            raise ValueError("path must start with /api/ (e.g. /api/v1/datasets)")
+
+        url = f"{self.api_url}{clean_path}"
+        headers = self._get_headers(
+            include_content_type=json_body is not None or raw_body is not None
+        )
+
+        kwargs: Dict[str, Any] = {"headers": headers, "params": params}
+        if json_body is not None:
+            kwargs["json"] = json_body
+        elif raw_body is not None:
+            headers["Content-Type"] = headers.get("Content-Type") or "application/json"
+            kwargs["content"] = raw_body.encode("utf-8") if isinstance(raw_body, str) else raw_body
+
+        response = await self.client.request(method_upper, url, **kwargs)
+        content_type = response.headers.get("content-type", "")
+        try:
+            payload: Any = response.json() if "application/json" in content_type else response.text
+        except Exception:
+            payload = response.text
+
+        return {
+            "status_code": response.status_code,
+            "ok": response.is_success,
+            "body": payload,
+        }
 
     @staticmethod
     def _json_or_success(response: httpx.Response) -> Dict[str, Any]:

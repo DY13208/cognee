@@ -220,5 +220,8 @@ rendered.yaml
 # TLS 证书私钥（绝不入库）
 certs/
 
+# Local fingerprints for scripts/compose-up.ps1 (skip unnecessary rebuilds)
+.compose-build-stamps/
+
 # 本次部署的配置备份（含 .env / 私钥路径）
 .backup-tls/

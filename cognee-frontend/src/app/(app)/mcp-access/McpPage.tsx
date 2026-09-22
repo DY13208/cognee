@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useCogniInstance, useTenant } from "@/modules/tenant/TenantProvider";
 import getApiKeys from "@/modules/apiKeys/getApiKeys";
+import getOrCreateApiKey from "@/modules/apiKeys/getOrCreateApiKey";
 import { TrackPageView, trackEvent } from "@/modules/analytics";
 import { copyTextToClipboard, isCloudEnvironment } from "@/utils";
 import PageLoading from "@/ui/elements/PageLoading";
@@ -22,13 +23,16 @@ function mcpHttpUrlFromPage(): string {
 
 type ConfigTab = "cursor" | "http";
 
-function buildHttpMcpConfig(mcpUrl: string): string {
+function buildHttpMcpConfig(mcpUrl: string, apiKey: string): string {
   return JSON.stringify(
     {
       mcpServers: {
         cognee: {
           type: "streamable-http",
           url: mcpUrl,
+          headers: {
+            "X-Api-Key": apiKey,
+          },
           disabled: false,
         },
       },
@@ -137,12 +141,19 @@ export default function McpPage() {
         return;
       }
       try {
-        const keys = await getApiKeys();
-        const first = keys.find((k) => k.key)?.key ?? "";
-        if (!cancelled) setResolvedKey(first);
+        // Prefer creating/reusing a permanent key so MCP HTTP configs work
+        // even when HASH_API_KEY masks list responses.
+        const key = await getOrCreateApiKey();
+        if (!cancelled) setResolvedKey(key);
       } catch (err) {
-        console.error("Failed to load API keys for MCP page:", err);
-        if (!cancelled) setResolvedKey("");
+        console.error("Failed to load/create API key for MCP page:", err);
+        try {
+          const keys = await getApiKeys();
+          const first = keys.find((k) => k.key && !k.key.includes("*"))?.key ?? "";
+          if (!cancelled) setResolvedKey(first);
+        } catch {
+          if (!cancelled) setResolvedKey("");
+        }
       } finally {
         if (!cancelled) setKeysLoading(false);
       }
@@ -164,7 +175,10 @@ export default function McpPage() {
     [baseUrl, displayKey],
   );
 
-  const httpConfig = useMemo(() => buildHttpMcpConfig(mcpHttpUrl), [mcpHttpUrl]);
+  const httpConfig = useMemo(
+    () => buildHttpMcpConfig(mcpHttpUrl, displayKey),
+    [mcpHttpUrl, displayKey],
+  );
 
   const activeConfig = tab === "cursor" ? cursorConfig : httpConfig;
 
@@ -387,10 +401,10 @@ export default function McpPage() {
               <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
             <span style={{ fontSize: 12.5, color: "rgba(237,236,234,0.75)", lineHeight: 1.55 }}>
-              Connects to the already-running MCP service at {mcpHttpUrl}, so there is no uvx
-              download or cold start. Public deployments must protect this endpoint at the
-              reverse proxy or network layer; an API key header alone does not secure the MCP
-              transport.
+              Connects to the already-running MCP service at {mcpHttpUrl}. The copied config
+              includes your permanent API key as an{" "}
+              <code style={{ fontSize: 12 }}>X-Api-Key</code> header — anyone with that key can
+              use your memory and API tools. Revoke keys anytime on the API Keys page.
             </span>
           </div>
         )}

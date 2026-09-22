@@ -91,6 +91,12 @@ services:
       # LAN IPs vary; disable DNS-rebinding guard for self-hosted compose (CPD-style).
       - MCP_ALLOWED_HOSTS=${MCP_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*,xx.stillgroup.net:*}
       - MCP_DISABLE_DNS_REBINDING_PROTECTION=${MCP_DISABLE_DNS_REBINDING_PROTECTION:-true}
+      # Require permanent user API keys on MCP HTTP (UI copies X-Api-Key into Cursor config).
+      - MCP_REQUIRE_API_KEY=${MCP_REQUIRE_API_KEY:-true}
+      # Proxy tool calls through the main API as the authenticated user.
+      # COGNEE_BASE_URL is read by server.py; API_URL is what entrypoint.sh forwards.
+      - COGNEE_BASE_URL=${COGNEE_BASE_URL:-http://cognee:8000}
+      - API_URL=${API_URL:-http://cognee:8000}
       # Database configuration - should match the main cognee service
       - DB_PROVIDER=${DB_PROVIDER:-sqlite}
       - DB_HOST=${DB_HOST:-host.docker.internal}

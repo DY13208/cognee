@@ -10,9 +10,16 @@ cognee-frontend
 
 examples/python/.dlt
 .venv
+**/.venv
+**/.venv/**
+**/node_modules
+**/.compose-build-stamps
 .github
 
 .idea
 .vscode
 
 .env.codebuddy.local
+certs
+**/*.pyc
+**/__pycache__

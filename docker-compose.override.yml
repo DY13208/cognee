@@ -1,0 +1,9 @@
+# Local-only overrides (auto-merged by `docker compose`).
+# Keep machine-specific tweaks here; do not commit secrets.
+services:
+  cognee-mcp:
+    restart: always
+    # Publish Streamable HTTP for local Cursor / IDE testing.
+    # Production reaches MCP via https://xx.stillgroup.net:3030/mcp instead.
+    ports:
+      - "8321:8000"

@@ -38,6 +38,16 @@ try:
 except ImportError:
     from server_utils import format_recall_results, parse_csv_list, validate_top_k
 
+try:
+    from .mcp_auth import McpApiKeyMiddleware, mcp_auth_required
+except ImportError:
+    from mcp_auth import McpApiKeyMiddleware, mcp_auth_required
+
+try:
+    from .api_tools import register_api_surface_tools
+except ImportError:
+    from api_tools import register_api_surface_tools
+
 
 try:
     __version__ = importlib.metadata.version("cognee-mcp")
@@ -56,6 +66,15 @@ registry = ToolRegistry(mcp)
 logger = get_logger()
 
 cognee_client: Optional[CogneeClient] = None
+
+
+def _get_cognee_client() -> CogneeClient:
+    if cognee_client is None:
+        raise RuntimeError("Cognee MCP client is not initialized yet")
+    return cognee_client
+
+
+register_api_surface_tools(registry, _get_cognee_client)
 
 # Per-dataset error ring buffer (bounded so long-running servers don't accumulate
 # unbounded memory). Each entry is (iso_timestamp, error_message).
@@ -215,7 +234,12 @@ def _get_cors_origins() -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
-def _build_http_app(transport: str, host: str, path: str | None = None):
+def _build_http_app(
+    transport: str,
+    host: str,
+    path: str | None = None,
+    api_url: str | None = None,
+):
     """Build the ASGI app for an HTTP-family transport, guard and CORS included.
 
     Split out from _serve_with_cors so the transport security wiring can be
@@ -264,6 +288,13 @@ def _build_http_app(transport: str, host: str, path: str | None = None):
         middleware=extra_middleware or None,
         **security_kwargs,
     )
+    # Auth inside CORS so browser preflight (OPTIONS) still works, but every
+    # real MCP request must present a permanent user API key when required.
+    if mcp_auth_required():
+        logger.info("MCP API key auth required (X-Api-Key)")
+        app.add_middleware(McpApiKeyMiddleware, api_url=api_url)
+    else:
+        logger.warning("MCP API key auth disabled (MCP_REQUIRE_API_KEY=false)")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_get_cors_origins(),
@@ -275,14 +306,19 @@ def _build_http_app(transport: str, host: str, path: str | None = None):
 
 
 async def _serve_with_cors(
-    transport: str, host: str, port: int, log_level: str, path: str | None = None
+    transport: str,
+    host: str,
+    port: int,
+    log_level: str,
+    path: str | None = None,
+    api_url: str | None = None,
 ):
     """Serve one of FastMCP's HTTP transports under uvicorn.
 
     FastMCP's own run_http_async() would bind the socket for us but gives no
     seam for the CORS middleware, so we build the ASGI app ourselves.
     """
-    app = _build_http_app(transport, host, path)
+    app = _build_http_app(transport, host, path, api_url=api_url)
 
     config = uvicorn.Config(
         app,
@@ -910,13 +946,17 @@ async def main():
             case "sse":
                 sse_path = args.path or fastmcp.settings.sse_path
                 logger.info(f"Running MCP server with SSE transport on {host}:{port}{sse_path}")
-                await _serve_with_cors("sse", host, port, args.log_level, args.path)
+                await _serve_with_cors(
+                    "sse", host, port, args.log_level, args.path, api_url=args.api_url
+                )
             case "http":
                 http_path = args.path or fastmcp.settings.streamable_http_path
                 logger.info(
                     f"Running MCP server with Streamable HTTP transport on {host}:{port}{http_path}"
                 )
-                await _serve_with_cors("http", host, port, args.log_level, args.path)
+                await _serve_with_cors(
+                    "http", host, port, args.log_level, args.path, api_url=args.api_url
+                )
             case _:
                 logger.info("Running MCP server with stdio")
                 # show_banner=False: the banner is cosmetic and its version check
