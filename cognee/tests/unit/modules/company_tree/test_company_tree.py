@@ -133,3 +133,60 @@ def test_write_accepts_a_complete_single_root_tree():
         ],
     )
     validate_write_payload(payload)
+
+
+def test_assemble_keeps_imported_mindmap_under_its_link():
+    root = _stamped(ROOT, "公司运营")
+    root[1]["source_child_count"] = 1
+    link = _stamped("link", "UN项目工程", parent=ROOT)
+    link[1]["source_child_count"] = 1
+    linked = (
+        "linked-root",
+        {
+            "type": "Goal",
+            "name": "C：UN项目利润分",
+            "source_room": "room-linked",
+            "source_scope": "company_model_only",
+            "cpd_kind": "goal",
+            "source_uid": "linked-root",
+            "source_key": "mindmap:room-linked:linked-root",
+            "source_child_count": 0,
+            "source_children_complete": True,
+            "source_revision": "2789",
+        },
+    )
+    edges = [
+        (ROOT, "link", "has_subgoal", {}),
+        ("link", "linked-root", "has_subgoal", {}),
+    ]
+    tree = assemble_company_tree([root, link, linked], edges, ROOM)
+    assert {node.name for node in tree.nodes} == {"公司运营", "UN项目工程", "C：UN项目利润分"}
+    assert any(edge.source == "link" and edge.target == "linked-root" for edge in tree.edges)
+    assert "mixed_revision" not in tree.missing
+    assert tree.complete is True
+
+
+def test_write_allows_another_rooms_revision():
+    payload = CompanyTreeWriteRequest(
+        source_room=ROOM,
+        source_revision="1314",
+        nodes=[
+            CompanyTreeNodeIn(
+                source_uid="root",
+                name="公司运营",
+                cpd_kind="goal",
+                source_child_count=1,
+                source_revision="1314",
+            ),
+            CompanyTreeNodeIn(
+                source_uid="linked",
+                name="品牌目标",
+                cpd_kind="goal",
+                source_room="room-linked",
+                source_parent_uid="root",
+                source_child_count=0,
+                source_revision="2789",
+            ),
+        ],
+    )
+    validate_write_payload(payload)

@@ -34,6 +34,7 @@ class CompanyTreeNodeIn(InDTO):
     source_uid: str = Field(min_length=1)
     name: str = Field(min_length=1)
     cpd_kind: CpdKind
+    source_room: Optional[str] = None
     source_parent_uid: Optional[str] = None
     source_child_count: int = Field(ge=0)
     source_children_complete: bool = True
@@ -125,9 +126,10 @@ def validate_write_payload(payload: CompanyTreeWriteRequest) -> None:
         if node.source_uid in seen_uids:
             missing.append(f"duplicate_source_uid:{node.source_uid}")
         seen_uids[node.source_uid] = node
+        node_room = node.source_room or payload.source_room
         if node.source_revision is None:
             node.source_revision = payload.source_revision
-        elif node.source_revision != payload.source_revision:
+        elif node.source_revision != payload.source_revision and node_room == payload.source_room:
             missing.append(f"mixed_revision:{node.source_uid}")
 
     roots = [n for n in payload.nodes if n.source_parent_uid is None]

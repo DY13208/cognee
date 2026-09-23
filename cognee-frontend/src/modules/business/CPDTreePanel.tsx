@@ -26,7 +26,9 @@ export default function CPDTreePanel({
   const [open, setOpen] = useState(true),
     [search, setSearch] = useState(""),
     [expanded, setExpanded] = useState<Set<string>>(new Set()),
-    [selected, setSelected] = useState<string | null>(null);
+    [selected, setSelected] = useState<string | null>(null),
+    [importing, setImporting] = useState(false),
+    [importError, setImportError] = useState("");
   const query = useQuery({
     queryKey: ["cpd-company-tree", instance.instanceId, datasetId],
     queryFn: async () => {
@@ -56,6 +58,31 @@ export default function CPDTreePanel({
     [tree, expanded, search],
   );
   const detail = tree?.nodes.find((n) => n.id === selected);
+  async function importLinkedMaps() {
+    setImporting(true);
+    setImportError("");
+    try {
+      const response = await instance.fetch(
+        `/v1/datasets/${encodeURIComponent(datasetId)}/company-tree/import-links`,
+        { method: "POST", timeoutMs: 900000 },
+      );
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        throw new Error(
+          body.detail || `导入关联脑图失败（HTTP ${response.status}）`,
+        );
+      }
+      await query.refetch();
+    } catch (error) {
+      setImportError(
+        error instanceof Error ? error.message : "导入关联脑图失败",
+      );
+    } finally {
+      setImporting(false);
+    }
+  }
   const buttonStyle = {
     padding: "7px 12px",
     border: "1px solid #34445f",
@@ -126,18 +153,33 @@ export default function CPDTreePanel({
                   公司目标树
                 </h2>
                 <div style={{ color: "#9eaec6", marginTop: 6 }}>
-                  只展示公司模型本图；关联脑图保留入口，内容未导入。
+                  公司模型本图。关联脑图展开后成为下级目标；读不到的链接仍显示未导入。
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => query.refetch()}
-                disabled={query.isFetching}
-                style={buttonStyle}
-              >
-                {query.isFetching ? "读取中…" : "刷新目标树"}
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => void importLinkedMaps()}
+                  disabled={importing || query.isFetching}
+                  style={buttonStyle}
+                >
+                  {importing ? "导入中…" : "导入关联脑图"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => query.refetch()}
+                  disabled={query.isFetching || importing}
+                  style={buttonStyle}
+                >
+                  {query.isFetching ? "读取中…" : "刷新目标树"}
+                </button>
+              </div>
             </div>
+            {importError && (
+              <div role="alert" style={{ marginTop: 12, color: "#ffd39c" }}>
+                {importError}
+              </div>
+            )}
             {tree && (
               <div style={{ marginTop: 12, color: "#62d9dc" }}>
                 来源 v{tree.revision} · {tree.goalCount} 个目标 ·{" "}
@@ -367,8 +409,10 @@ export default function CPDTreePanel({
                     )}
                     <p style={{ color: "#b1bfd2", lineHeight: 1.8 }}>
                       {detail.kind === "goal"
-                        ? "这是来源中的目标定义与分解关系，不代表指标已经计算或目标已经达成。"
-                        : "该节点是公司模型中的引用入口。本次未读取关联脑图内容，不能据此断言它没有下级。"}
+                        ? detail.linkedUri
+                          ? "这是从关联脑图展开的目标，下级来自那张图的节点，不代表指标已经计算或目标已经达成。"
+                          : "这是来源中的目标定义与分解关系，不代表指标已经计算或目标已经达成。"
+                        : "该节点是公司模型中的引用入口。这次没有读到关联脑图，不能据此断言它没有下级。"}
                     </p>
                     <div
                       style={{
@@ -396,7 +440,7 @@ export default function CPDTreePanel({
                     >
                       打开公司模型来源 ↗
                     </a>
-                    {detail.kind === "map_reference" &&
+                    {detail.linkedUri &&
                       safeSourceUrl(detail.linkedUri) && (
                         <a
                           href={safeSourceUrl(detail.linkedUri)}

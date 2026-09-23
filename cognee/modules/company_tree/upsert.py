@@ -58,18 +58,20 @@ async def upsert_company_tree(
     existing = _existing_by_source_key(nodes)
     written: List[CompanyTreeNode] = []
     uid_to_id: Dict[str, str] = {}
+    room_of = {item.source_uid: item.source_room or payload.source_room for item in payload.nodes}
 
     for item in payload.nodes:
-        source_key = make_source_key(payload.source_room, item.source_uid)
+        room = room_of[item.source_uid]
+        source_key = make_source_key(room, item.source_uid)
         parent_key = (
-            make_source_key(payload.source_room, item.source_parent_uid)
-            if item.source_parent_uid
+            make_source_key(room_of[item.source_parent_uid], item.source_parent_uid)
+            if item.source_parent_uid and item.source_parent_uid in room_of
             else None
         )
         ctor: Dict[str, Any] = {
             "name": item.name,
             "cpd_kind": item.cpd_kind,
-            "source_room": payload.source_room,
+            "source_room": room,
             "source_scope": payload.source_scope,
             "source_uid": item.source_uid,
             "source_key": source_key,
@@ -82,6 +84,7 @@ async def upsert_company_tree(
             "linked_map_uri": item.linked_map_uri,
             "source_revision": item.source_revision or payload.source_revision,
         }
+        prior = existing.get(source_key)
         if prior is not None:
             prior_id, prior_props = prior
             skip = {"created_at", "updated_at", "id", "type"}

@@ -75,3 +75,22 @@ def test_put_company_tree_returns_missing_on_schema_failure(client, monkeypatch)
     body = response.json()
     assert "missing" in body
     assert "root_missing_or_duplicate" in body["missing"]
+
+
+def test_import_links_returns_missing_when_mcp_is_not_configured(client, monkeypatch):
+    import importlib
+
+    from cognee.modules.company_tree.exceptions import CompanyTreeWriteError
+
+    router_mod = importlib.import_module("cognee.api.v1.datasets.routers.get_company_tree_router")
+
+    async def fake_import(dataset_id, user):
+        raise CompanyTreeWriteError(
+            "Mind-map MCP is not configured.",
+            missing=["mindmap_mcp_not_configured"],
+        )
+
+    monkeypatch.setattr(router_mod, "import_linked_mindmaps", fake_import)
+    response = client.post(f"/api/v1/datasets/{uuid.uuid4()}/company-tree/import-links")
+    assert response.status_code == 422
+    assert "mindmap_mcp_not_configured" in response.json()["missing"]

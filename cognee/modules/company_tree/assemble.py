@@ -54,6 +54,23 @@ def _is_stamped(props: Dict[str, Any], room: str) -> bool:
     )
 
 
+def _is_imported_member(props: Dict[str, Any]) -> bool:
+    """A company-tree node from this room or from a mind map imported through a link."""
+    return (
+        props.get("source_scope") == COMPANY_SCOPE
+        and bool(str(props.get("source_room") or ""))
+        and props.get("cpd_kind") in ("goal", "map_reference")
+    )
+
+
+def _child_count(props: Dict[str, Any]) -> int:
+    raw = props.get("source_child_count")
+    if raw is None or raw == "":
+        return -1
+    text = str(raw)
+    return int(text) if text.lstrip("-").isdigit() else -1
+
+
 def _uid_from_props(props: Dict[str, Any]) -> str:
     uid = str(props.get("source_uid") or "")
     if uid:
@@ -72,7 +89,8 @@ def assemble_company_tree(
     Stamped `company_model_only` nodes are the seed. Goal nodes that share the
     room's source_key prefix, or that parent those seeds via has_subgoal /
     has_detail_reference, are included so a mixed write path still reads as one
-    tree. Completeness is reported, never inferred as an empty tree.
+    tree. Linked mind maps imported under a seed stay in the tree even when their
+    source room differs. Completeness is reported, never inferred as an empty tree.
     """
     missing: List[str] = []
     room = infer_source_room(nodes, source_room)
@@ -98,14 +116,16 @@ def assemble_company_tree(
             if label not in TREE_EDGE_TYPES:
                 continue
             sid, tid = str(src), str(tgt)
-            if tid not in keep or sid in keep:
-                continue
-            parent = by_id.get(sid)
-            if parent is None:
-                continue
-            if str(_props(parent).get("type") or "") == "Goal":
-                keep.add(sid)
-                added = True
+            if tid in keep and sid not in keep:
+                parent = by_id.get(sid)
+                if parent is not None and str(_props(parent).get("type") or "") == "Goal":
+                    keep.add(sid)
+                    added = True
+            if sid in keep and tid not in keep:
+                child = by_id.get(tid)
+                if child is not None and _is_imported_member(_props(child)):
+                    keep.add(tid)
+                    added = True
 
     if not keep:
         return CompanyTreeOut(missing=["empty"])
@@ -121,7 +141,7 @@ def assemble_company_tree(
         kind = props.get("cpd_kind")
         if kind not in ("goal", "map_reference"):
             kind = "goal"
-        stamped = _is_stamped(props, room)
+        stamped = _is_stamped(props, room) or _is_imported_member(props)
         if not stamped:
             missing.append(f"unstamped:{nid}")
         view_nodes.append(
@@ -136,9 +156,7 @@ def assemble_company_tree(
                 note=str(props.get("source_note") or ""),
                 linked_uri=str(props.get("linked_map_uri") or ""),
                 position=str(props.get("source_position") or ""),
-                expected_children=int(props["source_child_count"])
-                if str(props.get("source_child_count") or "").lstrip("-").isdigit()
-                else -1,
+                expected_children=_child_count(props),
                 children_complete=props.get("source_children_complete") is True,
                 stamped=stamped,
             )
@@ -217,7 +235,11 @@ def assemble_company_tree(
             view_nodes = [n for n in view_nodes if n.id in seen]
             tree_edges = [e for e in tree_edges if e.source in seen and e.target in seen]
 
-    revisions = {n.revision for n in view_nodes if n.revision}
+    revisions = set()
+    for node in view_nodes:
+        parsed = parse_source_key(node.source_key)
+        if node.revision and parsed and parsed[0] == room:
+            revisions.add(node.revision)
     if len(revisions) > 1:
         missing.append("mixed_revision")
 

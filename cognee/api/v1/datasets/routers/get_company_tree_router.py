@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from cognee.api.DTO import OutDTO
 from cognee.modules.company_tree.exceptions import CompanyTreeWriteError
+from cognee.modules.company_tree.mindmap_mcp import import_linked_mindmaps
 from cognee.modules.company_tree.schema import CompanyTreeOut, CompanyTreeWriteRequest
 from cognee.modules.company_tree.upsert import (
     get_company_tree,
@@ -68,6 +69,33 @@ def get_company_tree_router() -> APIRouter:
         """
         try:
             return await upsert_company_tree(dataset_id, user, payload)
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc.message)})
+        except CompanyTreeWriteError as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.message, "missing": exc.missing},
+            )
+
+    @router.post(
+        "/{dataset_id}/company-tree/import-links",
+        response_model=CompanyTreeOut,
+        responses={
+            404: {"model": dict},
+            422: {"model": CompanyTreeWriteErrorDTO},
+        },
+    )
+    async def import_company_tree_links(
+        dataset_id: UUID,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Read linked mind maps and write them in as child goals.
+
+        Requires `MINDMAP_MCP_URL` and `MINDMAP_MCP_TOKEN`. A room is imported
+        once; a link whose map cannot be read stays a reference.
+        """
+        try:
+            return await import_linked_mindmaps(dataset_id, user)
         except DatasetNotFoundError as exc:
             return JSONResponse(status_code=404, content={"error": str(exc.message)})
         except CompanyTreeWriteError as exc:
