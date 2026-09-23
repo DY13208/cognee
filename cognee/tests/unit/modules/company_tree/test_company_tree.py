@@ -166,6 +166,37 @@ def test_assemble_keeps_imported_mindmap_under_its_link():
     assert tree.complete is True
 
 
+def test_assemble_infers_primary_room_when_linked_maps_are_stamped():
+    root = _stamped(ROOT, "公司运营分")
+    root[1]["source_child_count"] = 1
+    link = _stamped("link", "UN项目工程", parent=ROOT)
+    link[1]["linked_map_uri"] = "https://xx.stillgroup.net:8989/?room=room-linked"
+    link[1]["source_child_count"] = 1
+    linked = (
+        "linked-root",
+        {
+            "type": "Goal",
+            "name": "C：UN项目利润分",
+            "source_room": "room-linked",
+            "source_scope": "company_model_only",
+            "cpd_kind": "goal",
+            "source_uid": "linked-root",
+            "source_key": "mindmap:room-linked:linked-root",
+            "source_child_count": 0,
+            "source_children_complete": True,
+            "source_revision": "2789",
+        },
+    )
+    edges = [
+        (ROOT, "link", "has_subgoal", {}),
+        ("link", "linked-root", "has_subgoal", {}),
+    ]
+    tree = assemble_company_tree([root, link, linked], edges)
+    assert tree.root_id == ROOT
+    assert {node.name for node in tree.nodes} == {"公司运营分", "UN项目工程", "C：UN项目利润分"}
+    assert "empty" not in tree.missing
+
+
 def test_write_allows_another_rooms_revision():
     payload = CompanyTreeWriteRequest(
         source_room=ROOM,

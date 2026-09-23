@@ -31,7 +31,7 @@ describe("treeFromCompanyTreeApi", () => {
 
   it("does not treat an empty payload as a tree", () => {
     expect(() => treeFromCompanyTreeApi({ nodes: [], edges: [], missing: ["empty"] })).toThrow(
-      "本图尚未完成导入",
+      /推不出公司模型主房间|尚未完成导入/,
     );
   });
 });

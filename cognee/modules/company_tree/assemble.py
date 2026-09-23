@@ -28,13 +28,43 @@ def _props(node: RawNode) -> Dict[str, Any]:
 def infer_source_room(nodes: Iterable[RawNode], requested: Optional[str]) -> Optional[str]:
     if requested:
         return requested
-    rooms = {
-        str(p.get("source_room"))
-        for _, p in ((_node_id(n), _props(n)) for n in nodes)
-        if p.get("source_scope") == COMPANY_SCOPE and p.get("source_room")
-    }
+
+    stamped: List[Tuple[str, Dict[str, Any]]] = []
+    for n in nodes:
+        props = _props(n)
+        room = str(props.get("source_room") or "")
+        if (
+            props.get("source_scope") == COMPANY_SCOPE
+            and room
+            and props.get("cpd_kind") in ("goal", "map_reference")
+        ):
+            stamped.append((_node_id(n), props))
+
+    rooms = {str(props.get("source_room")) for _, props in stamped}
     if len(rooms) == 1:
         return rooms.pop()
+
+    if len(rooms) > 1:
+        # Linked-map import stamps many rooms under company_model_only. Prefer the
+        # company-model root room so the tree never collapses to "empty".
+        for _, props in stamped:
+            name = str(props.get("name") or "")
+            if props.get("cpd_kind") == "goal" and "公司运营" in name:
+                return str(props.get("source_room"))
+
+        link_counts: Dict[str, int] = defaultdict(int)
+        for _, props in stamped:
+            room = str(props.get("source_room") or "")
+            if props.get("cpd_kind") == "map_reference" or str(props.get("linked_map_uri") or ""):
+                link_counts[room] += 1
+        if link_counts:
+            return max(link_counts.items(), key=lambda item: item[1])[0]
+
+        room_counts: Dict[str, int] = defaultdict(int)
+        for _, props in stamped:
+            room_counts[str(props.get("source_room"))] += 1
+        return max(room_counts.items(), key=lambda item: item[1])[0]
+
     keys = []
     for n in nodes:
         parsed = parse_source_key(str(_props(n).get("source_key") or ""))
@@ -43,6 +73,11 @@ def infer_source_room(nodes: Iterable[RawNode], requested: Optional[str]) -> Opt
     unique = set(keys)
     if len(unique) == 1:
         return unique.pop()
+    if unique:
+        counts: Dict[str, int] = defaultdict(int)
+        for room in keys:
+            counts[room] += 1
+        return max(counts.items(), key=lambda item: item[1])[0]
     return None
 
 

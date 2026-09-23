@@ -70,8 +70,14 @@ function asNode(n: CompanyTreeApiNode): CPDNode {
 export function treeFromCompanyTreeApi(dto: CompanyTreeApi): CPDTree {
   if (!Array.isArray(dto.nodes) || !Array.isArray(dto.edges))
     throw new Error("目标树返回格式不完整");
-  if (!dto.nodes.length || !dto.rootId)
-    throw new Error("本图尚未完成导入，请刷新后重试");
+  if (!dto.nodes.length || !dto.rootId) {
+    const missing = Array.isArray(dto.missing) ? dto.missing.join("、") : "";
+    throw new Error(
+      missing.includes("empty")
+        ? "图里暂时推不出公司模型主房间，请刷新后重试；若刚导入过关联脑图，部署最新组装逻辑后再打开"
+        : "本图尚未完成导入，请刷新后重试",
+    );
+  }
   const nodes = dto.nodes.map(asNode);
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const root = byId.get(dto.rootId);
