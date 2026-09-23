@@ -1,4 +1,6 @@
-# Smart compose up: only rebuild images whose build inputs changed.
+# Smart compose up: rebuild images only when build inputs change, and
+# recreate bind-mounted API containers when ./cognee Python source changes
+# (uvicorn does not auto-reload with DEBUG=false).
 #
 # Usage (from repo root):
 #   .\scripts\compose-up.ps1
@@ -8,8 +10,9 @@
 #
 # Why this exists: `docker compose up -d --build` always enters the build path
 # (context transfer / frontend Next build). Backend Python is bind-mounted, so
-# day-to-day source edits usually need NO rebuild — only Dockerfile / lockfiles
-# (and frontend source for the production UI image).
+# day-to-day source edits usually need NO image rebuild — only Dockerfile /
+# lockfiles (and frontend source for the production UI image). The process
+# still must be recreated so new routes/modules load.
 
 [CmdletBinding()]
 param(
@@ -193,9 +196,47 @@ if ($toBuild.Count -gt 0 -and -not $NoBuild) {
     Write-Host "[compose-up] no image rebuild needed"
 }
 
+# ./cognee is bind-mounted into cognee / cognee-mcp. Recreate those containers
+# when the source tree changes so the running process picks up new modules.
+$sourceStampPath = Join-Path $StampDir "cognee-source.sha256"
+$sourceFp = Get-FileFingerprint -Paths @((Join-Path $RepoRoot "cognee"))
+$sourcePrev = $null
+if (Test-Path -LiteralPath $sourceStampPath) {
+    $sourcePrev = (Get-Content -LiteralPath $sourceStampPath -Raw).Trim()
+}
+
+$toRecreate = [System.Collections.Generic.List[string]]::new()
+if ($ForceBuild -or ($sourcePrev -ne $sourceFp)) {
+    $toRecreate.Add("cognee") | Out-Null
+    if ($activeProfiles -contains "mcp") {
+        $toRecreate.Add("cognee-mcp") | Out-Null
+    }
+}
+foreach ($item in $toBuild) {
+    if ($item.Name -in @("cognee", "cognee-mcp") -and -not ($toRecreate -contains $item.Name)) {
+        $toRecreate.Add($item.Name) | Out-Null
+    }
+}
+
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 & docker compose up -d @ComposeArgs
 $upExit = $LASTEXITCODE
+if ($upExit -eq 0 -and $toRecreate.Count -gt 0) {
+    if ($ForceBuild) {
+        Write-Host "[compose-up] recreate $($toRecreate -join ', ') (forced)"
+    } elseif ($sourcePrev -ne $sourceFp) {
+        Write-Host "[compose-up] recreate $($toRecreate -join ', ') (./cognee source changed)"
+    } else {
+        Write-Host "[compose-up] recreate $($toRecreate -join ', ') (image rebuilt)"
+    }
+    & docker compose up -d --force-recreate @($toRecreate.ToArray())
+    $upExit = $LASTEXITCODE
+    if ($upExit -eq 0) {
+        Set-Content -LiteralPath $sourceStampPath -Value $sourceFp -NoNewline
+    }
+} elseif ($upExit -eq 0) {
+    Write-Host "[compose-up] skip recreate (./cognee unchanged)"
+}
 $ErrorActionPreference = $prevEap
 exit $upExit

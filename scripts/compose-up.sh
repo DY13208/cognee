@@ -1,5 +1,7 @@
 ﻿#!/usr/bin/env bash
-# Smart compose up: only rebuild images whose build inputs changed.
+# Smart compose up: rebuild images only when build inputs change, and
+# recreate bind-mounted API containers when ./cognee Python source changes
+# (uvicorn does not auto-reload with DEBUG=false).
 #
 # Usage (from repo root, Git Bash / Linux / macOS):
 #   ./scripts/compose-up.sh
@@ -153,4 +155,42 @@ else
   echo "[compose-up] no image rebuild needed"
 fi
 
+# ./cognee is bind-mounted into cognee / cognee-mcp. Image layers stay the
+# same across day-to-day Python edits, so recreate those containers when the
+# source tree fingerprint moves — otherwise the old process keeps old routes.
+SOURCE_STAMP="$STAMP_DIR/cognee-source.sha256"
+SOURCE_FP="$(fingerprint "$ROOT/cognee")"
+SOURCE_PREV=""
+[[ -f "$SOURCE_STAMP" ]] && SOURCE_PREV="$(tr -d '[:space:]' <"$SOURCE_STAMP")"
+TO_RECREATE=()
+if [[ "$FORCE_BUILD" -eq 1 ]] || [[ "$SOURCE_PREV" != "$SOURCE_FP" ]]; then
+  TO_RECREATE+=(cognee)
+  has_profile mcp && TO_RECREATE+=(cognee-mcp)
+fi
+# Rebuilding the image also needs a recreate; compose often does this, but
+# force it so new entrypoints/deps are never left on a stale container.
+for name in "${TO_BUILD[@]:-}"; do
+  if [[ "$name" == "cognee" || "$name" == "cognee-mcp" ]]; then
+    already=0
+    for existing in "${TO_RECREATE[@]:-}"; do
+      [[ "$existing" == "$name" ]] && already=1 && break
+    done
+    [[ "$already" -eq 0 ]] && TO_RECREATE+=("$name")
+  fi
+done
+
 docker compose up -d "${COMPOSE_EXTRA[@]+"${COMPOSE_EXTRA[@]}"}"
+
+if [[ ${#TO_RECREATE[@]} -gt 0 ]]; then
+  if [[ "$FORCE_BUILD" -eq 1 ]]; then
+    echo "[compose-up] recreate ${TO_RECREATE[*]} (forced)"
+  elif [[ "$SOURCE_PREV" != "$SOURCE_FP" ]]; then
+    echo "[compose-up] recreate ${TO_RECREATE[*]} (./cognee source changed)"
+  else
+    echo "[compose-up] recreate ${TO_RECREATE[*]} (image rebuilt)"
+  fi
+  docker compose up -d --force-recreate "${TO_RECREATE[@]}"
+  printf '%s' "$SOURCE_FP" >"$SOURCE_STAMP"
+else
+  echo "[compose-up] skip recreate (./cognee unchanged)"
+fi
