@@ -187,11 +187,28 @@ def get_teleology_router() -> APIRouter:
         dataset_id: UUID = Query(..., description="Dataset to inspect"),
         q: Optional[str] = Query(default=None, description="Filter annotatable nodes by name/type"),
         limit: int = Query(default=200, ge=1, le=1000),
+        goals_limit: int = Query(
+            default=120,
+            ge=0,
+            le=500,
+            description="Max Goal/Purpose/Constraint rows to return (0 = count only). Large CPD trees exceed this.",
+        ),
+        goal_id: Optional[str] = Query(
+            default=None,
+            description="If set, only return that goal's 1-hop purpose neighbourhood.",
+        ),
         user: User = Depends(get_authenticated_user),
     ):
         """List purpose edges and annotatable nodes on a dataset knowledge graph."""
         try:
-            return await list_graph_annotations(dataset_id, user, q=q, limit=limit)
+            return await list_graph_annotations(
+                dataset_id,
+                user,
+                q=q,
+                limit=limit,
+                goals_limit=goals_limit,
+                goal_id=goal_id,
+            )
         except DatasetNotFoundError as exc:
             return JSONResponse(status_code=404, content={"error": str(exc)})
         except CogneeApiError:

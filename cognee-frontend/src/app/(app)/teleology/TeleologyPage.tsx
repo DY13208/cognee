@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import { TrackPageView } from "@/modules/analytics";
 import { useFilter } from "@/ui/layout/FilterContext";
-import getBrainGraph from "@/modules/business/getBrainGraph";
 import recallKnowledge from "@/modules/datasets/recallKnowledge";
 import {
   getTeleology,
@@ -147,116 +146,92 @@ export default function TeleologyPage() {
 
   const datasetId = selectedDataset?.id || datasets[0]?.id || "";
 
+  const [goalQuery, setGoalQuery] = useState("");
+  const [goalHits, setGoalHits] = useState<GraphNodeSummary[]>([]);
+  const [goalMenuOpen, setGoalMenuOpen] = useState(false);
+  const [goalSearching, setGoalSearching] = useState(false);
+  const [goalsTotal, setGoalsTotal] = useState<number | null>(null);
+  const [selectedGoal, setSelectedGoal] = useState<GraphNodeSummary | null>(null);
+  const goalSearchSeq = useRef(0);
+
   const refresh = useCallback(async () => {
     if (!cogniInstance || !datasetId) {
       setGraph(null);
       setBrainNodes([]);
+      setTreeAdvances([]);
+      setGoalHits([]);
+      setSelectedGoal(null);
+      setGoalsTotal(null);
       setLoading(false);
       return;
     }
     setLoadError(null);
     try {
-      const yaml = await getTeleology(cogniInstance).catch(() => null);
+      // Light first paint: status + goal count. Graph loads after a purpose is chosen.
+      const [yaml, sample] = await Promise.all([
+        getTeleology(cogniInstance).catch(() => null),
+        getGraphAnnotations(cogniInstance, datasetId, {
+          limit: 1,
+          goalsLimit: 0,
+        }),
+      ]);
       if (yaml) setStatus(yaml);
-
-      // Only a sparse fallback when there are no purpose edges yet — never dump the full brain.
-      const brain = await getBrainGraph(cogniInstance, datasetId).catch(() => null);
-      const entities = (brain?.nodes ?? [])
-        .filter((n) => {
-          const typ = String(n.type || "");
-          if (["Goal", "Purpose", "Constraint"].includes(typ)) return false;
-          if (
-            [
-              "Document",
-              "DocumentChunk",
-              "TextSummary",
-              "TextDocument",
-              "PdfDocument",
-              "CompanyTreeNode",
-            ].includes(typ)
-          ) {
-            return false;
-          }
-          return Boolean(n.name || n.id);
-        })
-        .slice(0, 24)
-        .map((n) => ({
-          id: String(n.id),
-          name: displayName(String(n.name || n.id)),
-          type: String(n.type || "Entity"),
-        }));
-      setBrainNodes(entities);
-
-      // Load CPD goal-tree edges so the lens can draw structure even before teleology sync.
-      try {
-        const treeResp = await cogniInstance.fetch(
-          `/v1/datasets/${encodeURIComponent(datasetId)}/company-tree`,
-        );
-        if (treeResp.ok) {
-          const tree = (await treeResp.json()) as {
-            nodes?: { id: string; name: string; kind?: string }[];
-            edges?: { source: string; target: string; label: string }[];
-          };
-          const byId = new Map((tree.nodes || []).map((n) => [n.id, n]));
-          setTreeAdvances(
-            (tree.edges || [])
-              .filter((e) => e.label === "has_subgoal")
-              .map((e) => ({
-                // Teleology advances is child → parent; tree stores parent → child.
-                childId: e.target,
-                parentId: e.source,
-                childName: displayName(byId.get(e.target)?.name || e.target),
-                parentName: displayName(byId.get(e.source)?.name || e.source),
-              })),
-          );
-        } else {
-          setTreeAdvances([]);
-        }
-      } catch {
-        setTreeAdvances([]);
-      }
-
-      try {
-        let annotations = await getGraphAnnotations(cogniInstance, datasetId, { limit: 300 });
-        const purposeCount = (annotations.annotations || []).filter((a) =>
-          ["serves", "advances", "blocks"].includes(String(a.relationship).toLowerCase()),
-        ).length;
-        // Production datasets often have CPD goals but no purpose edges yet — sync once.
-        if (purposeCount === 0) {
-          const synced = await syncTeleologyFromCompanyTree(cogniInstance, datasetId).catch(
-            () => null,
-          );
-          if (synced && (synced.advances_created > 0 || synced.serves_created > 0)) {
-            annotations = await getGraphAnnotations(cogniInstance, datasetId, { limit: 300 });
-            notifications.show({
-              title: t(language, "Purpose edges built", "已生成目的边"),
-              message: t(
-                language,
-                `${synced.advances_created} advances · ${synced.serves_created} serves from the goal tree.`,
-                `从目标树生成 ${synced.advances_created} 条 advances · ${synced.serves_created} 条 serves。`,
-              ),
-              color: "green",
-              autoClose: 4000,
-            });
-          }
-        }
-        setGraph(annotations);
-        const goals = annotations.goals?.length
-          ? annotations.goals
-          : annotations.yaml_goals ?? [];
-        if (!lensGoalId && goals[0]?.id) setLensGoalId(goals[0].id);
-      } catch (annErr) {
-        const msg = annErr instanceof Error ? annErr.message : String(annErr);
-        setLoadError(msg);
-        setGraph(null);
+      setBrainNodes([]);
+      setTreeAdvances([]);
+      setGoalsTotal(sample.goals_total ?? sample.goals?.length ?? null);
+      if (lensGoalId) {
+        const neighbourhood = await getGraphAnnotations(cogniInstance, datasetId, {
+          limit: 80,
+          goalsLimit: 40,
+          goalId: lensGoalId,
+        });
+        setGraph(neighbourhood);
+      } else {
+        setGraph({
+          ...sample,
+          goals: [],
+          annotations: [],
+          nodes: [],
+        });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setLoadError(msg);
+      setGraph(null);
     } finally {
       setLoading(false);
     }
   }, [cogniInstance, datasetId, lensGoalId]);
+
+  const searchGoals = useCallback(
+    async (query: string) => {
+      if (!cogniInstance || !datasetId) return;
+      const seq = ++goalSearchSeq.current;
+      setGoalSearching(true);
+      try {
+        const res = await getGraphAnnotations(cogniInstance, datasetId, {
+          q: query.trim() || undefined,
+          limit: 1,
+          goalsLimit: 40,
+        });
+        if (seq !== goalSearchSeq.current) return;
+        setGoalsTotal(res.goals_total ?? res.goals.length);
+        setGoalHits(
+          (res.goals || []).map((g) => ({
+            ...g,
+            name: displayName(g.name, g.id),
+            description: displayName(g.description || ""),
+          })),
+        );
+      } catch {
+        if (seq !== goalSearchSeq.current) return;
+        setGoalHits([]);
+      } finally {
+        if (seq === goalSearchSeq.current) setGoalSearching(false);
+      }
+    },
+    [cogniInstance, datasetId],
+  );
 
   useEffect(() => {
     if (!cogniInstance || isInitializing || datasetsLoading) return;
@@ -266,33 +241,63 @@ export default function TeleologyPage() {
   useEffect(() => {
     if (!cogniInstance || isInitializing || !datasetId) return;
     setLoading(true);
+    setLensGoalId("");
+    setSelectedGoal(null);
+    setGoalQuery("");
+    setGoalHits([]);
     refresh();
   }, [cogniInstance, isInitializing, datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const goalOptions = useMemo((): GraphNodeSummary[] => {
-    const raw = graph?.goals?.length
-      ? graph.goals
-      : graph?.yaml_goals?.length
-        ? graph.yaml_goals
-        : [
-            ...(status?.goals ?? []),
-            ...(status?.purposes ?? []),
-            ...(status?.constraints ?? []),
-          ].map((g) => ({
-            id: g.id,
-            name: g.name,
-            type: g.type || "Goal",
-            description: g.description || "",
-            status: g.status,
-            cpd_kind: null as string | null,
-            source: null as string | null,
-          }));
-    return raw.map((g) => ({
-      ...g,
-      name: displayName(g.name, g.id),
-      description: displayName(g.description || ""),
-    }));
-  }, [graph, status]);
+  useEffect(() => {
+    if (!cogniInstance || !datasetId || isInitializing) return;
+    if (!lensGoalId) {
+      setGraph((prev) => (prev ? { ...prev, goals: [], annotations: [], nodes: [] } : prev));
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const neighbourhood = await getGraphAnnotations(cogniInstance, datasetId, {
+          limit: 80,
+          goalsLimit: 40,
+          goalId: lensGoalId,
+        });
+        if (!cancelled) setGraph(neighbourhood);
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cogniInstance, datasetId, lensGoalId, isInitializing]);
+
+  useEffect(() => {
+    if (!goalMenuOpen || !cogniInstance || !datasetId) return;
+    const handle = window.setTimeout(() => {
+      void searchGoals(goalQuery);
+    }, 280);
+    return () => window.clearTimeout(handle);
+  }, [goalQuery, goalMenuOpen, cogniInstance, datasetId, searchGoals]);
+
+  function pickGoal(goal: GraphNodeSummary | null) {
+    if (!goal) {
+      setLensGoalId("");
+      setSelectedGoal(null);
+      setGoalQuery("");
+      setGoalMenuOpen(false);
+      return;
+    }
+    const cleaned = {
+      ...goal,
+      name: displayName(goal.name, goal.id),
+      description: displayName(goal.description || ""),
+    };
+    setSelectedGoal(cleaned);
+    setLensGoalId(cleaned.id);
+    setGoalQuery(cleaned.cpd_kind === "goal" ? `CPD · ${cleaned.name}` : cleaned.name);
+    setGoalMenuOpen(false);
+  }
 
   const annotations = useMemo(
     () =>
@@ -344,6 +349,14 @@ export default function TeleologyPage() {
     return ids;
   }, [purposeEdges, lensGoalId]);
 
+  const lensGoals = useMemo((): GraphNodeSummary[] => {
+    return (graph?.goals ?? []).map((g) => ({
+      ...g,
+      name: displayName(g.name, g.id),
+      description: displayName(g.description || ""),
+    }));
+  }, [graph]);
+
   const graphNodes: PurposeGraphNode[] = useMemo(() => {
     const byId = new Map<string, PurposeGraphNode>();
 
@@ -353,7 +366,7 @@ export default function TeleologyPage() {
       byId.set(node.id, node);
     };
 
-    for (const g of goalOptions) {
+    for (const g of lensGoals) {
       if (!linkedIdsForLens) {
         const onPurposeEdge = purposeEdges.some(
           (e) => e.source_id === g.id || e.target_id === g.id,
@@ -419,7 +432,7 @@ export default function TeleologyPage() {
         .slice(0, MAX_LENS_NODES);
     }
     return nodes;
-  }, [goalOptions, purposeEdges, brainNodes, linkedIdsForLens]);
+  }, [lensGoals, purposeEdges, brainNodes, linkedIdsForLens]);
 
   const graphLinks: PurposeGraphLink[] = useMemo(() => {
     const nodeIds = new Set(graphNodes.map((n) => n.id));
@@ -732,20 +745,105 @@ export default function TeleologyPage() {
           <label style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", fontWeight: 600 }}>
             {t(language, "Current purpose", "当前目的")}
           </label>
-          <select
-            style={{ ...selectStyle, width: "auto", minWidth: 200 }}
-            value={lensGoalId}
-            onChange={(e) => setLensGoalId(e.target.value)}
-          >
-            <option style={optionStyle} value="">{t(language, "All purposes", "全部目的")}</option>
-            {goalOptions.map((g) => (
-              <option style={optionStyle} key={g.id} value={g.id}>
-                {g.cpd_kind === "goal"
-                  ? `CPD · ${g.name}`
-                  : g.name}
-              </option>
-            ))}
-          </select>
+          <div style={{ position: "relative", minWidth: 260, maxWidth: 420, flex: "1 1 260px" }}>
+            <input
+              style={{ ...inputStyle, width: "100%" }}
+              value={goalQuery}
+              placeholder={
+                goalsTotal != null
+                  ? t(
+                      language,
+                      `Search ${goalsTotal} purposes…`,
+                      `搜索目的（共 ${goalsTotal} 个）…`,
+                    )
+                  : t(language, "Search purposes…", "搜索目的…")
+              }
+              onFocus={() => {
+                setGoalMenuOpen(true);
+                if (goalHits.length === 0) void searchGoals(goalQuery);
+              }}
+              onChange={(e) => {
+                setGoalQuery(e.target.value);
+                setGoalMenuOpen(true);
+                if (lensGoalId) {
+                  setLensGoalId("");
+                  setSelectedGoal(null);
+                }
+              }}
+              onBlur={() => {
+                window.setTimeout(() => setGoalMenuOpen(false), 150);
+              }}
+            />
+            {goalMenuOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  zIndex: 40,
+                  top: "100%",
+                  left: 0,
+                  right: 0,
+                  marginTop: 4,
+                  maxHeight: 280,
+                  overflowY: "auto",
+                  background: "#141416",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 8,
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+                }}
+              >
+                <button
+                  type="button"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "8px 12px",
+                    background: "transparent",
+                    border: "none",
+                    color: "rgba(237,236,234,0.55)",
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pickGoal(null)}
+                >
+                  {t(language, "Clear selection", "清除选择")}
+                </button>
+                {goalSearching ? (
+                  <div style={{ padding: "10px 12px", fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
+                    {t(language, "Searching…", "搜索中…")}
+                  </div>
+                ) : goalHits.length === 0 ? (
+                  <div style={{ padding: "10px 12px", fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
+                    {t(language, "Type to search goals", "输入关键词搜索目标")}
+                  </div>
+                ) : (
+                  goalHits.map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 12px",
+                        background: g.id === lensGoalId ? "rgba(188,155,255,0.15)" : "transparent",
+                        border: "none",
+                        borderTop: "1px solid rgba(255,255,255,0.06)",
+                        color: "#EDECEA",
+                        cursor: "pointer",
+                        fontSize: 13,
+                      }}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pickGoal(g)}
+                    >
+                      {g.cpd_kind === "goal" ? `CPD · ${g.name}` : g.name}
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
 
           <button
             type="button"
@@ -862,8 +960,8 @@ export default function TeleologyPage() {
             >
               {t(
                 language,
-                "No graph yet — cognify a dataset, sync goals, then annotate.",
-                "还没有图谱 — 先 cognify 数据集，同步目标，再标注。",
+                "Search and pick a purpose above — only its neighbourhood is drawn.",
+                "先在上方搜索并选择一个目的，只画它的邻域。",
               )}
             </div>
           ) : (
@@ -964,18 +1062,64 @@ export default function TeleologyPage() {
                   <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(237,236,234,0.55)" }}>
                     {t(language, "Add purpose edge", "添加目的边")}
                   </div>
-                  <select
-                    style={selectStyle}
-                    value={lensGoalId}
-                    onChange={(e) => setLensGoalId(e.target.value)}
-                  >
-                    <option style={optionStyle} value="">{t(language, "Select goal…", "选择目标…")}</option>
-                    {goalOptions.map((g) => (
-                      <option style={optionStyle} key={g.id} value={g.id}>
-                        {g.cpd_kind === "goal" ? `CPD · ${g.name}` : g.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      style={inputStyle}
+                      value={goalQuery}
+                      placeholder={t(language, "Search goal…", "搜索目标…")}
+                      onFocus={() => {
+                        setGoalMenuOpen(true);
+                        if (goalHits.length === 0) void searchGoals(goalQuery);
+                      }}
+                      onChange={(e) => {
+                        setGoalQuery(e.target.value);
+                        setGoalMenuOpen(true);
+                      }}
+                      onBlur={() => {
+                        window.setTimeout(() => setGoalMenuOpen(false), 150);
+                      }}
+                    />
+                    {goalMenuOpen ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          zIndex: 50,
+                          top: "100%",
+                          left: 0,
+                          right: 0,
+                          marginTop: 4,
+                          maxHeight: 220,
+                          overflowY: "auto",
+                          background: "#141416",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          borderRadius: 8,
+                        }}
+                      >
+                        {goalHits.map((g) => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              textAlign: "left",
+                              padding: "8px 12px",
+                              background: "transparent",
+                              border: "none",
+                              borderTop: "1px solid rgba(255,255,255,0.06)",
+                              color: "#EDECEA",
+                              cursor: "pointer",
+                              fontSize: 13,
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => pickGoal(g)}
+                          >
+                            {g.cpd_kind === "goal" ? `CPD · ${g.name}` : g.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <select
                     style={selectStyle}
                     value={addRel}

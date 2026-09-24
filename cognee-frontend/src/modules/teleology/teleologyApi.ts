@@ -59,9 +59,13 @@ export interface GraphAnnotationsPayload {
   dataset_id: string;
   dataset_name?: string | null;
   goals: GraphNodeSummary[];
+  goals_total?: number;
+  goals_truncated?: boolean;
   nodes: GraphNodeSummary[];
   nodes_truncated: boolean;
   annotations: GraphAnnotation[];
+  annotations_total?: number;
+  annotations_truncated?: boolean;
   yaml_goals: GraphNodeSummary[];
 }
 
@@ -148,11 +152,13 @@ export async function clearTeleology(instance: CogneeInstance): Promise<Teleolog
 export async function getGraphAnnotations(
   instance: CogneeInstance,
   datasetId: string,
-  opts?: { q?: string; limit?: number },
+  opts?: { q?: string; limit?: number; goalsLimit?: number; goalId?: string },
 ): Promise<GraphAnnotationsPayload> {
   const params = new URLSearchParams({ dataset_id: datasetId });
   if (opts?.q) params.set("q", opts.q);
   if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.goalsLimit != null) params.set("goals_limit", String(opts.goalsLimit));
+  if (opts?.goalId) params.set("goal_id", opts.goalId);
   const resp = await instance.fetch(`/v1/teleology/annotations?${params}`);
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();

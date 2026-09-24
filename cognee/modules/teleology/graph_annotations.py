@@ -159,25 +159,77 @@ async def list_graph_annotations(
     *,
     q: str | None = None,
     limit: int = 200,
+    goals_limit: int = 120,
+    goal_id: str | None = None,
 ) -> dict[str, Any]:
-    """Return goals, annotatable nodes, and teleology edges for a dataset graph."""
+    """Return goals, annotatable nodes, and teleology edges for a dataset graph.
+
+    Large CPD datasets can have 10k+ Goal nodes — always cap ``goals`` /
+    ``annotations`` in the payload so the UI stays responsive. Pass ``goal_id``
+    to scope purpose edges to that goal's 1-hop neighbourhood.
+    """
     from cognee.context_global_variables import set_database_global_context_variables
     from cognee.infrastructure.databases.graph import get_graph_engine
 
     dataset = await _authorized_dataset(dataset_id, user, "read")
     needle = (q or "").strip().lower()
     cap = max(1, min(int(limit or 200), 1000))
+    goals_cap = max(0, min(int(goals_limit if goals_limit is not None else 120), 500))
+    focus = (goal_id or "").strip() or None
 
     async with set_database_global_context_variables(dataset_id, dataset.owner_id):
         graph = await get_graph_engine()
         nodes, edges = await graph.get_graph_data()
         by_id, annotations = _index_graph(nodes, edges)
 
+        if focus:
+            neighbor = {focus}
+            scoped = []
+            for row in annotations:
+                if row["source_id"] == focus or row["target_id"] == focus:
+                    neighbor.add(row["source_id"])
+                    neighbor.add(row["target_id"])
+                    scoped.append(row)
+            annotations = scoped
+            # Also include company-tree parent/child hops as synthetic advances
+            # only when no teleology edges exist yet — cheap structural hint.
+            if not annotations:
+                for source_id, target_id, relationship, _props in edges:
+                    sid, tid = str(source_id), str(target_id)
+                    rel = str(relationship or "").lower()
+                    if rel != "has_subgoal":
+                        continue
+                    # parent → child in tree; teleology advances is child → parent
+                    if sid == focus or tid == focus:
+                        child_id, parent_id = tid, sid
+                        neighbor.add(child_id)
+                        neighbor.add(parent_id)
+                        annotations.append(
+                            {
+                                "source_id": child_id,
+                                "source_name": _props_name(by_id.get(child_id)) or child_id,
+                                "source_type": _props_type(by_id.get(child_id)) or "Goal",
+                                "target_id": parent_id,
+                                "target_name": _props_name(by_id.get(parent_id)) or parent_id,
+                                "target_type": _props_type(by_id.get(parent_id)) or "Goal",
+                                "relationship": "advances",
+                            }
+                        )
+
         goals = [
             _node_row(node_id, props)
             for node_id, props in by_id.items()
             if _props_type(props) in _TELEOLOGY_NODE_TYPES
         ]
+        if focus:
+            goals = [row for row in goals if row["id"] in neighbor] or [
+                _node_row(focus, by_id.get(focus))
+            ]
+        if needle:
+            def _goal_hay(row: dict[str, Any]) -> str:
+                return f"{row.get('name') or ''} {row.get('description') or ''} {row.get('id') or ''}".lower()
+
+            goals = [row for row in goals if needle in _goal_hay(row)]
         # CPD company-tree goals first — they are the production purpose source.
         goals.sort(
             key=lambda row: (
@@ -186,6 +238,9 @@ async def list_graph_annotations(
                 row["name"],
             )
         )
+        goals_total = len(goals)
+        goals_truncated = goals_total > goals_cap
+        goals = goals[:goals_cap]
 
         candidates = [
             _node_row(node_id, props)
@@ -204,13 +259,23 @@ async def list_graph_annotations(
         truncated = len(candidates) > cap
         candidates = candidates[:cap]
 
+        # Cap purpose-edge payload too — a full CPD sync can create 10k+ advances.
+        ann_cap = max(cap, 400)
+        annotations_total = len(annotations)
+        annotations_truncated = annotations_total > ann_cap
+        annotations = annotations[:ann_cap]
+
         return {
             "dataset_id": str(dataset_id),
             "dataset_name": getattr(dataset, "name", None),
             "goals": goals,
+            "goals_total": goals_total,
+            "goals_truncated": goals_truncated,
             "nodes": candidates,
             "nodes_truncated": truncated,
             "annotations": annotations,
+            "annotations_total": annotations_total,
+            "annotations_truncated": annotations_truncated,
             "yaml_goals": [
                 {
                     "id": str(node.id),
