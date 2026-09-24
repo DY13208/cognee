@@ -115,8 +115,12 @@ export default function OntologyBrowser({
   const [searching, setSearching] = useState(false);
   const searchSeq = useRef(0);
 
-  const [browseHits, setBrowseHits] = useState<{ id: string; name: string; kind: string }[]>([]);
+  const [browseHits, setBrowseHits] = useState<
+    { id: string; name: string; kind: string; childCount?: number }[]
+  >([]);
+  const [browseStack, setBrowseStack] = useState<{ id: string; name: string }[]>([]);
   const [browseLoading, setBrowseLoading] = useState(false);
+  const browseSeq = useRef(0);
 
   const [pathStart, setPathStart] = useState<string | null>(null);
   const [pathEnd, setPathEnd] = useState<string | null>(null);
@@ -169,6 +173,16 @@ export default function OntologyBrowser({
                   sourceType: "Goal",
                   targetType: "Goal",
                 }));
+              const childN = new Map<string, number>();
+              for (const e of eds) {
+                if (e.relationship === "has_subgoal" || e.relationship === "has_detail_reference") {
+                  childN.set(e.sourceId, (childN.get(e.sourceId) || 0) + 1);
+                }
+              }
+              ents = ents.map((e) => ({
+                ...e,
+                childCount: childN.get(e.id) || 0,
+              }));
               rootId = tree.rootId;
             }
           }
@@ -192,22 +206,42 @@ export default function OntologyBrowser({
           setFocusId(rootId);
           setSelectedId(rootId);
         }
-        // Populate browse list with roots / first page of tree
-        const childIds = new Set(eds.map((e) => e.targetId));
-        const roots = ents.filter((e) => !childIds.has(e.id));
-        setBrowseHits(
-          (roots.length ? roots : ents).slice(0, 40).map((h) => ({
-            id: h.id,
-            name: h.name,
-            kind: h.kind,
-          })),
-        );
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoadingFocus(false);
       }
     }, [instance, datasetId]);
+
+  const loadBrowse = useCallback(
+    async (parentId: string) => {
+      if (!instance || !datasetId) return;
+      const seq = ++browseSeq.current;
+      setBrowseLoading(true);
+      try {
+        const res = await getGraphAnnotations(instance, datasetId, {
+          parentId,
+          limit: 1,
+          goalsLimit: 60,
+        });
+        if (seq !== browseSeq.current) return;
+        setBrowseHits(
+          (res.goals || []).map((g) => ({
+            id: g.id,
+            name: displayName(g.name, g.id),
+            kind: classifyKind(g.type || "", g.cpd_kind),
+            childCount: g.child_count ?? 0,
+          })),
+        );
+      } catch {
+        if (seq !== browseSeq.current) return;
+        setBrowseHits([]);
+      } finally {
+        if (seq === browseSeq.current) setBrowseLoading(false);
+      }
+    },
+    [instance, datasetId],
+  );
 
   const loadFocus = useCallback(
     async (id: string, depth: number) => {
@@ -299,7 +333,7 @@ export default function OntologyBrowser({
         if (seq !== searchSeq.current) return;
         const hits = (res.goals || []).map(toEntity);
         setSearchHits(hits);
-        setBrowseHits(hits.map((h) => ({ id: h.id, name: h.name, kind: h.kind })));
+        // Search hits stay in the dropdown; browse list is the tree walker.
       } catch {
         if (seq !== searchSeq.current) return;
         setSearchHits([]);
@@ -317,9 +351,12 @@ export default function OntologyBrowser({
     setEdges([]);
     setPathStart(null);
     setPathEnd(null);
+    setBrowseStack([]);
+    setBrowseHits([]);
     if (datasetId) {
-      setBrowseLoading(true);
-      void loadConnectedTree().finally(() => setBrowseLoading(false));
+      // Browse loads first (cheap parent_id Cypher); canvas tree in parallel.
+      void loadBrowse("_roots");
+      void loadConnectedTree();
     }
   }, [datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -330,17 +367,76 @@ export default function OntologyBrowser({
   }, [searchQ, searchOpen, runSearch]);
 
   const setFocus = useCallback(
-    (id: string) => {
-      // If the node is already in the loaded CPD tree, just re-center — don't
-      // wipe the hierarchy with a 1-hop neighbourhood fetch.
-      if (entities.some((e) => e.id === id) && edges.length > 0) {
-        setFocusId(id);
-        setSelectedId(id);
+    async (id: string) => {
+      setFocusId(id);
+      setSelectedId(id);
+      setViewMode((m) => (m === "path" ? "hierarchy" : m));
+
+      // Prefer staying on the loaded company tree — just re-root.
+      const children = (() => {
+        const map = new Map<string, string[]>();
+        for (const e of edges) {
+          const rel = e.relationship.toLowerCase();
+          if (rel === "has_subgoal" || rel === "has_detail_reference") {
+            if (!map.has(e.sourceId)) map.set(e.sourceId, []);
+            map.get(e.sourceId)!.push(e.targetId);
+          } else if (rel === "advances") {
+            if (!map.has(e.targetId)) map.set(e.targetId, []);
+            map.get(e.targetId)!.push(e.sourceId);
+          }
+        }
+        return map.get(id) || [];
+      })();
+
+      if (entities.some((e) => e.id === id) && (children.length > 0 || edges.length > 0)) {
+        // Fetch direct children via parent_id and merge — covers nodes whose
+        // CPD subtree wasn't in the initial preview slice.
+        if (!instance || !datasetId) return;
+        try {
+          setLoadingFocus(true);
+          const res = await getGraphAnnotations(instance, datasetId, {
+            parentId: id,
+            limit: 1,
+            goalsLimit: 60,
+          });
+          const kids = (res.goals || []).map(toEntity);
+          if (kids.length) {
+            setEntities((prev) => {
+              const byId = new Map(prev.map((x) => [x.id, x]));
+              for (const k of kids) byId.set(k.id, k);
+              return [...byId.values()];
+            });
+            setEdges((prev) => {
+              const ek = new Set(prev.map((x) => `${x.sourceId}|${x.relationship}|${x.targetId}`));
+              const next = [...prev];
+              for (const k of kids) {
+                const key = `${id}|has_subgoal|${k.id}`;
+                if (ek.has(key)) continue;
+                next.push({
+                  id: key,
+                  sourceId: id,
+                  targetId: k.id,
+                  relationship: "has_subgoal",
+                  sourceName: entities.find((e) => e.id === id)?.name || id,
+                  targetName: k.name,
+                  sourceType: "Goal",
+                  targetType: "Goal",
+                });
+                ek.add(key);
+              }
+              return next;
+            });
+          }
+        } catch {
+          /* keep current tree */
+        } finally {
+          setLoadingFocus(false);
+        }
         return;
       }
       void loadFocus(id, hopDepth);
     },
-    [entities, edges, loadFocus, hopDepth],
+    [entities, edges, loadFocus, hopDepth, instance, datasetId],
   );
 
   const onSelectNode = useCallback(
@@ -621,8 +717,29 @@ export default function OntologyBrowser({
             });
           }}
           browseHits={browseHits}
-          browseLoading={browseLoading || searching}
+          browseStack={browseStack}
+          browseLoading={browseLoading}
           onPickBrowse={(id) => setFocus(id)}
+          onEnterBrowse={(hit) => {
+            setBrowseStack((prev) => {
+              const idx = prev.findIndex((p) => p.id === hit.id);
+              if (idx >= 0) return prev.slice(0, idx + 1);
+              return [...prev, { id: hit.id, name: hit.name }];
+            });
+            void loadBrowse(hit.id);
+          }}
+          onBrowseUp={() => {
+            setBrowseStack((prev) => {
+              const next = prev.slice(0, -1);
+              const parentId = next.length ? next[next.length - 1].id : "_roots";
+              void loadBrowse(parentId);
+              return next;
+            });
+          }}
+          onBrowseRoot={() => {
+            setBrowseStack([]);
+            void loadBrowse("_roots");
+          }}
           pathStart={pathStart}
           pathEnd={pathEnd}
           onClearPath={() => {
@@ -652,8 +769,6 @@ export default function OntologyBrowser({
             onExpand={(id) => setFocus(id)}
             onCanvasClick={() => setSelectedId(null)}
             onHover={setHoverId}
-            onViewMode={setViewMode}
-            onRelatedOnly={setRelatedOnly}
           />
         </div>
 

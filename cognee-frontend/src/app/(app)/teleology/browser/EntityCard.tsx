@@ -96,7 +96,7 @@ export default function EntityCard({
         onFocus();
       }}
       onKeyDown={(e) => {
-        if (e.key === "Enter") onSelect();
+        if (e.key === "Enter") onFocus();
       }}
     >
       <span
@@ -147,17 +147,30 @@ export default function EntityCard({
             {node.name}
           </div>
         </div>
-        {node.hiddenDegree && node.hiddenDegree > 0 && onExpand ? (
+        {((node.childCount && node.childCount > 0) || (node.hiddenDegree && node.hiddenDegree > 0)) &&
+        onExpand ? (
           <button
             type="button"
             className="onto-expand-btn"
-            title={language === "zh" ? "展开更多关系" : "Expand relations"}
+            title={
+              language === "zh"
+                ? node.childCount
+                  ? "进入该节点的 CPD 子树"
+                  : "展开更多关系"
+                : node.childCount
+                  ? "Enter this CPD subtree"
+                  : "Expand relations"
+            }
             onClick={(e) => {
               e.stopPropagation();
               onExpand();
             }}
           >
-            +{node.hiddenDegree}
+            {node.childCount && node.childCount > 0
+              ? language === "zh"
+                ? `进入 ${node.childCount}`
+                : `Enter ${node.childCount}`
+              : `+${node.hiddenDegree}`}
           </button>
         ) : null}
       </div>

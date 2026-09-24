@@ -11,7 +11,7 @@ import {
 } from "react";
 import EntityCard from "./EntityCard";
 import { REL_PILL, relLabel } from "./entityMeta";
-import { layoutNeighborhood, CARD_W, CARD_H } from "./layoutDag";
+import { layoutNeighborhood, CARD_W, CARD_H, buildTreeChildren } from "./layoutDag";
 import type { LaidOutEdge, LaidOutNode, OntologyEdge, OntologyEntity, ViewMode } from "./types";
 
 type DragState = {
@@ -21,6 +21,15 @@ type DragState = {
   originY: number;
   startClientX: number;
   startClientY: number;
+  moved: boolean;
+};
+
+type PanState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  scrollLeft: number;
+  scrollTop: number;
 };
 
 type LayoutResult = {
@@ -47,8 +56,6 @@ export default function OntologyCanvas({
   onExpand,
   onCanvasClick,
   onHover,
-  onViewMode,
-  onRelatedOnly,
 }: {
   focusId: string | null;
   entities: OntologyEntity[];
@@ -66,16 +73,17 @@ export default function OntologyCanvas({
   onExpand: (id: string) => void;
   onCanvasClick: () => void;
   onHover: (id: string | null) => void;
-  onViewMode?: (m: ViewMode) => void;
-  onRelatedOnly?: (v: boolean) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef({ w: 900, h: 560 });
   const [size, setSize] = useState({ w: 900, h: 560 });
   const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({});
   const dragRef = useRef<DragState | null>(null);
+  const panRef = useRef<PanState | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [panning, setPanning] = useState(false);
   const lastGoodLayout = useRef<LayoutResult | null>(null);
+  const didDragRef = useRef(false);
 
   // Reset manual positions when the focus neighbourhood changes.
   useEffect(() => {
@@ -147,6 +155,22 @@ export default function OntologyCanvas({
       const s = pos.get(e.sourceId);
       const t = pos.get(e.targetId);
       if (!s || !t) return e;
+      if (viewMode === "hierarchy") {
+        const rel = e.relationship.toLowerCase();
+        let parent = s;
+        let child = t;
+        if (rel === "advances") {
+          parent = t;
+          child = s;
+        }
+        return {
+          ...e,
+          x1: parent.x + CARD_W / 2,
+          y1: parent.y + CARD_H,
+          x2: child.x + CARD_W / 2,
+          y2: child.y,
+        };
+      }
       return {
         ...e,
         x1: s.x + CARD_W,
@@ -155,7 +179,122 @@ export default function OntologyCanvas({
         y2: t.y + CARD_H / 2,
       };
     });
-  }, [layout, nodesWithOffsets]);
+  }, [layout, nodesWithOffsets, viewMode]);
+
+  const childCountById = useMemo(() => {
+    const children = buildTreeChildren(filteredEdges);
+    const map = new Map<string, number>();
+    for (const [pid, kids] of children) map.set(pid, kids.length);
+    return map;
+  }, [filteredEdges]);
+
+  const onPointerMove = useCallback((e: PointerEvent) => {
+    const pan = panRef.current;
+    if (pan && e.pointerId === pan.pointerId) {
+      const el = wrapRef.current;
+      if (el) {
+        el.scrollLeft = pan.scrollLeft - (e.clientX - pan.startClientX);
+        el.scrollTop = pan.scrollTop - (e.clientY - pan.startClientY);
+      }
+      return;
+    }
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const dx = e.clientX - drag.startClientX;
+    const dy = e.clientY - drag.startClientY;
+    if (!drag.moved && dx * dx + dy * dy < 25) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      didDragRef.current = true;
+      setDraggingId(drag.id);
+    }
+    setOffsets((prev) => ({
+      ...prev,
+      [drag.id]: { x: drag.originX + dx, y: drag.originY + dy },
+    }));
+  }, []);
+
+  const endPointer = useCallback(
+    (e: PointerEvent) => {
+      const pan = panRef.current;
+      if (pan && e.pointerId === pan.pointerId) {
+        panRef.current = null;
+        setPanning(false);
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", endPointer);
+        window.removeEventListener("pointercancel", endPointer);
+        return;
+      }
+      const drag = dragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      const wasMove = drag.moved;
+      dragRef.current = null;
+      setDraggingId(null);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", endPointer);
+      window.removeEventListener("pointercancel", endPointer);
+      // Allow click handler to see whether this was a drag
+      if (wasMove) {
+        window.setTimeout(() => {
+          didDragRef.current = false;
+        }, 0);
+      }
+    },
+    [onPointerMove],
+  );
+
+  const startPan = useCallback(
+    (e: ReactPointerEvent) => {
+      // Right button or middle button pans the canvas
+      if (e.button !== 2 && e.button !== 1) return;
+      const el = wrapRef.current;
+      if (!el) return;
+      e.preventDefault();
+      panRef.current = {
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        scrollLeft: el.scrollLeft,
+        scrollTop: el.scrollTop,
+      };
+      setPanning(true);
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", endPointer);
+      window.addEventListener("pointercancel", endPointer);
+    },
+    [onPointerMove, endPointer],
+  );
+
+  const startDrag = useCallback(
+    (id: string, node: LaidOutNode, e: ReactPointerEvent) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      const cur = offsets[id] || { x: node.x, y: node.y };
+      didDragRef.current = false;
+      dragRef.current = {
+        id,
+        pointerId: e.pointerId,
+        originX: cur.x,
+        originY: cur.y,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        moved: false,
+      };
+      onSelect(id);
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", endPointer);
+      window.addEventListener("pointercancel", endPointer);
+    },
+    [offsets, onSelect, onPointerMove, endPointer],
+  );
+
+  useEffect(() => {
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", endPointer);
+      window.removeEventListener("pointercancel", endPointer);
+    };
+  }, [onPointerMove, endPointer]);
 
   const relatedIds = useMemo(() => {
     if (!relatedOnly || !focusId || !layout) return null;
@@ -166,58 +305,6 @@ export default function OntologyCanvas({
     }
     return ids;
   }, [relatedOnly, focusId, layout]);
-
-  const onPointerMove = useCallback((e: PointerEvent) => {
-    const drag = dragRef.current;
-    if (!drag || e.pointerId !== drag.pointerId) return;
-    const dx = e.clientX - drag.startClientX;
-    const dy = e.clientY - drag.startClientY;
-    setOffsets((prev) => ({
-      ...prev,
-      [drag.id]: { x: drag.originX + dx, y: drag.originY + dy },
-    }));
-  }, []);
-
-  const endDrag = useCallback((e: PointerEvent) => {
-    const drag = dragRef.current;
-    if (!drag || e.pointerId !== drag.pointerId) return;
-    dragRef.current = null;
-    setDraggingId(null);
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", endDrag);
-    window.removeEventListener("pointercancel", endDrag);
-  }, [onPointerMove]);
-
-  const startDrag = useCallback(
-    (id: string, node: LaidOutNode, e: ReactPointerEvent) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const cur = offsets[id] || { x: node.x, y: node.y };
-      dragRef.current = {
-        id,
-        pointerId: e.pointerId,
-        originX: cur.x,
-        originY: cur.y,
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-      };
-      setDraggingId(id);
-      onSelect(id);
-      window.addEventListener("pointermove", onPointerMove);
-      window.addEventListener("pointerup", endDrag);
-      window.addEventListener("pointercancel", endDrag);
-    },
-    [offsets, onSelect, onPointerMove, endDrag],
-  );
-
-  useEffect(() => {
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", endDrag);
-      window.removeEventListener("pointercancel", endDrag);
-    };
-  }, [onPointerMove, endDrag]);
 
   const emptyStyle: CSSProperties = {
     flex: 1,
@@ -232,40 +319,6 @@ export default function OntologyCanvas({
     textAlign: "center",
   };
 
-  const bottomBar = (
-    <div className="onto-bottom-bar">
-      <div className="onto-bottom-modes">
-        {(
-          [
-            ["relation", "Relationship", "关系图"],
-            ["chain", "Business chain", "业务链"],
-            ["hierarchy", "Hierarchy", "层级图"],
-            ["path", "Path", "路径"],
-          ] as const
-        ).map(([id, en, zh]) => (
-          <button
-            key={id}
-            type="button"
-            className={viewMode === id ? "is-active" : ""}
-            onClick={() => onViewMode?.(id)}
-          >
-            {language === "zh" ? zh : en}
-          </button>
-        ))}
-      </div>
-      {focusId ? (
-        <label className="onto-check" style={{ margin: 0 }}>
-          <input
-            type="checkbox"
-            checked={relatedOnly}
-            onChange={(e) => onRelatedOnly?.(e.target.checked)}
-          />
-          {language === "zh" ? "仅显示相关节点" : "Related nodes only"}
-        </label>
-      ) : null}
-    </div>
-  );
-
   if (!focusId) {
     return (
       <div className="onto-canvas-shell">
@@ -279,7 +332,6 @@ export default function OntologyCanvas({
               : "The full graph is never loaded. Focus one entity, show one hop up/down, expand with +N."}
           </div>
         </div>
-        {bottomBar}
       </div>
     );
   }
@@ -290,7 +342,6 @@ export default function OntologyCanvas({
         <div className="onto-canvas" ref={wrapRef} style={emptyStyle}>
           {loading ? null : language === "zh" ? "该实体暂无可见关系" : "No visible relations for this entity"}
         </div>
-        {bottomBar}
       </div>
     );
   }
@@ -316,13 +367,18 @@ export default function OntologyCanvas({
       <div
         className="onto-canvas"
         ref={wrapRef}
-        onClick={onCanvasClick}
+        onClick={() => {
+          if (didDragRef.current || panning) return;
+          onCanvasClick();
+        }}
+        onPointerDown={startPan}
+        onContextMenu={(e) => e.preventDefault()}
         style={{
           flex: 1,
           minHeight: 0,
           position: "relative",
           overflow: "auto",
-          scrollbarGutter: "stable",
+          cursor: panning ? "grabbing" : "default",
         }}
       >
         {loading ? (
@@ -407,6 +463,8 @@ export default function OntologyCanvas({
           {nodesWithOffsets.map((n) => {
             if (relatedIds && !relatedIds.has(n.id)) return null;
             const dimmed = activeChain.size > 0 && !activeChain.has(n.id);
+            const childCount = childCountById.get(n.id) || n.childCount || 0;
+            const canEnter = childCount > 0 && n.id !== focusId;
             return (
               <div
                 key={n.id}
@@ -414,15 +472,26 @@ export default function OntologyCanvas({
                 onMouseLeave={() => onHover(null)}
               >
                 <EntityCard
-                  node={n}
+                  node={{
+                    ...n,
+                    childCount,
+                    hiddenDegree: n.hiddenDegree || (canEnter ? childCount : undefined),
+                  }}
                   selected={selectedId === n.id}
                   isFocus={n.id === focusId}
                   dimmed={dimmed}
                   language={language}
                   dragging={draggingId === n.id}
-                  onSelect={() => onSelect(n.id)}
+                  onSelect={() => {
+                    if (didDragRef.current) return;
+                    onSelect(n.id);
+                  }}
                   onFocus={() => onSetFocus(n.id)}
-                  onExpand={n.hiddenDegree ? () => onExpand(n.id) : undefined}
+                  onExpand={
+                    canEnter || n.hiddenDegree
+                      ? () => onExpand(n.id)
+                      : undefined
+                  }
                   onPointerDown={(e) => startDrag(n.id, n, e)}
                 />
               </div>
@@ -487,8 +556,6 @@ export default function OntologyCanvas({
           </div>
         </div>
       </div>
-
-      {bottomBar}
     </div>
   );
 }

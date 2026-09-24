@@ -351,6 +351,35 @@ async def _list_goal_children(
     return goals
 
 
+async def _attach_child_counts(
+    graph: Any,
+    goals: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Add child_count (direct has_subgoal children) for browse drill-down affordances."""
+    if not goals:
+        return goals
+    ids = [g["id"] for g in goals]
+    counts: dict[str, int] = {}
+    try:
+        rows = await graph.query(
+            """
+            MATCH (p:Node)-[r:EDGE]->(c:Node)
+            WHERE p.id IN $ids AND r.relationship_name = 'has_subgoal'
+            RETURN p.id, count(c)
+            """,
+            {"ids": ids},
+        )
+        for row in rows or []:
+            if not row:
+                continue
+            counts[str(row[0])] = int(row[1] or 0)
+    except Exception:
+        pass
+    for g in goals:
+        g["child_count"] = int(counts.get(g["id"], 0))
+    return goals
+
+
 async def _attach_parent_paths(
     graph: Any,
     goals: list[dict[str, Any]],
@@ -701,7 +730,7 @@ async def list_graph_annotations(
                     graph, browse_parent, limit=fetch_n
                 )
             goals = await _attach_parent_paths(graph, goals)
-        else:
+            goals = await _attach_child_counts(graph, goals)
             fetch_n = goals_cap if goals_cap > 0 else 24
             if needle or goals_skip > 0:
                 # Search / load-more: page of goals only (no full-tree canvas rebuild).

@@ -20,6 +20,8 @@ export interface OntologyEntity {
   parentName?: string | null;
   /** Extra relations not shown at current hop (for +N). */
   hiddenDegree?: number;
+  /** Direct CPD children count (has_subgoal / advances). */
+  childCount?: number;
 }
 
 export interface OntologyEdge {

@@ -16,6 +16,13 @@ const ALL_KINDS: EntityKind[] = [
 
 const REL_OPTIONS = ["has_subgoal", "serves", "advances", "blocks"];
 
+export type BrowseHit = {
+  id: string;
+  name: string;
+  kind: string;
+  childCount?: number;
+};
+
 export default function NavPanel({
   language,
   viewMode,
@@ -29,8 +36,12 @@ export default function NavPanel({
   kindFilter,
   onToggleKind,
   browseHits,
-  onPickBrowse,
+  browseStack,
   browseLoading,
+  onPickBrowse,
+  onEnterBrowse,
+  onBrowseUp,
+  onBrowseRoot,
   pathStart,
   pathEnd,
   onClearPath,
@@ -46,9 +57,13 @@ export default function NavPanel({
   onToggleRel: (rel: string) => void;
   kindFilter: Set<EntityKind>;
   onToggleKind: (k: EntityKind) => void;
-  browseHits: { id: string; name: string; kind: string }[];
-  onPickBrowse: (id: string) => void;
+  browseHits: BrowseHit[];
+  browseStack: { id: string; name: string }[];
   browseLoading: boolean;
+  onPickBrowse: (id: string) => void;
+  onEnterBrowse: (hit: BrowseHit) => void;
+  onBrowseUp: () => void;
+  onBrowseRoot: () => void;
   pathStart: string | null;
   pathEnd: string | null;
   onClearPath: () => void;
@@ -162,7 +177,30 @@ export default function NavPanel({
       </div>
 
       <div className="onto-nav-block" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <div className="onto-nav-label">{t("Browse / hits", "浏览 / 命中")}</div>
+        <div className="onto-nav-label">{t("Browse goals", "浏览目标树")}</div>
+        <div className="onto-browse-crumb">
+          <button type="button" className="onto-browse-crumb-btn" onClick={onBrowseRoot}>
+            {t("Roots", "顶层")}
+          </button>
+          {browseStack.map((s) => (
+            <span key={s.id} className="onto-browse-crumb-seg">
+              <span aria-hidden>›</span>
+              <button
+                type="button"
+                className="onto-browse-crumb-btn"
+                title={s.name}
+                onClick={() => onEnterBrowse({ id: s.id, name: s.name, kind: "Goal" })}
+              >
+                {s.name}
+              </button>
+            </span>
+          ))}
+          {browseStack.length > 0 ? (
+            <button type="button" className="onto-browse-up" onClick={onBrowseUp}>
+              {t("Up", "返回上级")}
+            </button>
+          ) : null}
+        </div>
         <div className="onto-browse-list">
           {browseLoading ? (
             <div className="onto-muted" style={{ fontSize: 12, padding: 8 }}>
@@ -170,15 +208,47 @@ export default function NavPanel({
             </div>
           ) : browseHits.length === 0 ? (
             <div className="onto-muted" style={{ fontSize: 12, padding: 8 }}>
-              {t("Type in the top search, or open roots.", "在顶部搜索，或加载顶层目标。")}
+              {browseStack.length
+                ? t("No child goals at this level.", "这一层没有子目标。")
+                : t("No top-level goals yet. Sync the company tree.", "暂无顶层目标，请先同步公司树。")}
             </div>
           ) : (
-            browseHits.map((h) => (
-              <button key={h.id} type="button" className="onto-browse-item" onClick={() => onPickBrowse(h.id)}>
-                <span className="onto-browse-kind">{kindLabel(h.kind, language)}</span>
-                <span className="onto-browse-name">{h.name}</span>
-              </button>
-            ))
+            browseHits.map((h) => {
+              const kids = h.childCount;
+              const hasKids = typeof kids === "number" ? kids > 0 : true;
+              const label =
+                typeof kids === "number" && kids > 0
+                  ? `${kids} ›`
+                  : typeof kids === "number"
+                    ? "·"
+                    : "›";
+              return (
+                <div key={h.id} className="onto-browse-row">
+                  <button
+                    type="button"
+                    className="onto-browse-item"
+                    onClick={() => onPickBrowse(h.id)}
+                    title={t("Focus on canvas", "在画布设为中心")}
+                  >
+                    <span className="onto-browse-kind">{kindLabel(h.kind, language)}</span>
+                    <span className="onto-browse-name">{h.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`onto-browse-enter${hasKids ? "" : " is-empty"}`}
+                    disabled={!hasKids}
+                    title={
+                      hasKids
+                        ? t("Open child goals", "展开子目标")
+                        : t("No children", "无子目标")
+                    }
+                    onClick={() => hasKids && onEnterBrowse(h)}
+                  >
+                    {label}
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
       </div>

@@ -49,6 +49,7 @@ export interface GraphNodeSummary {
   source?: string | null;
   parent_id?: string | null;
   parent_name?: string | null;
+  child_count?: number;
 }
 
 export interface GraphAnnotation {
