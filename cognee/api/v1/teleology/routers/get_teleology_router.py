@@ -1,12 +1,22 @@
 import asyncio
 from pathlib import Path
 from typing import List, Literal, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Path as PathParam, Query, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from cognee.api.DTO import InDTO
+from cognee.exceptions import CogneeApiError
+from cognee.modules.data.exceptions.exceptions import DatasetNotFoundError
+from cognee.modules.teleology.graph_annotations import (
+    add_graph_annotation,
+    list_graph_annotations,
+    remove_graph_annotation,
+    sync_from_company_tree,
+    sync_goals_to_graph,
+)
 from cognee.modules.users.methods import get_authenticated_user
 from cognee.modules.users.models import User
 from cognee.shared.logging_utils import get_logger
@@ -22,6 +32,7 @@ _SAMPLE_PATH = (
 
 NodeType = Literal["goal", "purpose", "constraint"]
 GoalStatusLiteral = Literal["proposed", "active", "achieved", "abandoned"]
+TeleologyRelLiteral = Literal["serves", "advances", "blocks"]
 
 
 class TeleologyNodeCreate(InDTO):
@@ -38,6 +49,16 @@ class TeleologyNodeUpdate(InDTO):
     status: Optional[GoalStatusLiteral] = None
     description: Optional[str] = None
     keywords: Optional[List[str]] = None
+
+
+class GraphAnnotationCreate(InDTO):
+    dataset_id: UUID = Field(..., description="Dataset whose graph receives the purpose edge.")
+    source_id: str = Field(..., min_length=1, description="Knowledge node id (serves/advances/blocks from).")
+    target_id: str = Field(..., min_length=1, description="Goal / Purpose / Constraint node id.")
+    relationship: TeleologyRelLiteral = Field(
+        ...,
+        description="Purpose edge: serves, advances, or blocks.",
+    )
 
 
 def get_teleology_router() -> APIRouter:
@@ -160,5 +181,115 @@ def get_teleology_router() -> APIRouter:
         """Remove the active teleology YAML (disables goal annotations until re-uploaded)."""
         _ = user
         return await asyncio.to_thread(service.clear)
+
+    @router.get("/annotations", response_model=dict)
+    async def get_graph_annotations(
+        dataset_id: UUID = Query(..., description="Dataset to inspect"),
+        q: Optional[str] = Query(default=None, description="Filter annotatable nodes by name/type"),
+        limit: int = Query(default=200, ge=1, le=1000),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """List purpose edges and annotatable nodes on a dataset knowledge graph."""
+        try:
+            return await list_graph_annotations(dataset_id, user, q=q, limit=limit)
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except CogneeApiError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("List teleology annotations failed: %s", exc, exc_info=True)
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.post("/annotations/sync-goals", response_model=dict)
+    async def sync_teleology_goals(
+        dataset_id: UUID = Query(..., description="Dataset graph to receive Goal nodes"),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Upsert YAML goals/purposes/constraints into the dataset graph as nodes."""
+        try:
+            return await sync_goals_to_graph(dataset_id, user)
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Sync teleology goals failed: %s", exc, exc_info=True)
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.post("/annotations/sync-from-company-tree", response_model=dict)
+    async def sync_teleology_from_company_tree(
+        dataset_id: UUID = Query(..., description="Dataset that owns the company goal tree"),
+        link_entities: bool = Query(
+            default=True,
+            description="Also attach serves edges from knowledge entities whose names overlap a goal.",
+        ),
+        source_room: Optional[str] = Query(
+            default=None,
+            description="Optional mind-map room id; omit to infer from stamped tree nodes.",
+        ),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Derive teleology goals/edges from the company goal tree (+ optional entity links)."""
+        try:
+            return await sync_from_company_tree(
+                dataset_id,
+                user,
+                link_entities=link_entities,
+                source_room=source_room,
+            )
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Sync teleology from company tree failed: %s", exc, exc_info=True)
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.post("/annotations", response_model=dict)
+    async def create_graph_annotation(
+        payload: GraphAnnotationCreate,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Attach a serves/advances/blocks edge from a graph node to a goal."""
+        try:
+            return await add_graph_annotation(
+                payload.dataset_id,
+                user,
+                source_id=payload.source_id,
+                target_id=payload.target_id,
+                relationship=payload.relationship,
+            )
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except KeyError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Create teleology annotation failed: %s", exc, exc_info=True)
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.delete("/annotations", response_model=dict)
+    async def delete_graph_annotation(
+        dataset_id: UUID = Query(...),
+        source_id: str = Query(..., min_length=1),
+        target_id: str = Query(..., min_length=1),
+        relationship: TeleologyRelLiteral = Query(...),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Remove a purpose edge; endpoint nodes are kept."""
+        try:
+            return await remove_graph_annotation(
+                dataset_id,
+                user,
+                source_id=source_id,
+                target_id=target_id,
+                relationship=relationship,
+            )
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except KeyError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Delete teleology annotation failed: %s", exc, exc_info=True)
+            return JSONResponse(status_code=400, content={"error": str(exc)})
 
     return router

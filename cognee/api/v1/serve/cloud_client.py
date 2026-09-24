@@ -255,6 +255,10 @@ class CloudClient:
             payload["tools_trigger"] = kwargs["tools_trigger"]
         if kwargs.get("code_query") is not None:
             payload["code_query"] = kwargs["code_query"]
+        if kwargs.get("goal_id"):
+            payload["goal_id"] = str(kwargs["goal_id"])
+        if kwargs.get("goal_filter_mode"):
+            payload["goal_filter_mode"] = kwargs["goal_filter_mode"]
 
         async with session.post(
             f"{self.service_url}/api/v1/recall",

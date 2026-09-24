@@ -20,6 +20,8 @@ export interface RecallRequest {
   datasetIds?: string[];
   topK?: number;
   searchType?: string | null;
+  goalId?: string;
+  goalFilterMode?: "rerank" | "filter";
 }
 
 /**
@@ -45,6 +47,8 @@ export default function recallKnowledge(
   body.include_references = pipelineSettings.includeReferences;
   // Explicit null asks the server to auto-route; undefined falls back to HYBRID_COMPLETION.
   body.search_type = req.searchType !== undefined ? req.searchType : "HYBRID_COMPLETION";
+  if (req.goalId) body.goal_id = req.goalId;
+  if (req.goalFilterMode) body.goal_filter_mode = req.goalFilterMode;
 
   return instance
     .fetch("/v1/recall", {

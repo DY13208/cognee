@@ -13,19 +13,22 @@ export default function DeleteConfirmModal({
   onConfirm,
   onCancel,
   busy = false,
+  opened = true,
 }: {
   title: string;
   message: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
   busy?: boolean;
+  /** Controlled open state — prefer this over unmounting while the modal is open. */
+  opened?: boolean;
 }): ReactElement {
   return (
-    <ModalShell onClose={onCancel}>
+    <ModalShell opened={opened} onClose={onCancel}>
       <h2 style={{ fontSize: 18, fontWeight: 700, color: "#EDECEA", margin: 0 }}>{title}</h2>
       <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: 0 }}>{message}</p>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button onClick={onCancel} className="cursor-pointer"
+        <button onClick={onCancel} disabled={busy} className="cursor-pointer"
           style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.7)", fontFamily: "inherit" }}>Cancel</button>
         <button onClick={onConfirm} disabled={busy} className="cursor-pointer"
           style={{ display: "flex", alignItems: "center", gap: 6, background: "#EF4444", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#fff", fontFamily: "inherit" }}>

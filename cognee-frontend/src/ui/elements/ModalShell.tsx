@@ -21,6 +21,7 @@ export default function ModalShell({
   width = 420,
   label,
   children,
+  opened = true,
 }: {
   onClose: () => void;
   width?: number;
@@ -32,9 +33,11 @@ export default function ModalShell({
    */
   label?: string;
   children: ReactNode;
+  /** Controlled open — closing via this avoids unmount-while-open crashes. */
+  opened?: boolean;
 }): ReactElement {
   return (
-    <Modal.Root opened onClose={onClose} size={width} centered trapFocus returnFocus closeOnEscape closeOnClickOutside>
+    <Modal.Root opened={opened} onClose={onClose} size={width} centered trapFocus returnFocus closeOnEscape closeOnClickOutside>
       <Modal.Overlay style={{ background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} />
       <Modal.Content aria-label={label} style={{ background: "transparent", boxShadow: "none", padding: 0 }}>
         <div style={{ background: "rgba(15,15,15,0.92)", backdropFilter: "blur(16px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }}>

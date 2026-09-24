@@ -256,3 +256,29 @@ class TeleologyService:
         if not any(data[k] for k in data):
             return self.clear()
         return self._write_raw(data)
+
+    def upsert_goals(self, entries: list[dict[str, Any]]) -> int:
+        """Merge goal dicts by id into the teleology YAML (create or update)."""
+        if not entries:
+            return 0
+        data = self._load_raw()
+        by_id = {str(item.get("id")): i for i, item in enumerate(data["goals"])}
+        changed = 0
+        for raw in entries:
+            entry = self._normalize_entry(
+                name=str(raw.get("name") or ""),
+                status=str(raw.get("status") or "active"),
+                description=str(raw.get("description") or ""),
+                keywords=list(raw.get("keywords") or []),
+                node_id=str(raw["id"]) if raw.get("id") else None,
+            )
+            idx = by_id.get(str(entry["id"]))
+            if idx is None:
+                data["goals"].append(entry)
+                by_id[str(entry["id"])] = len(data["goals"]) - 1
+            else:
+                data["goals"][idx] = entry
+            changed += 1
+        if changed:
+            self._write_raw(data)
+        return changed

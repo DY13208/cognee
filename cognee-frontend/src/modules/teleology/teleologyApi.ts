@@ -2,6 +2,7 @@ import { CogneeInstance } from "@/modules/instances/types";
 
 export type TeleologyNodeType = "goal" | "purpose" | "constraint";
 export type TeleologyNodeStatus = "proposed" | "active" | "achieved" | "abandoned";
+export type TeleologyRelationship = "serves" | "advances" | "blocks";
 
 export interface TeleologyNode {
   id: string;
@@ -34,9 +35,42 @@ export interface TeleologyNodeInput {
   keywords?: string[];
 }
 
+export interface GraphNodeSummary {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  status?: string | null;
+  cpd_kind?: string | null;
+  source?: string | null;
+}
+
+export interface GraphAnnotation {
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  target_id: string;
+  target_name: string;
+  target_type: string;
+  relationship: TeleologyRelationship | string;
+}
+
+export interface GraphAnnotationsPayload {
+  dataset_id: string;
+  dataset_name?: string | null;
+  goals: GraphNodeSummary[];
+  nodes: GraphNodeSummary[];
+  nodes_truncated: boolean;
+  annotations: GraphAnnotation[];
+  yaml_goals: GraphNodeSummary[];
+}
+
 async function readError(resp: Response): Promise<string> {
   const err = await resp.json().catch(() => ({ error: resp.statusText }));
-  return err.error || `Request failed: ${resp.status}`;
+  if (typeof err.error === "string" && err.error) return err.error;
+  if (typeof err.detail === "string" && err.detail) return err.detail;
+  if (Array.isArray(err.detail) && err.detail[0]?.msg) return String(err.detail[0].msg);
+  return `Request failed: ${resp.status}`;
 }
 
 export async function getTeleology(instance: CogneeInstance): Promise<TeleologyStatus> {
@@ -107,6 +141,100 @@ export async function loadSampleTeleology(instance: CogneeInstance): Promise<Tel
 
 export async function clearTeleology(instance: CogneeInstance): Promise<TeleologyStatus> {
   const resp = await instance.fetch("/v1/teleology", { method: "DELETE" });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function getGraphAnnotations(
+  instance: CogneeInstance,
+  datasetId: string,
+  opts?: { q?: string; limit?: number },
+): Promise<GraphAnnotationsPayload> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  if (opts?.q) params.set("q", opts.q);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const resp = await instance.fetch(`/v1/teleology/annotations?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function syncTeleologyGoals(
+  instance: CogneeInstance,
+  datasetId: string,
+): Promise<{ dataset_id: string; synced: number; goals: GraphNodeSummary[]; annotations: GraphAnnotation[] }> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/annotations/sync-goals?${params}`, {
+    method: "POST",
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function syncTeleologyFromCompanyTree(
+  instance: CogneeInstance,
+  datasetId: string,
+  opts?: { linkEntities?: boolean; sourceRoom?: string },
+): Promise<{
+  dataset_id: string;
+  tree_goals: number;
+  advances_created: number;
+  serves_created: number;
+  yaml_upserted: number;
+  goals: GraphNodeSummary[];
+  annotations: GraphAnnotation[];
+  message?: string;
+}> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  if (opts?.linkEntities === false) params.set("link_entities", "false");
+  if (opts?.sourceRoom) params.set("source_room", opts.sourceRoom);
+  const resp = await instance.fetch(`/v1/teleology/annotations/sync-from-company-tree?${params}`, {
+    method: "POST",
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function createGraphAnnotation(
+  instance: CogneeInstance,
+  input: {
+    datasetId: string;
+    sourceId: string;
+    targetId: string;
+    relationship: TeleologyRelationship;
+  },
+): Promise<{ created: boolean; annotation: { source_id: string; target_id: string; relationship: string } }> {
+  const resp = await instance.fetch("/v1/teleology/annotations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dataset_id: input.datasetId,
+      source_id: input.sourceId,
+      target_id: input.targetId,
+      relationship: input.relationship,
+    }),
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function deleteGraphAnnotation(
+  instance: CogneeInstance,
+  input: {
+    datasetId: string;
+    sourceId: string;
+    targetId: string;
+    relationship: TeleologyRelationship | string;
+  },
+): Promise<{ deleted: boolean }> {
+  const params = new URLSearchParams({
+    dataset_id: input.datasetId,
+    source_id: input.sourceId,
+    target_id: input.targetId,
+    relationship: String(input.relationship),
+  });
+  const resp = await instance.fetch(`/v1/teleology/annotations?${params}`, {
+    method: "DELETE",
+  });
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();
 }

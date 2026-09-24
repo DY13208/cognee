@@ -1,515 +1,1000 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import { TrackPageView } from "@/modules/analytics";
+import { useFilter } from "@/ui/layout/FilterContext";
+import getBrainGraph from "@/modules/business/getBrainGraph";
+import recallKnowledge from "@/modules/datasets/recallKnowledge";
 import {
   getTeleology,
   createTeleologyNode,
   updateTeleologyNode,
   deleteTeleologyNode,
-  uploadTeleology,
   loadSampleTeleology,
   clearTeleology,
+  getGraphAnnotations,
+  syncTeleologyGoals,
+  syncTeleologyFromCompanyTree,
+  createGraphAnnotation,
+  deleteGraphAnnotation,
   type TeleologyStatus,
   type TeleologyNode,
   type TeleologyNodeInput,
   type TeleologyNodeType,
+  type TeleologyRelationship,
+  type GraphAnnotationsPayload,
+  type GraphAnnotation,
 } from "@/modules/teleology/teleologyApi";
 import PageLoading from "@/ui/elements/PageLoading";
 import DeleteConfirmModal from "@/ui/elements/DeleteConfirmModal";
 import TeleologyNodeModal from "./TeleologyNodeModal";
+import PurposeLensGraph, {
+  REL_COLOR,
+  relationshipColor,
+  type PurposeGraphLink,
+  type PurposeGraphNode,
+} from "./PurposeLensGraph";
 import { notifications } from "@mantine/notifications";
 import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
-const STATUS_COLOR: Record<string, string> = {
-  active: "#34D399",
-  proposed: "#FBBF24",
-  achieved: "#60A5FA",
-  abandoned: "rgba(237,236,234,0.35)",
+const REL_ZH: Record<TeleologyRelationship, string> = {
+  serves: "服务于",
+  advances: "推进",
+  blocks: "阻碍",
 };
 
-const STATUS_ZH: Record<string, string> = {
-  proposed: "提议",
-  active: "进行中",
-  achieved: "已达成",
-  abandoned: "已放弃",
+const selectStyle: CSSProperties = {
+  background: "#1a1a1c",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 8,
+  padding: "8px 12px",
+  fontSize: 13,
+  fontFamily: "inherit",
+  color: "#EDECEA",
+  outline: "none",
+  width: "100%",
+  // Native <option> menus follow the OS theme; without this, Windows often
+  // paints a white popup while our text stays light → unreadable.
+  colorScheme: "dark",
 };
 
-function GoalIcon() {
+const optionStyle: CSSProperties = {
+  background: "#1a1a1c",
+  color: "#EDECEA",
+};
+
+const inputStyle: CSSProperties = { ...selectStyle };
+
+function btn(primary = false): CSSProperties {
+  return {
+    background: primary ? "rgba(188,155,255,0.22)" : "rgba(255,255,255,0.06)",
+    border: primary ? "1px solid rgba(188,155,255,0.45)" : "1px solid rgba(255,255,255,0.12)",
+    borderRadius: 8,
+    padding: "7px 12px",
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#EDECEA",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    whiteSpace: "nowrap",
+  };
+}
+
+function Shell({ children }: { children: ReactNode }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#BC9BFF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="12" cy="12" r="6" />
-      <circle cx="12" cy="12" r="2" />
-    </svg>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+      {children}
+    </div>
   );
 }
 
 export default function TeleologyPage() {
   const { language } = useBusinessLanguage();
   const { cogniInstance, isInitializing } = useCogniInstance();
+  const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
+
   const [status, setStatus] = useState<TeleologyStatus | null>(null);
+  const [graph, setGraph] = useState<GraphAnnotationsPayload | null>(null);
+  const [brainNodes, setBrainNodes] = useState<{ id: string; name: string; type: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [lensGoalId, setLensGoalId] = useState("");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [addRel, setAddRel] = useState<TeleologyRelationship>("serves");
+
+  const [recallQuery, setRecallQuery] = useState("");
+  const [recallMode, setRecallMode] = useState<"rerank" | "filter">("rerank");
+  const [recallResult, setRecallResult] = useState("");
+  const [showRecall, setShowRecall] = useState(false);
+
+  const [vocabOpen, setVocabOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TeleologyNode | null>(null);
-  const [editor, setEditor] = useState<{ mode: "create" | "edit"; node?: TeleologyNode; defaultType?: TeleologyNodeType } | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [deleteEdge, setDeleteEdge] = useState<GraphAnnotation | null>(null);
+  const [editor, setEditor] = useState<{
+    mode: "create" | "edit";
+    node?: TeleologyNode;
+    defaultType?: TeleologyNodeType;
+  } | null>(null);
 
-  const load = useCallback(async () => {
-    if (!cogniInstance) return;
+  const datasetId = selectedDataset?.id || datasets[0]?.id || "";
+
+  const refresh = useCallback(async () => {
+    if (!cogniInstance || !datasetId) {
+      setGraph(null);
+      setBrainNodes([]);
+      setLoading(false);
+      return;
+    }
+    setLoadError(null);
     try {
-      const data = await getTeleology(cogniInstance);
-      setStatus(data);
-      setError(null);
+      const yaml = await getTeleology(cogniInstance).catch(() => null);
+      if (yaml) setStatus(yaml);
+
+      const brain = await getBrainGraph(cogniInstance, datasetId).catch(() => null);
+      const entities = (brain?.nodes ?? [])
+        .filter((n) => {
+          const typ = String(n.type || "");
+          if (["Goal", "Purpose", "Constraint"].includes(typ)) return false;
+          if (["Document", "DocumentChunk", "TextSummary", "TextDocument", "PdfDocument"].includes(typ)) {
+            return false;
+          }
+          return Boolean(n.name || n.id);
+        })
+        .slice(0, 180)
+        .map((n) => ({
+          id: String(n.id),
+          name: String(n.name || n.id),
+          type: String(n.type || "Entity"),
+        }));
+      setBrainNodes(entities);
+
+      try {
+        const annotations = await getGraphAnnotations(cogniInstance, datasetId, { limit: 300 });
+        setGraph(annotations);
+        const goals = annotations.goals?.length
+          ? annotations.goals
+          : annotations.yaml_goals ?? [];
+        if (!lensGoalId && goals[0]?.id) setLensGoalId(goals[0].id);
+      } catch (annErr) {
+        const msg = annErr instanceof Error ? annErr.message : String(annErr);
+        setLoadError(msg);
+        setGraph(null);
+      }
     } catch (err) {
-      setError(t(language, "Failed to load teleology.", "加载目的论失败。"));
-      console.error(err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setLoadError(msg);
     } finally {
       setLoading(false);
     }
-  }, [cogniInstance, language]);
+  }, [cogniInstance, datasetId, lensGoalId]);
 
   useEffect(() => {
-    if (!cogniInstance || isInitializing) return;
-    load();
-  }, [cogniInstance, isInitializing, load]);
+    if (!cogniInstance || isInitializing || datasetsLoading) return;
+    if (!selectedDataset && datasets[0]) setSelectedDataset(datasets[0]);
+  }, [cogniInstance, isInitializing, datasetsLoading, datasets, selectedDataset, setSelectedDataset]);
+
+  useEffect(() => {
+    if (!cogniInstance || isInitializing || !datasetId) return;
+    setLoading(true);
+    refresh();
+  }, [cogniInstance, isInitializing, datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const goalOptions = useMemo(() => {
+    if (graph?.goals?.length) return graph.goals;
+    if (graph?.yaml_goals?.length) return graph.yaml_goals;
+    // Fall back to vocabulary from GET /teleology when annotations payload is empty.
+    return [
+      ...(status?.goals ?? []),
+      ...(status?.purposes ?? []),
+      ...(status?.constraints ?? []),
+    ].map((g) => ({
+      id: g.id,
+      name: g.name,
+      type: g.type || "Goal",
+      description: g.description || "",
+      status: g.status,
+    }));
+  }, [graph, status]);
+
+  const annotations = graph?.annotations ?? [];
+
+  const linkedIdsForLens = useMemo(() => {
+    if (!lensGoalId) return null;
+    const ids = new Set<string>([lensGoalId]);
+    for (const edge of annotations) {
+      if (edge.target_id === lensGoalId || edge.source_id === lensGoalId) {
+        ids.add(edge.source_id);
+        ids.add(edge.target_id);
+      }
+    }
+    return ids;
+  }, [annotations, lensGoalId]);
+
+  const graphNodes: PurposeGraphNode[] = useMemo(() => {
+    const byId = new Map<string, PurposeGraphNode>();
+
+    for (const g of goalOptions) {
+      byId.set(g.id, {
+        id: g.id,
+        name: g.name,
+        type: g.type || "Goal",
+        kind: "goal",
+        dimmed: linkedIdsForLens ? !linkedIdsForLens.has(g.id) : false,
+      });
+    }
+
+    for (const edge of annotations) {
+      if (!byId.has(edge.source_id)) {
+        byId.set(edge.source_id, {
+          id: edge.source_id,
+          name: edge.source_name,
+          type: edge.source_type,
+          kind: "entity",
+          dimmed: linkedIdsForLens ? !linkedIdsForLens.has(edge.source_id) : false,
+        });
+      }
+      if (!byId.has(edge.target_id)) {
+        const isGoal = ["Goal", "Purpose", "Constraint"].includes(edge.target_type);
+        byId.set(edge.target_id, {
+          id: edge.target_id,
+          name: edge.target_name,
+          type: edge.target_type,
+          kind: isGoal ? "goal" : "entity",
+          dimmed: linkedIdsForLens ? !linkedIdsForLens.has(edge.target_id) : false,
+        });
+      }
+    }
+
+    // Surrounding knowledge nodes so the canvas isn't empty before annotations exist.
+    for (const n of brainNodes) {
+      if (byId.has(n.id)) continue;
+      byId.set(n.id, {
+        id: n.id,
+        name: n.name,
+        type: n.type,
+        kind: "entity",
+        dimmed: linkedIdsForLens ? !linkedIdsForLens.has(n.id) : annotations.length > 0,
+      });
+    }
+
+    return Array.from(byId.values());
+  }, [goalOptions, annotations, brainNodes, linkedIdsForLens]);
+
+  const graphLinks: PurposeGraphLink[] = useMemo(
+    () =>
+      annotations.map((edge) => ({
+        source: edge.source_id,
+        target: edge.target_id,
+        relationship: edge.relationship,
+        color: relationshipColor(edge.relationship),
+      })),
+    [annotations],
+  );
+
+  const selectedNode = useMemo(
+    () => graphNodes.find((n) => n.id === selectedNodeId) || null,
+    [graphNodes, selectedNodeId],
+  );
+
+  const edgesForSelected = useMemo(() => {
+    if (!selectedNodeId) return [] as GraphAnnotation[];
+    return annotations.filter(
+      (e) => e.source_id === selectedNodeId || e.target_id === selectedNodeId,
+    );
+  }, [annotations, selectedNodeId]);
+
+  const yamlGoals = [
+    ...(status?.goals ?? []),
+    ...(status?.purposes ?? []),
+    ...(status?.constraints ?? []),
+  ];
+
+  async function handleSync() {
+    if (!cogniInstance || !datasetId) return;
+    setBusy(true);
+    try {
+      await syncTeleologyGoals(cogniInstance, datasetId);
+      await refresh();
+      notifications.show({
+        title: t(language, "Goals synced", "目标已同步"),
+        message: t(language, "Purpose nodes written into this dataset graph.", "目的节点已写入该数据集图谱。"),
+        color: "green",
+        autoClose: 3500,
+      });
+    } catch (err) {
+      notifications.show({
+        title: t(language, "Sync failed", "同步失败"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSyncFromCompanyTree() {
+    if (!cogniInstance || !datasetId) return;
+    setBusy(true);
+    try {
+      const result = await syncTeleologyFromCompanyTree(cogniInstance, datasetId);
+      await refresh();
+      if (result.message && result.tree_goals === 0) {
+        notifications.show({
+          title: t(language, "No company tree", "没有公司目标树"),
+          message: t(
+            language,
+            result.message,
+            "该数据集还没有公司目标树，请先导入/构建目标树。",
+          ),
+          color: "yellow",
+        });
+        return;
+      }
+      notifications.show({
+        title: t(language, "Teleology built from goal tree", "已从目标树生成目的论"),
+        message: t(
+          language,
+          `${result.tree_goals} goals · ${result.advances_created} advances · ${result.serves_created} serves`,
+          `${result.tree_goals} 个目标 · ${result.advances_created} 条 advances · ${result.serves_created} 条 serves`,
+        ),
+        color: "green",
+        autoClose: 4500,
+      });
+    } catch (err) {
+      notifications.show({
+        title: t(language, "Sync from tree failed", "从目标树同步失败"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAddAnnotation() {
+    if (!cogniInstance || !datasetId || !selectedNodeId || !lensGoalId) return;
+    if (selectedNode?.kind === "goal") {
+      notifications.show({
+        title: t(language, "Pick a knowledge node", "请选择知识节点"),
+        message: t(language, "Purpose edges go from knowledge → goal.", "目的边应从知识节点指向目标。"),
+        color: "yellow",
+      });
+      return;
+    }
+    setBusy(true);
+    try {
+      await createGraphAnnotation(cogniInstance, {
+        datasetId,
+        sourceId: selectedNodeId,
+        targetId: lensGoalId,
+        relationship: addRel,
+      });
+      await refresh();
+    } catch (err) {
+      notifications.show({
+        title: t(language, "Annotate failed", "标注失败"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteEdge() {
+    const edge = deleteEdge;
+    if (!cogniInstance || !datasetId || !edge) return;
+    setBusy(true);
+    try {
+      await deleteGraphAnnotation(cogniInstance, {
+        datasetId,
+        sourceId: edge.source_id,
+        targetId: edge.target_id,
+        relationship: edge.relationship,
+      });
+      setDeleteEdge(null);
+      await refresh();
+    } catch (err) {
+      notifications.show({
+        title: t(language, "Remove failed", "移除失败"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRecall() {
+    if (!cogniInstance || !recallQuery.trim() || !lensGoalId) return;
+    setBusy(true);
+    setRecallResult("");
+    try {
+      const data = await recallKnowledge(cogniInstance, {
+        query: recallQuery.trim(),
+        scope: "graph",
+        datasetIds: datasetId ? [datasetId] : undefined,
+        goalId: lensGoalId,
+        goalFilterMode: recallMode,
+        searchType: "HYBRID_COMPLETION",
+      });
+      const items = Array.isArray(data) ? data : [];
+      const text = items
+        .map((item) => {
+          if (typeof item === "string") return item;
+          if (item && typeof item === "object") {
+            const row = item as Record<string, unknown>;
+            const searchResult = row.search_result ?? row.text ?? row.content ?? row;
+            return typeof searchResult === "string" ? searchResult : JSON.stringify(searchResult);
+          }
+          return String(item);
+        })
+        .join("\n\n---\n\n");
+      setRecallResult(text || t(language, "(no results)", "（无结果）"));
+    } catch (err) {
+      setRecallResult(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleSave(input: TeleologyNodeInput) {
     if (!cogniInstance || !editor) return;
-    try {
-      const data =
-        editor.mode === "edit" && editor.node
-          ? await updateTeleologyNode(cogniInstance, editor.node.id, input)
-          : await createTeleologyNode(cogniInstance, input);
-      setStatus(data);
-      setEditor(null);
-      notifications.show({
-        title: t(language, "Saved", "已保存"),
-        message: t(language, `"${input.name}" is active for cognify.`, `「${input.name}」已生效，将在 cognify 时标注。`),
-        color: "green",
-        autoClose: 4000,
-      });
-    } catch (err) {
-      notifications.show({
-        title: t(language, "Save failed", "保存失败"),
-        message: err instanceof Error ? err.message : String(err),
-        color: "red",
-      });
-      throw err;
+    const data =
+      editor.mode === "edit" && editor.node
+        ? await updateTeleologyNode(cogniInstance, editor.node.id, input)
+        : await createTeleologyNode(cogniInstance, input);
+    setStatus(data);
+    setEditor(null);
+    if (datasetId) {
+      await syncTeleologyGoals(cogniInstance, datasetId);
+      await refresh();
     }
   }
 
-  async function handleDelete() {
-    if (!cogniInstance || !deleteTarget) return;
+  async function handleDeleteNode() {
+    const target = deleteTarget;
+    if (!cogniInstance || !target) return;
     setBusy(true);
     try {
-      const data = await deleteTeleologyNode(
-        cogniInstance,
-        deleteTarget.id,
-        deleteTarget.type as TeleologyNodeType,
-      );
-      setStatus(data);
+      const data = await deleteTeleologyNode(cogniInstance, target.id, target.type as TeleologyNodeType);
+      setStatus({
+        ...data,
+        goals: data.goals ?? [],
+        purposes: data.purposes ?? [],
+        constraints: data.constraints ?? [],
+      });
       setDeleteTarget(null);
-      notifications.show({
-        title: t(language, "Deleted", "已删除"),
-        message: t(language, `"${deleteTarget.name}" removed.`, `「${deleteTarget.name}」已删除。`),
-        color: "green",
-        autoClose: 4000,
-      });
-    } catch (err) {
-      notifications.show({
-        title: t(language, "Delete failed", "删除失败"),
-        message: err instanceof Error ? err.message : String(err),
-        color: "red",
-      });
+      await refresh();
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleUpload(file: File) {
-    if (!cogniInstance) return;
-    setBusy(true);
-    try {
-      const data = await uploadTeleology(cogniInstance, file);
-      setStatus(data);
-      notifications.show({
-        title: t(language, "YAML imported", "YAML 已导入"),
-        message: t(language, "Replaced current teleology configuration.", "已替换当前目的论配置。"),
-        color: "green",
-        autoClose: 4000,
-      });
-    } catch (err) {
-      notifications.show({
-        title: t(language, "Upload failed", "上传失败"),
-        message: err instanceof Error ? err.message : String(err),
-        color: "red",
-      });
-    } finally {
-      setBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  }
-
-  async function handleSample() {
-    if (!cogniInstance) return;
-    setBusy(true);
-    try {
-      const data = await loadSampleTeleology(cogniInstance);
-      setStatus(data);
-      notifications.show({
-        title: t(language, "Sample loaded", "已加载示例"),
-        message: t(language, "Sample goals are now active.", "示例目标已激活。"),
-        color: "green",
-        autoClose: 4000,
-      });
-    } catch (err) {
-      notifications.show({
-        title: t(language, "Failed", "失败"),
-        message: err instanceof Error ? err.message : String(err),
-        color: "red",
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleClear() {
-    if (!cogniInstance) return;
-    setBusy(true);
-    try {
-      const data = await clearTeleology(cogniInstance);
-      setStatus(data);
-      setConfirmClear(false);
-      notifications.show({
-        title: t(language, "Teleology cleared", "目的论已清除"),
-        message: t(language, "Goal annotations are disabled until you add goals again.", "重新添加目标前不会再做标注。"),
-        color: "green",
-        autoClose: 4000,
-      });
-    } catch (err) {
-      notifications.show({
-        title: t(language, "Clear failed", "清除失败"),
-        message: err instanceof Error ? err.message : String(err),
-        color: "red",
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (loading || isInitializing) {
+  if (loading || isInitializing || datasetsLoading) {
     return (
-      <>
+      <Shell>
         <TrackPageView page="Teleology" />
         <PageLoading name={t(language, "Teleology", "目的论")} />
-      </>
+      </Shell>
     );
   }
 
-  const hasNodes =
-    (status?.goals.length ?? 0) + (status?.purposes.length ?? 0) + (status?.constraints.length ?? 0) > 0;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+    <Shell>
       <TrackPageView page="Teleology" />
 
-      <div style={{ padding: "24px 32px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0, gap: 12 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>
-            {t(language, "Teleology", "目的论")}
-          </h1>
-          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>
-            {t(
-              language,
-              "Add goals and constraints in the form — no YAML required. Ontology stays in Brain.",
-              "用表单添加目标与约束，不必写 YAML。本体仍在脑库里管理。",
-            )}
-          </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".yaml,.yml"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleUpload(f);
-            }}
-          />
-          <button
-            onClick={() => setEditor({ mode: "create", defaultType: "goal" })}
-            disabled={busy}
-            className="cursor-pointer"
-            style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            {t(language, "New goal", "新建目标")}
-          </button>
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={busy}
-            className="cursor-pointer hover:bg-white/10"
-            style={{ background: "rgba(255,255,255,0.06)", color: "rgba(237,236,234,0.7)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}
-            title={t(language, "Import YAML", "导入 YAML")}
-          >
-            {t(language, "Import YAML", "导入 YAML")}
-          </button>
-          {hasNodes && (
+      {/* Header + purpose lens */}
+      <div
+        style={{
+          padding: "20px 28px 14px",
+          flexShrink: 0,
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#EDECEA" }}>
+              {t(language, "Teleology", "目的论")}
+            </div>
+            <div style={{ fontSize: 13, color: "rgba(237,236,234,0.5)", marginTop: 4 }}>
+              {t(language, "Pick a purpose — the graph lights up.", "选一个目的，图谱亮起来。")}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <button
-              onClick={() => setConfirmClear(true)}
-              disabled={busy}
-              className="cursor-pointer hover:bg-red-500/10"
-              style={{ background: "rgba(255,255,255,0.06)", color: "#EF4444", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}
+              type="button"
+              style={btn(true)}
+              disabled={busy || !datasetId}
+              onClick={handleSyncFromCompanyTree}
+              title={t(
+                language,
+                "Derive purpose edges from the company goal tree / mindmap on this dataset.",
+                "从本数据集的公司目标树/脑图自动生成目的边。",
+              )}
             >
-              {t(language, "Clear all", "全部清除")}
+              {t(language, "From goal tree", "从目标树同步")}
             </button>
-          )}
-        </div>
-      </div>
-
-      {error ? (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", paddingInline: 32, paddingBottom: 32 }}>
-          <div style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 48 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#F87171" }}>{error}</span>
-            <button onClick={() => { setLoading(true); void load(); }} className="cursor-pointer" style={{ background: "rgba(255,255,255,0.06)", color: "#EDECEA", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "8px 20px", fontSize: 14, marginTop: 8 }}>
-              {t(language, "Retry", "重试")}
+            <button type="button" style={btn(false)} disabled={busy || !datasetId} onClick={handleSync}>
+              {t(language, "Sync YAML goals", "同步 YAML 目标")}
+            </button>
+            <button type="button" style={btn(false)} onClick={() => setVocabOpen(true)}>
+              {t(language, "Manage goals", "管理目标")}
             </button>
           </div>
         </div>
-      ) : hasNodes && status ? (
-        <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "0 32px 32px", display: "flex", flexDirection: "column", gap: 16 }}>
-          <Section
-            title={t(language, "Goals", "目标")}
-            count={status.goals.length}
-            onAdd={() => setEditor({ mode: "create", defaultType: "goal" })}
-            addLabel={t(language, "Add goal", "添加目标")}
+
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          <label style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", fontWeight: 600 }}>
+            {t(language, "Dataset", "数据集")}
+          </label>
+          <select
+            style={{ ...selectStyle, width: "auto", minWidth: 160 }}
+            value={datasetId}
+            onChange={(e) => {
+              const next = datasets.find((d) => d.id === e.target.value) || null;
+              setSelectedDataset(next);
+              setSelectedNodeId(null);
+              setLensGoalId("");
+            }}
           >
-            <NodeTable
-              emptyLabel={t(language, "No goals yet — click Add goal.", "暂无目标，点击添加。")}
-              nodes={status.goals}
-              language={language}
-              onEdit={(node) => setEditor({ mode: "edit", node })}
-              onDelete={setDeleteTarget}
-            />
-          </Section>
-          <Section
-            title={t(language, "Constraints", "约束")}
-            count={status.constraints.length}
-            onAdd={() => setEditor({ mode: "create", defaultType: "constraint" })}
-            addLabel={t(language, "Add constraint", "添加约束")}
+            {datasets.length === 0 ? (
+              <option style={optionStyle} value="">{t(language, "No datasets", "暂无数据集")}</option>
+            ) : (
+              datasets.map((d) => (
+                <option style={optionStyle} key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))
+            )}
+          </select>
+
+          <span style={{ width: 1, height: 22, background: "rgba(255,255,255,0.1)" }} />
+
+          <label style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", fontWeight: 600 }}>
+            {t(language, "Current purpose", "当前目的")}
+          </label>
+          <select
+            style={{ ...selectStyle, width: "auto", minWidth: 200 }}
+            value={lensGoalId}
+            onChange={(e) => setLensGoalId(e.target.value)}
           >
-            <NodeTable
-              emptyLabel={t(language, "No constraints yet.", "暂无约束。")}
-              nodes={status.constraints}
-              language={language}
-              onEdit={(node) => setEditor({ mode: "edit", node })}
-              onDelete={setDeleteTarget}
-            />
-          </Section>
-          {(status.purposes.length > 0) && (
-            <Section
-              title={t(language, "Purposes", "目的")}
-              count={status.purposes.length}
-              onAdd={() => setEditor({ mode: "create", defaultType: "purpose" })}
-              addLabel={t(language, "Add purpose", "添加目的")}
-            >
-              <NodeTable
-                emptyLabel=""
-                nodes={status.purposes}
-                language={language}
-                onEdit={(node) => setEditor({ mode: "edit", node })}
-                onDelete={setDeleteTarget}
-              />
-            </Section>
-          )}
+            <option style={optionStyle} value="">{t(language, "All purposes", "全部目的")}</option>
+            {goalOptions.map((g) => (
+              <option style={optionStyle} key={g.id} value={g.id}>
+                {g.cpd_kind === "goal"
+                  ? `CPD · ${g.name}`
+                  : g.name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            style={btn(true)}
+            disabled={!lensGoalId}
+            onClick={() => setShowRecall((v) => !v)}
+          >
+            {t(language, "Recall with this purpose", "用此目的召回")}
+          </button>
+
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto", alignItems: "center" }}>
+            {(Object.keys(REL_COLOR) as TeleologyRelationship[]).map((rel) => (
+              <span key={rel} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "rgba(237,236,234,0.55)" }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: REL_COLOR[rel] }} />
+                {rel}
+              </span>
+            ))}
+          </div>
         </div>
-      ) : (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", paddingInline: 32, paddingBottom: 32 }}>
-          <div style={{ flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 48 }}>
-            <div style={{ width: 56, height: 56, background: "rgba(188,155,255,0.20)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <GoalIcon />
-            </div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>
-              {t(language, "No goals yet", "还没有目标")}
-            </span>
-            <p style={{ fontSize: 14, color: "rgba(237,236,234,0.35)", margin: 0, maxWidth: 420, textAlign: "center" }}>
+
+        {loadError ? (
+          <div
+            style={{
+              padding: "10px 12px",
+              borderRadius: 8,
+              background: "rgba(248,113,113,0.12)",
+              border: "1px solid rgba(248,113,113,0.35)",
+              color: "#FECACA",
+              fontSize: 13,
+            }}
+          >
+            {t(language, "Graph load failed", "图谱加载失败")}: {loadError}
+            {/not found|404/i.test(loadError)
+              ? t(
+                  language,
+                  " — the annotations API returned 404. If /teleology works but /annotations does not, restart the cognee container. If it says dataset not found, pick another dataset.",
+                  " — 标注接口返回了 404。若 /teleology 正常而 /annotations 没有，请重启 cognee 容器；若是数据集不存在，请换一个已 cognify 的数据集。",
+                )
+              : null}
+          </div>
+        ) : null}
+
+        {showRecall ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto auto auto",
+              gap: 8,
+              alignItems: "center",
+            }}
+          >
+            <input
+              style={inputStyle}
+              value={recallQuery}
+              placeholder={t(language, "Ask a question…", "输入问题…")}
+              onChange={(e) => setRecallQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRecall();
+              }}
+            />
+            <select
+              style={{ ...selectStyle, width: "auto" }}
+              value={recallMode}
+              onChange={(e) => setRecallMode(e.target.value as "rerank" | "filter")}
+            >
+              <option style={optionStyle} value="rerank">rerank</option>
+              <option style={optionStyle} value="filter">filter</option>
+            </select>
+            <button type="button" style={btn(true)} disabled={busy || !recallQuery.trim()} onClick={handleRecall}>
+              {t(language, "Recall", "召回")}
+            </button>
+            <button type="button" style={btn(false)} onClick={() => setShowRecall(false)}>
+              {t(language, "Close", "关闭")}
+            </button>
+            {recallResult ? (
+              <pre
+                style={{
+                  gridColumn: "1 / -1",
+                  margin: 0,
+                  maxHeight: 160,
+                  overflow: "auto",
+                  padding: 12,
+                  borderRadius: 8,
+                  background: "rgba(0,0,0,0.35)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  color: "rgba(237,236,234,0.85)",
+                  fontSize: 12,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {recallResult}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Graph + inspector */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+          {graphNodes.length === 0 ? (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "rgba(237,236,234,0.4)",
+                fontSize: 14,
+                padding: 24,
+                textAlign: "center",
+              }}
+            >
               {t(
                 language,
-                "Create a goal in the form, or load the sample to try it out.",
-                "用表单新建一个目标，或加载示例先体验一下。",
+                "No graph yet — cognify a dataset, sync goals, then annotate.",
+                "还没有图谱 — 先 cognify 数据集，同步目标，再标注。",
               )}
-            </p>
-            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", justifyContent: "center" }}>
+            </div>
+          ) : (
+            <PurposeLensGraph
+              nodes={graphNodes}
+              links={graphLinks}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={(n) => setSelectedNodeId(n?.id ?? null)}
+            />
+          )}
+        </div>
+
+        <aside
+          style={{
+            width: 320,
+            flexShrink: 0,
+            borderLeft: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(0,0,0,0.25)",
+            padding: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            overflow: "auto",
+          }}
+        >
+          {!selectedNode ? (
+            <div style={{ color: "rgba(237,236,234,0.4)", fontSize: 13, lineHeight: 1.5 }}>
+              {t(
+                language,
+                "Click a node to inspect what it is for.",
+                "点击节点，查看它为了什么。",
+              )}
+            </div>
+          ) : (
+            <>
+              <div>
+                <div style={{ fontSize: 11, color: "rgba(237,236,234,0.45)", fontWeight: 700, letterSpacing: 0.3 }}>
+                  {selectedNode.kind === "goal"
+                    ? t(language, "PURPOSE", "目的")
+                    : t(language, "KNOWLEDGE", "知识")}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA", marginTop: 4 }}>
+                  {selectedNode.name}
+                </div>
+                <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", marginTop: 2 }}>
+                  {selectedNode.type}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(237,236,234,0.55)", marginBottom: 8 }}>
+                  {selectedNode.kind === "goal"
+                    ? t(language, "What serves it", "谁在服务它")
+                    : t(language, "What it is for", "它为了什么")}
+                </div>
+                {edgesForSelected.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>
+                    {t(language, "No purpose edges yet.", "还没有目的边。")}
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {edgesForSelected.map((edge) => {
+                      const outbound = edge.source_id === selectedNodeId;
+                      const other = outbound ? edge.target_name : edge.source_name;
+                      return (
+                        <div
+                          key={`${edge.source_id}:${edge.relationship}:${edge.target_id}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "8px 10px",
+                            borderRadius: 8,
+                            background: "rgba(255,255,255,0.04)",
+                            border: "1px solid rgba(255,255,255,0.06)",
+                            fontSize: 12,
+                            color: "#EDECEA",
+                          }}
+                        >
+                          <span style={{ color: REL_COLOR[edge.relationship] || "#BC9BFF", fontWeight: 700 }}>
+                            {outbound ? edge.relationship : `← ${edge.relationship}`}
+                          </span>
+                          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {other}
+                          </span>
+                          <button type="button" style={{ ...btn(false), padding: "4px 8px", fontSize: 11 }} onClick={() => setDeleteEdge(edge)}>
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {selectedNode.kind !== "goal" ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(237,236,234,0.55)" }}>
+                    {t(language, "Add purpose edge", "添加目的边")}
+                  </div>
+                  <select
+                    style={selectStyle}
+                    value={lensGoalId}
+                    onChange={(e) => setLensGoalId(e.target.value)}
+                  >
+                    <option style={optionStyle} value="">{t(language, "Select goal…", "选择目标…")}</option>
+                    {goalOptions.map((g) => (
+                      <option style={optionStyle} key={g.id} value={g.id}>
+                        {g.cpd_kind === "goal" ? `CPD · ${g.name}` : g.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    style={selectStyle}
+                    value={addRel}
+                    onChange={(e) => setAddRel(e.target.value as TeleologyRelationship)}
+                  >
+                    {(Object.keys(REL_ZH) as TeleologyRelationship[]).map((rel) => (
+                      <option style={optionStyle} key={rel} value={rel}>
+                        {rel} — {REL_ZH[rel]}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    style={btn(true)}
+                    disabled={busy || !lensGoalId}
+                    onClick={handleAddAnnotation}
+                  >
+                    {t(language, "Annotate", "标注")}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </aside>
+      </div>
+
+      {/* Vocabulary drawer */}
+      {vocabOpen ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            zIndex: 40,
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+          onClick={() => setVocabOpen(false)}
+        >
+          <div
+            style={{
+              width: 400,
+              maxWidth: "100%",
+              height: "100%",
+              background: "#141416",
+              borderLeft: "1px solid rgba(255,255,255,0.08)",
+              padding: 20,
+              overflow: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>
+                {t(language, "Purpose vocabulary", "目的词汇表")}
+              </div>
+              <button type="button" style={btn(false)} onClick={() => setVocabOpen(false)}>
+                {t(language, "Close", "关闭")}
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
               <button
+                type="button"
+                style={btn(true)}
                 onClick={() => setEditor({ mode: "create", defaultType: "goal" })}
-                disabled={busy}
-                className="hover:bg-[#5A0ED6] cursor-pointer"
-                style={{ background: "#6510F4", color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", fontSize: 14, fontWeight: 500 }}
               >
                 {t(language, "New goal", "新建目标")}
               </button>
               <button
-                onClick={() => void handleSample()}
-                disabled={busy}
-                className="cursor-pointer hover:bg-white/10"
-                style={{ background: "rgba(255,255,255,0.06)", color: "#EDECEA", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "8px 20px", fontSize: 14, fontWeight: 500 }}
+                type="button"
+                style={btn(false)}
+                disabled={busy || !cogniInstance}
+                onClick={async () => {
+                  if (!cogniInstance) return;
+                  setBusy(true);
+                  try {
+                    const data = await loadSampleTeleology(cogniInstance);
+                    setStatus(data);
+                    if (datasetId) {
+                      await syncTeleologyGoals(cogniInstance, datasetId);
+                      await refresh();
+                    }
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
               >
-                {t(language, "Load sample", "加载示例")}
+                {t(language, "Sample", "示例")}
               </button>
             </div>
+            {yamlGoals.length === 0 ? (
+              <div style={{ fontSize: 13, color: "rgba(237,236,234,0.4)" }}>
+                {t(language, "No goals yet.", "还没有目标。")}
+              </div>
+            ) : (
+              yamlGoals.map((node) => (
+                <div
+                  key={node.id}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    padding: 10,
+                    borderRadius: 8,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 650, color: "#EDECEA" }}>{node.name}</div>
+                    <div style={{ fontSize: 11, color: "rgba(237,236,234,0.45)" }}>{node.type}</div>
+                  </div>
+                  <button type="button" style={btn(false)} onClick={() => setEditor({ mode: "edit", node })}>
+                    {t(language, "Edit", "编辑")}
+                  </button>
+                  <button type="button" style={btn(false)} onClick={() => setDeleteTarget(node)}>
+                    {t(language, "Delete", "删除")}
+                  </button>
+                </div>
+              ))
+            )}
+            {yamlGoals.length > 0 ? (
+              <button type="button" style={{ ...btn(false), alignSelf: "flex-start" }} onClick={() => setConfirmClear(true)}>
+                {t(language, "Clear vocabulary", "清空词汇表")}
+              </button>
+            ) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
-      {editor && (
+      {editor ? (
         <TeleologyNodeModal
-          initial={editor.mode === "edit" ? editor.node : null}
-          defaultType={editor.defaultType || "goal"}
+          initial={editor.node}
+          defaultType={editor.defaultType}
           onClose={() => setEditor(null)}
           onSubmit={handleSave}
         />
-      )}
+      ) : null}
 
-      {deleteTarget && (
-        <DeleteConfirmModal
-          title={t(language, "Delete item", "删除条目")}
-          message={
-            language === "zh"
-              ? <>确定删除 <strong>{deleteTarget.name}</strong> 吗？</>
-              : <>Delete <strong>{deleteTarget.name}</strong>?</>
+      <DeleteConfirmModal
+        opened={!!deleteTarget}
+        title={t(language, "Delete goal?", "删除目标？")}
+        message={deleteTarget ? deleteTarget.name : ""}
+        onConfirm={handleDeleteNode}
+        onCancel={() => setDeleteTarget(null)}
+        busy={busy}
+      />
+      <DeleteConfirmModal
+        opened={!!deleteEdge}
+        title={t(language, "Remove annotation?", "移除标注？")}
+        message={
+          deleteEdge
+            ? `${deleteEdge.source_name} —${deleteEdge.relationship}→ ${deleteEdge.target_name}`
+            : ""
+        }
+        onConfirm={handleDeleteEdge}
+        onCancel={() => setDeleteEdge(null)}
+        busy={busy}
+      />
+      <DeleteConfirmModal
+        opened={confirmClear}
+        title={t(language, "Clear vocabulary?", "清空词汇表？")}
+        message={t(language, "Deletes the teleology YAML. Graph edges are kept.", "删除目的论 YAML，图谱边仍保留。")}
+        onConfirm={async () => {
+          if (!cogniInstance) return;
+          setBusy(true);
+          try {
+            const data = await clearTeleology(cogniInstance);
+            setStatus({
+              ...data,
+              goals: data.goals ?? [],
+              purposes: data.purposes ?? [],
+              constraints: data.constraints ?? [],
+            });
+            setConfirmClear(false);
+          } finally {
+            setBusy(false);
           }
-          onConfirm={handleDelete}
-          onCancel={() => setDeleteTarget(null)}
-          busy={busy}
-        />
-      )}
-
-      {confirmClear && (
-        <DeleteConfirmModal
-          title={t(language, "Clear teleology", "清除目的论")}
-          message={
-            language === "zh"
-              ? <>确定清除全部目标与约束吗？之后 cognify 将不再做目标标注。</>
-              : <>Clear all goals and constraints? Cognify will stop annotating until you add goals again.</>
-          }
-          onConfirm={handleClear}
-          onCancel={() => setConfirmClear(false)}
-          busy={busy}
-        />
-      )}
-    </div>
-  );
-}
-
-function Section({
-  title,
-  count,
-  children,
-  onAdd,
-  addLabel,
-}: {
-  title: string;
-  count: number;
-  children: ReactNode;
-  onAdd?: () => void;
-  addLabel?: string;
-}) {
-  return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, background: "rgba(0,0,0,0.82)", overflow: "hidden" }}>
-      <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: "#EDECEA" }}>{title}</span>
-        <span style={{ fontSize: 12, color: "rgba(237,236,234,0.35)" }}>{count}</span>
-        {onAdd && (
-          <button
-            onClick={onAdd}
-            className="cursor-pointer hover:bg-white/10"
-            style={{ marginLeft: "auto", background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "#BC9BFF" }}
-          >
-            + {addLabel}
-          </button>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function NodeTable({
-  emptyLabel,
-  nodes,
-  language,
-  onEdit,
-  onDelete,
-}: {
-  emptyLabel: string;
-  nodes: TeleologyNode[];
-  language: "zh" | "en";
-  onEdit: (node: TeleologyNode) => void;
-  onDelete: (node: TeleologyNode) => void;
-}) {
-  if (nodes.length === 0) {
-    return (
-      <div style={{ padding: "20px 24px", color: "rgba(237,236,234,0.35)", fontSize: 13 }}>
-        {emptyLabel}
-      </div>
-    );
-  }
-  return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      {nodes.map((node, i) => (
-        <div
-          key={node.id}
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 16,
-            padding: "14px 20px",
-            borderBottom: i < nodes.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "#EDECEA" }}>{node.name}</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: STATUS_COLOR[node.status] || "rgba(237,236,234,0.55)" }}>
-                {language === "zh" ? (STATUS_ZH[node.status] || node.status) : node.status}
-              </span>
-            </div>
-            {node.description && (
-              <div style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", marginTop: 4, lineHeight: 1.45 }}>
-                {node.description}
-              </div>
-            )}
-            {node.keywords?.length > 0 && (
-              <div style={{ fontSize: 11, color: "rgba(237,236,234,0.3)", marginTop: 6 }}>
-                {node.keywords.join(" · ")}
-              </div>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-            <button
-              onClick={() => onEdit(node)}
-              className="cursor-pointer hover:bg-white/10"
-              style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "6px 10px", fontSize: 12, color: "rgba(237,236,234,0.7)" }}
-            >
-              {t(language, "Edit", "编辑")}
-            </button>
-            <button
-              onClick={() => onDelete(node)}
-              className="cursor-pointer hover:bg-red-500/10"
-              style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "6px 10px", fontSize: 12, color: "#EF4444" }}
-            >
-              {t(language, "Delete", "删除")}
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
+        }}
+        onCancel={() => setConfirmClear(false)}
+        busy={busy}
+      />
+    </Shell>
   );
 }

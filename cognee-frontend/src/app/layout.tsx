@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import "tailwindcss";
 import "@mantine/core/styles.css";
@@ -12,15 +13,8 @@ import QueryProvider from "@/modules/query/QueryProvider";
 import RuntimeConfigScript from "@/modules/config/RuntimeConfigScript";
 import { BusinessLanguageProvider } from "@/modules/business/BusinessLanguageContext";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+// Local Geist files (via the `geist` package) — no Google Fonts fetch at
+// build time, so Docker builds work offline / behind a firewall.
 
 // RuntimeConfigScript below reads COGNEE_BACKEND_URL at render time. Without
 // this, the pages that Next can prerender would bake the value in at build
@@ -43,7 +37,7 @@ export default function RootLayout({
         <RuntimeConfigScript />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
+        className={`${GeistSans.variable} ${GeistMono.variable} antialiased h-full`}
       >
         <QueryProvider>
           <MantineProvider theme={theme}>

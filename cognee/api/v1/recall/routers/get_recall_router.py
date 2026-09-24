@@ -81,6 +81,15 @@ class RecallPayloadDTO(InDTO):
         default=False,
         description="Include source/provenance references in completion results.",
     )
+    goal_id: Optional[UUID] = Field(
+        default=None,
+        description="Goal UUID used to rerank or filter results by teleology edges.",
+    )
+    goal_filter_mode: str = Field(
+        default="rerank",
+        pattern="^(rerank|filter)$",
+        description="Promote goal-related results or return only those results.",
+    )
     session_id: Optional[str] = Field(
         default=None,
         examples=[None],
@@ -226,6 +235,9 @@ def get_recall_router() -> APIRouter:
         - **verbose** (bool): Verbose output
         - **include_references** (bool): Include source/provenance references in
           completion results (default: true)
+        - **goal_id** (Optional[UUID]): Goal UUID used to rerank or filter by
+          teleology edges (serves / advances / blocks)
+        - **goal_filter_mode** (str): "rerank" (default) or "filter"
         - **stream** (Optional[bool]): Stream the answer as server-sent events
           (`text/event-stream`). Defaults to content negotiation on `Accept`.
         - **session_id** (Optional[str]): Session whose cached QA and trace entries
@@ -297,6 +309,8 @@ def get_recall_router() -> APIRouter:
                 tool_connections=payload.tool_connections,
                 tools_trigger=payload.tools_trigger,
                 code_query=payload.code_query,
+                goal_id=payload.goal_id,
+                goal_filter_mode=payload.goal_filter_mode,
             )
 
         streaming = wants_event_stream(request.headers.get("accept"), payload.stream)
