@@ -43,14 +43,12 @@ function DatabaseIcon({ active }: { active: boolean }) {
   );
 }
 
-function OntologyIcon({ active }: { active: boolean }) {
+function TeleologyIcon({ active }: { active: boolean }) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={active ? "#BC9BFF" : "rgba(255,255,255,0.5)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-      <path d="M8 7h8" />
-      <path d="M8 11h6" />
-      <path d="M8 15h4" />
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
     </svg>
   );
 }
@@ -122,6 +120,7 @@ const POD_DEPENDENT_LINKS = new Set([
   "/search",
   "/skills",
   "/knowledge-graph",
+  "/teleology",
 ]);
 
 interface NavItem {
@@ -142,7 +141,7 @@ const NAV_SECTIONS: NavSection[] = [
       { text: "Overview", link: "/dashboard", icon: HouseIcon },
       { text: "Sessions", link: "/sessions", icon: SessionsIcon },
       { text: "Brain", link: "/datasets", icon: DatabaseIcon },
-      { text: "Ontologies", link: "/ontologies", icon: OntologyIcon },
+      { text: "Teleology", link: "/teleology", icon: TeleologyIcon },
     ],
   },
   {
@@ -165,7 +164,7 @@ const NAV_SECTIONS: NavSection[] = [
 
 const ZH_NAV_LABELS: Record<string, string> = {
   DATA: "数据", EXPLORE: "探索", CONNECT: "连接",
-  Overview: "总览", Sessions: "会话", Brain: "脑库",
+  Overview: "总览", Sessions: "会话", Brain: "脑库", Teleology: "目的论",
   Search: "搜索", Skills: "技能", Mindmap: "脑图",
   Integrations: "集成", "MCP Access": "MCP 接入", "API Keys": "API 密钥",
   "Expand sidebar": "展开侧栏", "Collapse sidebar": "收起侧栏",

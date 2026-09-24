@@ -25,6 +25,7 @@ from cognee.api.v1.datasets.routers import get_company_tree_router, get_datasets
 from cognee.api.v1.cognify.routers import get_cognify_router
 from cognee.api.v1.search.routers import get_search_router
 from cognee.api.v1.ontologies.routers.get_ontology_router import get_ontology_router
+from cognee.api.v1.teleology.routers.get_teleology_router import get_teleology_router
 from cognee.api.v1.memify.routers import get_memify_router
 from cognee.api.v1.add.routers import get_add_router
 from cognee.api.v1.delete.routers import get_delete_router
@@ -276,6 +277,8 @@ app.include_router(get_datasets_router(), prefix="/api/v1/datasets", tags=["data
 app.include_router(get_company_tree_router(), prefix="/api/v1/datasets", tags=["datasets"])
 
 app.include_router(get_ontology_router(), prefix="/api/v1/ontologies", tags=["ontologies"])
+
+app.include_router(get_teleology_router(), prefix="/api/v1/teleology", tags=["teleology"])
 
 app.include_router(get_settings_router(), prefix="/api/v1/settings", tags=["settings"])
 

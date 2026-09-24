@@ -1,7 +1,6 @@
-export const dynamic = "force-dynamic";
+import { redirect } from "next/navigation";
 
-import OntologiesPage from "./OntologiesPage";
-
-export default function Page() {
-  return <OntologiesPage />;
+/** Ontology management lives on the Brain dataset page; sidebar now opens Teleology. */
+export default function OntologiesRedirect() {
+  redirect("/teleology");
 }

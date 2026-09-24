@@ -22,8 +22,8 @@ from cognee.modules.observability import (
     COGNEE_SEARCH_TYPE,
     new_span,
 )
-from cognee.modules.search.methods.get_retriever_output import get_retriever_output
 from cognee.modules.retrieval.context_preview import SharedSessionHistory
+from cognee.modules.search.methods.get_retriever_output import get_retriever_output
 from cognee.modules.search.models.SearchResultPayload import SearchResultPayload
 from cognee.modules.search.operations import log_search_history
 from cognee.modules.search.types import (
@@ -76,6 +76,8 @@ async def search(
     include_references: bool = False,
     llm_config: Optional[LLMConfig] = None,
     embedding_config: Optional[EmbeddingConfig] = None,
+    goal_id: Optional[UUID] = None,
+    goal_filter_mode: str = "rerank",
 ) -> List[SearchResult]:
     """
 
@@ -134,6 +136,8 @@ async def search(
             include_references=include_references,
             llm_config=llm_config,
             embedding_config=embedding_config,
+            goal_id=goal_id,
+            goal_filter_mode=goal_filter_mode,
         )
 
         span.set_attribute("cognee.search.result_count", len(search_results))
@@ -179,6 +183,8 @@ async def authorized_search(
     include_references: bool = False,
     llm_config: Optional[LLMConfig] = None,
     embedding_config: Optional[EmbeddingConfig] = None,
+    goal_id: Optional[UUID] = None,
+    goal_filter_mode: str = "rerank",
 ) -> List[SearchResultPayload]:
     """
     Verifies access for provided datasets or uses all datasets user has read access for and performs search per dataset.
@@ -213,6 +219,8 @@ async def authorized_search(
         include_references=include_references,
         llm_config=llm_config,
         embedding_config=embedding_config,
+        goal_id=goal_id,
+        goal_filter_mode=goal_filter_mode,
     )
 
     return search_results
@@ -241,6 +249,8 @@ async def search_in_datasets_context(
     include_references: bool = False,
     llm_config: Optional[LLMConfig] = None,
     embedding_config: Optional[EmbeddingConfig] = None,
+    goal_id: Optional[UUID] = None,
+    goal_filter_mode: str = "rerank",
 ) -> List[Tuple[Any, Union[str, List[Edge]], List[Dataset]]]:
     """
     Searches all provided datasets and handles setting up of appropriate database context based on permissions.
@@ -322,6 +332,8 @@ async def search_in_datasets_context(
                     neighborhood_depth=neighborhood_depth,
                     neighborhood_seed_top_k=neighborhood_seed_top_k,
                     include_references=include_references,
+                    goal_id=goal_id,
+                    goal_filter_mode=goal_filter_mode,
                 )
 
     async def _report_code_seed_miss(dataset_search, dataset: Dataset) -> SearchResultPayload:
@@ -409,6 +421,8 @@ async def search_in_datasets_context(
             neighborhood_depth=neighborhood_depth,
             neighborhood_seed_top_k=neighborhood_seed_top_k,
             include_references=include_references,
+            goal_id=goal_id,
+            goal_filter_mode=goal_filter_mode,
         )
 
         async def _search_without_context() -> SearchResultPayload:

@@ -1,39 +1,39 @@
+from typing import Any, List, Optional, Type, Union
 from uuid import UUID
-from typing import Any, Union, Optional, List, Type
 
-from cognee.modules.engine.models.node_set import NodeSet
-from cognee.modules.engine.models import Skill
-from cognee.modules.users.models import User
+from cognee.base_config import get_base_config
+from cognee.context_global_variables import set_session_user_context_variable
+from cognee.exceptions import CogneeValidationError
+from cognee.infrastructure.databases.exceptions import DatabaseNotCreatedError
 from cognee.infrastructure.databases.vector.embeddings.config import EmbeddingConfig
 from cognee.infrastructure.llm.config import LLMConfig
-from cognee.modules.search.types import ContextFormat, SearchResult, SearchType
-from cognee.modules.users.methods import get_default_user
-from cognee.base_config import get_base_config
-from cognee.modules.operations import record_operation
-from cognee.modules.search.methods import search as search_function
-from cognee.modules.data.methods import get_authorized_existing_datasets
 from cognee.modules.data.exceptions import DatasetNotFoundError
-from cognee.context_global_variables import set_session_user_context_variable
-from cognee.shared.logging_utils import get_logger
-from cognee.infrastructure.databases.exceptions import DatabaseNotCreatedError
-from cognee.exceptions import CogneeValidationError
-from cognee.modules.users.exceptions.exceptions import UserNotFoundError
+from cognee.modules.data.methods import get_authorized_existing_datasets
+from cognee.modules.engine.models import Skill
+from cognee.modules.engine.models.node_set import NodeSet
 from cognee.modules.observability import (
-    new_span,
+    COGNEE_RESULT_COUNT,
+    COGNEE_RESULT_SUMMARY,
     COGNEE_SEARCH_QUERY,
     COGNEE_SEARCH_TYPE,
-    COGNEE_RESULT_SUMMARY,
-    COGNEE_RESULT_COUNT,
-    MEMORY_SYSTEM,
     MEMORY_OPERATION,
     MEMORY_QUERY_TEXT,
     MEMORY_QUERY_TYPE,
     MEMORY_RESULT_COUNT,
-    record_operation_duration,
-    record_query_results,
+    MEMORY_SYSTEM,
     increment_items_retrieved,
     increment_vector_searches,
+    new_span,
+    record_operation_duration,
+    record_query_results,
 )
+from cognee.modules.operations import record_operation
+from cognee.modules.search.methods import search as search_function
+from cognee.modules.search.types import ContextFormat, SearchResult, SearchType
+from cognee.modules.users.exceptions.exceptions import UserNotFoundError
+from cognee.modules.users.methods import get_default_user
+from cognee.modules.users.models import User
+from cognee.shared.logging_utils import get_logger
 
 logger = get_logger()
 
@@ -70,6 +70,8 @@ async def search(
     llm_config: Optional[LLMConfig] = None,
     embedding_config: Optional[EmbeddingConfig] = None,
     code_query: Optional[dict[str, Any]] = None,
+    goal_id: Optional[UUID] = None,
+    goal_filter_mode: str = "rerank",
 ) -> List[SearchResult]:
     context_format = ContextFormat.parse(context_format)
     if neighborhood_depth is not None and (
@@ -185,6 +187,11 @@ async def search(
         node_name_filter_operator: Operator determining how to filter based on node names.
                                     Possible values: AND, OR (default is OR, i.e. disjunction)
 
+        goal_id: Optional Goal UUID. Results connected through teleology edges are
+                 promoted or filtered according to goal_filter_mode.
+
+        goal_filter_mode: "rerank" (default) or "filter".
+
         session_id: Optional session identifier for caching Q&A interactions. Defaults to 'default_session' if None.
 
         verbose: If True, returns detailed result information including graph representation (when possible).
@@ -275,6 +282,8 @@ async def search(
             verbose=verbose,
             include_references=include_references,
             code_query=code_query,
+            goal_id=goal_id,
+            goal_filter_mode=goal_filter_mode,
             **{key: value for key, value in agentic_overrides.items() if value is not None},
         )
 
@@ -395,6 +404,8 @@ async def search(
                 include_references=include_references,
                 llm_config=llm_config,
                 embedding_config=embedding_config,
+                goal_id=goal_id,
+                goal_filter_mode=goal_filter_mode,
             )
 
             n = len(filtered_search_results) if filtered_search_results else 0

@@ -12,7 +12,10 @@ export async function listOntologies(
   instance: CogneeInstance,
 ): Promise<Record<string, OntologyMeta>> {
   const resp = await instance.fetch("/v1/ontologies");
-  if (!resp.ok) return {};
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+    throw new Error(err.error || `Failed to list ontologies: ${resp.status}`);
+  }
   return resp.json();
 }
 

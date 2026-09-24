@@ -8,9 +8,12 @@
 #   .\scripts\compose-up.ps1 -ForceBuild frontend,cognee-mcp
 #   .\scripts\compose-up.ps1 -NoBuild          # never build, just up -d
 #
+# Before building frontend, if package.json and package-lock.json drifted,
+# the script runs npm install in cognee-frontend so Docker npm ci can succeed.
+#
 # Why this exists: `docker compose up -d --build` always enters the build path
 # (context transfer / frontend Next build). Backend Python is bind-mounted, so
-# day-to-day source edits usually need NO image rebuild â€” only Dockerfile /
+# day-to-day source edits usually need NO image rebuild â€?only Dockerfile /
 # lockfiles (and frontend source for the production UI image). The process
 # still must be recreated so new routes/modules load.
 
@@ -72,9 +75,52 @@ function Test-ImageExists {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Repair-FrontendLockfileIfNeeded {
+    <#
+    Docker frontend image runs `npm ci`, which requires package.json and
+    package-lock.json to match. If they drifted, refresh the lockfile on the
+    host before build. Returns $true when npm install updated the lockfile.
+    #>
+    $fe = Join-Path $RepoRoot "cognee-frontend"
+    $pkg = Join-Path $fe "package.json"
+    $lock = Join-Path $fe "package-lock.json"
+    if (-not (Test-Path -LiteralPath $pkg) -or -not (Test-Path -LiteralPath $lock)) {
+        return $false
+    }
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Host "[compose-up] npm not on PATH; cannot repair frontend lockfile"
+        return $false
+    }
+
+    Push-Location -LiteralPath $fe
+    try {
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & npm ci --dry-run 1>$null 2>$null
+        $syncOk = ($LASTEXITCODE -eq 0)
+        $ErrorActionPreference = $prevEap
+        if ($syncOk) {
+            return $false
+        }
+
+        Write-Host "[compose-up] frontend package.json / package-lock.json out of sync; running npm install..."
+        $ErrorActionPreference = "Continue"
+        & npm install
+        $installExit = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($installExit -ne 0) {
+            throw "npm install failed in cognee-frontend (exit $installExit)"
+        }
+        Write-Host "[compose-up] frontend lockfile updated; commit package-lock.json when convenient"
+        return $true
+    } finally {
+        Pop-Location
+    }
+}
+
 # Build inputs that actually change the image layers we care about.
 # cognee / cognee-mcp mount ./cognee at runtime, so app Python edits are NOT
-# listed here â€” change those without rebuild.
+# listed here â€?change those without rebuild.
 $ServiceSpecs = @{
     cognee = @{
         ImageHint = "cognee-cognee"
@@ -182,7 +228,18 @@ foreach ($name in $candidates) {
 }
 
 if ($toBuild.Count -gt 0 -and -not $NoBuild) {
-    $names = $toBuild | ForEach-Object { $_.Name }
+    # Force array: single [string] @splat expands to chars ("frontend" -> "f")
+    $names = @($toBuild | ForEach-Object { $_.Name })
+    if ($names -contains "frontend") {
+        if (Repair-FrontendLockfileIfNeeded) {
+            $feSpec = $ServiceSpecs["frontend"]
+            foreach ($item in $toBuild) {
+                if ($item.Name -eq "frontend") {
+                    $item.Fingerprint = Get-FileFingerprint -Paths $feSpec.Watch
+                }
+            }
+        }
+    }
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & docker compose build @names

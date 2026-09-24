@@ -372,6 +372,8 @@ async def recall(
     user: object | None = None,
     llm_config: LLMConfig | None = None,
     embedding_config: EmbeddingConfig | None = None,
+    goal_id: UUID | None = None,
+    goal_filter_mode: str = "rerank",
 ) -> list[RecallResponse]:
     """Search the knowledge graph for relevant information.
 
@@ -785,6 +787,8 @@ async def recall(
                     include_references=include_references,
                     llm_config=llm_config,
                     embedding_config=embedding_config,
+                    goal_id=goal_id,
+                    goal_filter_mode=goal_filter_mode,
                 )
 
                 # /v1/search records every question it answers; recall never did,

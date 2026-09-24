@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactElement } from "react";
-import Link from "next/link";
 import { Menu, Tooltip } from "@mantine/core";
 import type { GraphModel } from "@/modules/graphModels/types";
 import type { CustomPromptsMap } from "@/modules/configuration/userConfiguration";
@@ -172,14 +171,6 @@ export default function MemoryCustomizationBar({
               <Menu.Divider style={{ borderColor: "rgba(255,255,255,0.08)" }} />
               <Menu.Item style={{ ...itemStyle, color: "#6510F4", fontWeight: 500 }} onClick={onUploadOntology} leftSection={<span style={{ width: 16, textAlign: "center" }}>+</span>}>
                 Upload new
-              </Menu.Item>
-              <Menu.Item
-                component={Link}
-                href="/ontologies"
-                style={{ ...itemStyle, color: "rgba(237,236,234,0.55)" }}
-                leftSection={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.55)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" /><circle cx="12" cy="12" r="3" /></svg>}
-              >
-                Manage ontologies…
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>

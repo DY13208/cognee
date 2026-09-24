@@ -7,8 +7,8 @@ from uuid import UUID
 
 import aiohttp
 
-from cognee.modules.search.types import ContextFormat
 from cognee.modules.ingestion.data_types.TextData import create_text_data
+from cognee.modules.search.types import ContextFormat
 from cognee.shared.logging_utils import get_logger
 
 logger = get_logger("serve.cloud_client")
@@ -442,6 +442,10 @@ class CloudClient:
             payload["systemPrompt"] = kwargs["system_prompt"]
         if kwargs.get("node_name"):
             payload["nodeName"] = kwargs["node_name"]
+        if kwargs.get("goal_id"):
+            payload["goalId"] = str(kwargs["goal_id"])
+        if kwargs.get("goal_filter_mode"):
+            payload["goalFilterMode"] = kwargs["goal_filter_mode"]
         if kwargs.get("only_context") is not None:
             payload["onlyContext"] = kwargs["only_context"]
         if ContextFormat.parse(kwargs.get("context_format")) is ContextFormat.PROMPT:

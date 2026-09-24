@@ -80,6 +80,7 @@ const ZH_ROUTE_LABELS: Record<string, string> = {
   "/settings": "设置", "/onboarding": "入门", "/members": "成员",
   "/memory-gap-analysis": "记忆覆盖", "/analytics": "分析", "/activity": "活动",
   "/skills": "技能", "/connections": "连接", "/graph-models": "图模型",
+  "/teleology": "目的论",
 };
 
 // ── TopBar ──

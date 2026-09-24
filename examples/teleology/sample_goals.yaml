@@ -1,0 +1,21 @@
+goals:
+  - id: 11111111-1111-4111-8111-111111111111
+    name: Improve retrieval quality
+    status: active
+    description: Improve semantic search relevance and retrieval quality.
+    keywords: [retrieval, search, relevance]
+  - id: 22222222-2222-4222-8222-222222222222
+    name: Reduce ingestion latency
+    status: active
+    description: Make ingestion and graph construction faster.
+    keywords: [ingestion, latency, performance]
+  - id: 33333333-3333-4333-8333-333333333333
+    name: Launch user interface
+    status: proposed
+    description: Deliver a goal-oriented user interface.
+constraints:
+  - id: 44444444-4444-4444-8444-444444444444
+    name: Preserve tenant isolation
+    status: active
+    description: Never weaken dataset access controls.
+    keywords: [tenant, isolation, access control]

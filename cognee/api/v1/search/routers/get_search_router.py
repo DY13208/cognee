@@ -62,6 +62,15 @@ class SearchPayloadDTO(InDTO):
             " (the node_set values used during add/remember)."
         ),
     )
+    goal_id: Optional[UUID] = Field(
+        default=None,
+        description="Goal UUID used to rerank or filter results by teleology edges.",
+    )
+    goal_filter_mode: str = Field(
+        default="rerank",
+        pattern="^(rerank|filter)$",
+        description="Promote goal-related results or return only those results.",
+    )
     top_k: Optional[int] = Field(default=15)
     only_context: bool = Field(default=False)
     context_format: ContextFormat = Field(
@@ -248,6 +257,8 @@ def get_search_router() -> APIRouter:
                 "query": len(payload.query or ""),
                 "system_prompt": len(payload.system_prompt or ""),
                 "node_name": len(payload.node_name or []),
+                "goal_id": str(payload.goal_id) if payload.goal_id else None,
+                "goal_filter_mode": payload.goal_filter_mode,
                 "top_k": payload.top_k,
                 "only_context": payload.only_context,
                 "context_format": payload.context_format,
@@ -285,6 +296,8 @@ def get_search_router() -> APIRouter:
                 max_iter=payload.max_iter,
                 include_references=payload.include_references,
                 code_query=payload.code_query,
+                goal_id=payload.goal_id,
+                goal_filter_mode=payload.goal_filter_mode,
             )
 
             return jsonable_encoder(results)

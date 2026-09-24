@@ -10,6 +10,7 @@ import DeleteConfirmModal from "@/ui/elements/DeleteConfirmModal";
 import UploadOntologyModal from "./UploadOntologyModal";
 import { notifications } from "@mantine/notifications";
 import { formatDate } from "@/utils/formatDate";
+import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -33,6 +34,7 @@ function OntologyIcon() {
 
 export default function OntologiesPage() {
   const router = useRouter();
+  const { language } = useBusinessLanguage();
   const { cogniInstance, isInitializing } = useCogniInstance();
   const [ontologies, setOntologies] = useState<Record<string, OntologyMeta>>({});
   const [loading, setLoading] = useState(true);
@@ -49,12 +51,12 @@ export default function OntologiesPage() {
       setOntologies(data);
       setError(null);
     } catch (err) {
-      setError("Failed to load ontologies.");
+      setError(t(language, "Failed to load ontologies.", "加载本体失败。"));
       console.error("Failed to load ontologies:", err);
     } finally {
       setLoading(false);
     }
-  }, [cogniInstance]);
+  }, [cogniInstance, language]);
 
   useEffect(() => {
     if (!cogniInstance || isInitializing) return;
@@ -78,9 +80,18 @@ export default function OntologiesPage() {
         return next;
       });
       setDeleteTarget(null);
-      notifications.show({ title: "Ontology deleted", message: `"${deleteTarget}" has been removed.`, color: "green", autoClose: 4000 });
+      notifications.show({
+        title: t(language, "Ontology deleted", "本体已删除"),
+        message: t(language, `"${deleteTarget}" has been removed.`, `「${deleteTarget}」已移除。`),
+        color: "green",
+        autoClose: 4000,
+      });
     } catch (err) {
-      notifications.show({ title: "Delete failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({
+        title: t(language, "Delete failed", "删除失败"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
     } finally {
       setDeleting(false);
     }
@@ -93,10 +104,19 @@ export default function OntologiesPage() {
       const updated = await listOntologies(cogniInstance);
       setOntologies(updated);
       setUploadOpen(false);
-      notifications.show({ title: "Ontology uploaded", message: `"${key}" is ready to use.`, color: "green", autoClose: 4000 });
+      notifications.show({
+        title: t(language, "Ontology uploaded", "本体已上传"),
+        message: t(language, `"${key}" is ready to use.`, `「${key}」已可用。`),
+        color: "green",
+        autoClose: 4000,
+      });
       router.push(`/ontologies/${encodeURIComponent(key)}`);
     } catch (err) {
-      notifications.show({ title: "Upload failed", message: err instanceof Error ? err.message : String(err), color: "red" });
+      notifications.show({
+        title: t(language, "Upload failed", "上传失败"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
       throw err;
     }
   }
@@ -107,7 +127,7 @@ export default function OntologiesPage() {
     return (
       <>
         <TrackPageView page="Ontologies" />
-        <PageLoading name="Ontologies" />
+        <PageLoading name={t(language, "Ontologies", "本体")} />
       </>
     );
   }
@@ -119,8 +139,16 @@ export default function OntologiesPage() {
       {/* Header */}
       <div style={{ padding: "24px 32px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexShrink: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>Ontologies</h1>
-          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>Define domain vocabulary to structure how Cognee extracts entities and relationships.</p>
+          <h1 style={{ fontSize: 20, fontWeight: 300, color: "#EDECEA", margin: 0, fontFamily: '"TWKLausanne", sans-serif' }}>
+            {t(language, "Ontologies", "本体")}
+          </h1>
+          <p style={{ fontSize: 14, color: "rgba(237,236,234,0.55)", margin: 0 }}>
+            {t(
+              language,
+              "Define domain vocabulary to structure how Cognee extracts entities and relationships.",
+              "定义领域词汇，引导 Cognee 如何抽取实体与关系。",
+            )}
+          </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
@@ -131,14 +159,14 @@ export default function OntologiesPage() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            Upload OWL
+            {t(language, "Upload OWL", "上传 OWL")}
           </button>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
             className="hover:bg-white/10 cursor-pointer"
             style={{ background: "rgba(255,255,255,0.06)", color: "rgba(237,236,234,0.7)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
-            title="Refresh"
+            title={t(language, "Refresh", "刷新")}
           >
             <svg
               width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(237,236,234,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -154,9 +182,11 @@ export default function OntologiesPage() {
       {error ? (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", paddingInline: 32, paddingBottom: 32 }}>
           <div style={{ flex: 1, background: "rgba(255,255,255,0.06)", backdropFilter: "blur(12px)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 48 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#F87171" }}>Couldn&rsquo;t load ontologies</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#F87171" }}>
+              {t(language, "Couldn't load ontologies", "无法加载本体")}
+            </span>
             <p style={{ fontSize: 14, color: "rgba(237,236,234,0.35)", margin: 0, maxWidth: 340, textAlign: "center" }}>
-              We couldn&rsquo;t reach the server. Please try again.
+              {t(language, "We couldn't reach the server. Please try again.", "无法连接服务器，请重试。")}
             </p>
             <button
               onClick={handleRefresh}
@@ -164,7 +194,9 @@ export default function OntologiesPage() {
               className="cursor-pointer hover:bg-white/10"
               style={{ background: "rgba(255,255,255,0.06)", color: "#EDECEA", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, padding: "8px 20px", fontSize: 14, fontWeight: 500, marginTop: 8 }}
             >
-              {refreshing ? "Retrying…" : "Retry"}
+              {refreshing
+                ? t(language, "Retrying…", "重试中…")
+                : t(language, "Retry", "重试")}
             </button>
           </div>
         </div>
@@ -173,10 +205,18 @@ export default function OntologiesPage() {
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {/* Table header */}
             <div style={{ height: 44, padding: "0 20px", borderBottom: "1px solid rgba(255,255,255,0.1)", flexShrink: 0, display: "flex", alignItems: "center", gap: 16 }}>
-              <span style={{ flex: 2, fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Key</span>
-              <span style={{ flex: 2, fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Filename</span>
-              <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Size</span>
-              <span style={{ flex: 1.5, fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Uploaded</span>
+              <span style={{ flex: 2, fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                {t(language, "Key", "标识")}
+              </span>
+              <span style={{ flex: 2, fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                {t(language, "Filename", "文件名")}
+              </span>
+              <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                {t(language, "Size", "大小")}
+              </span>
+              <span style={{ flex: 1.5, fontSize: 11, fontWeight: 700, color: "rgba(237,236,234,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                {t(language, "Uploaded", "上传时间")}
+              </span>
               <span style={{ width: 80 }} />
             </div>
 
@@ -213,7 +253,7 @@ export default function OntologiesPage() {
                       onClick={(e) => { e.stopPropagation(); setDeleteTarget(key); }}
                       className="cursor-pointer hover:bg-red-500/10"
                       style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: 6, display: "flex", alignItems: "center", justifyContent: "center" }}
-                      title="Delete ontology"
+                      title={t(language, "Delete ontology", "删除本体")}
                     >
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                         <path d="M3 4h10M6 4V3h4v1M5 4v8.5a.5.5 0 00.5.5h5a.5.5 0 00.5-.5V4" stroke="#EF4444" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
@@ -232,9 +272,15 @@ export default function OntologiesPage() {
             <div style={{ width: 56, height: 56, background: "rgba(188,155,255,0.20)", border: "1px solid rgba(188,155,255,0.35)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <OntologyIcon />
             </div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>No ontologies yet</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>
+              {t(language, "No ontologies yet", "还没有本体")}
+            </span>
             <p style={{ fontSize: 14, color: "rgba(237,236,234,0.35)", margin: 0, maxWidth: 400, textAlign: "center" }}>
-              Ontologies define domain-specific vocabulary — the classes and relationships that exist in your domain. Upload an OWL file to guide how Cognee structures your knowledge graph.
+              {t(
+                language,
+                "Ontologies define domain-specific vocabulary — the classes and relationships that exist in your domain. Upload an OWL file to guide how Cognee structures your knowledge graph.",
+                "本体定义领域专用词汇——你领域中的类别与关系。上传 OWL 文件，可引导 Cognee 如何构建知识图谱。",
+              )}
             </p>
             <button
               onClick={() => setUploadOpen(true)}
@@ -244,7 +290,7 @@ export default function OntologiesPage() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              Upload OWL
+              {t(language, "Upload OWL", "上传 OWL")}
             </button>
           </div>
         </div>
@@ -261,8 +307,14 @@ export default function OntologiesPage() {
       {/* Delete confirmation modal */}
       {deleteTarget && (
         <DeleteConfirmModal
-          title="Delete ontology"
-          message={<>Are you sure you want to delete <strong>{deleteTarget}</strong>? This action cannot be undone.</>}
+          title={t(language, "Delete ontology", "删除本体")}
+          message={
+            language === "zh" ? (
+              <>确定要删除 <strong>{deleteTarget}</strong> 吗？此操作不可撤销。</>
+            ) : (
+              <>Are you sure you want to delete <strong>{deleteTarget}</strong>? This action cannot be undone.</>
+            )
+          }
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}
           busy={deleting}

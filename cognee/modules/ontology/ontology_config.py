@@ -1,7 +1,10 @@
-from typing import TypedDict, Optional
+from typing import TYPE_CHECKING, Optional, TypedDict
 
 from cognee.modules.ontology.base_ontology_resolver import BaseOntologyResolver
 from cognee.modules.ontology.matching_strategies import MatchingStrategy
+
+if TYPE_CHECKING:
+    from cognee.modules.teleology.teleology_config import TeleologyConfig
 
 
 class OntologyConfig(TypedDict, total=False):
@@ -27,3 +30,4 @@ class Config(TypedDict, total=False):
     """
 
     ontology_config: Optional[OntologyConfig]
+    teleology_config: Optional["TeleologyConfig"]

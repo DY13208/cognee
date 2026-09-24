@@ -15,6 +15,11 @@ from cognee.modules.search.methods.hybrid_deferral import (
 from cognee.modules.search.models.SearchResultPayload import SearchResultPayload
 from cognee.modules.search.operations.select_search_type import select_search_type
 from cognee.modules.search.types import ContextFormat, SearchType
+from cognee.modules.teleology.goal_scoped_retrieval import (
+    get_goal_scope_ids,
+    normalize_goal_filter_mode,
+    wrap_goal_scoped_retrieval,
+)
 from cognee.shared.logging_utils import get_logger
 
 logger = get_logger()
@@ -85,6 +90,15 @@ async def get_retriever_output(
     retriever_instance = await get_search_type_retriever_instance(
         query_type=effective_query_type, query_text=query_text, **kwargs
     )
+
+    goal_id = kwargs.get("goal_id")
+    if goal_id is not None:
+        scope_ids = await get_goal_scope_ids(graph_engine, str(goal_id))
+        retriever_instance.get_retrieved_objects = wrap_goal_scoped_retrieval(
+            retriever_instance.get_retrieved_objects,
+            scope_ids,
+            normalize_goal_filter_mode(kwargs.get("goal_filter_mode")),
+        )
 
     only_context = kwargs.get("only_context", False)
     retrieved_objects, context, completion = await run_session_aware_completion(
