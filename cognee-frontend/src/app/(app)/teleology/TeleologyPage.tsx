@@ -125,6 +125,7 @@ export default function TeleologyPage() {
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [datasetMenuOpen, setDatasetMenuOpen] = useState(false);
   const [lensGoalId, setLensGoalId] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [addRel, setAddRel] = useState<TeleologyRelationship>("serves");
@@ -167,32 +168,30 @@ export default function TeleologyPage() {
     }
     setLoadError(null);
     try {
-      // Light first paint: status + goal count. Graph loads after a purpose is chosen.
+      // Bounded preview (not full CPD tree): first N goals + edges among them.
       const [yaml, sample] = await Promise.all([
         getTeleology(cogniInstance).catch(() => null),
         getGraphAnnotations(cogniInstance, datasetId, {
-          limit: 1,
-          goalsLimit: 0,
+          limit: 40,
+          goalsLimit: 24,
+          goalId: lensGoalId || undefined,
         }),
       ]);
       if (yaml) setStatus(yaml);
       setBrainNodes([]);
       setTreeAdvances([]);
       setGoalsTotal(sample.goals_total ?? sample.goals?.length ?? null);
-      if (lensGoalId) {
-        const neighbourhood = await getGraphAnnotations(cogniInstance, datasetId, {
-          limit: 80,
-          goalsLimit: 40,
-          goalId: lensGoalId,
-        });
-        setGraph(neighbourhood);
+      setGraph(sample);
+      const cleaned = (sample.goals || []).map((g) => ({
+        ...g,
+        name: displayName(g.name, g.id),
+        description: displayName(g.description || ""),
+      }));
+      if (!lensGoalId) {
+        setGoalHits(cleaned);
       } else {
-        setGraph({
-          ...sample,
-          goals: [],
-          annotations: [],
-          nodes: [],
-        });
+        const hit = cleaned.find((g) => g.id === lensGoalId);
+        if (hit) setSelectedGoal(hit);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -251,7 +250,7 @@ export default function TeleologyPage() {
   useEffect(() => {
     if (!cogniInstance || !datasetId || isInitializing) return;
     if (!lensGoalId) {
-      setGraph((prev) => (prev ? { ...prev, goals: [], annotations: [], nodes: [] } : prev));
+      // Keep the default preview graph; do not wipe it when selection is cleared.
       return;
     }
     let cancelled = false;
@@ -367,7 +366,7 @@ export default function TeleologyPage() {
     };
 
     for (const g of lensGoals) {
-      if (!linkedIdsForLens) {
+      if (!linkedIdsForLens && purposeEdges.length > 0) {
         const onPurposeEdge = purposeEdges.some(
           (e) => e.source_id === g.id || e.target_id === g.id,
         );
@@ -719,26 +718,81 @@ export default function TeleologyPage() {
           <label style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", fontWeight: 600 }}>
             {t(language, "Dataset", "数据集")}
           </label>
-          <select
-            style={{ ...selectStyle, width: "auto", minWidth: 160 }}
-            value={datasetId}
-            onChange={(e) => {
-              const next = datasets.find((d) => d.id === e.target.value) || null;
-              setSelectedDataset(next);
-              setSelectedNodeId(null);
-              setLensGoalId("");
-            }}
-          >
-            {datasets.length === 0 ? (
-              <option style={optionStyle} value="">{t(language, "No datasets", "暂无数据集")}</option>
-            ) : (
-              datasets.map((d) => (
-                <option style={optionStyle} key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))
-            )}
-          </select>
+          <div style={{ position: "relative", minWidth: 160 }}>
+            <button
+              type="button"
+              style={{
+                ...selectStyle,
+                width: "auto",
+                minWidth: 160,
+                textAlign: "left",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+              onClick={() => setDatasetMenuOpen((v) => !v)}
+              onBlur={() => window.setTimeout(() => setDatasetMenuOpen(false), 150)}
+            >
+              <span>{selectedDataset?.name || datasets[0]?.name || t(language, "No datasets", "暂无数据集")}</span>
+              <span style={{ opacity: 0.5, fontSize: 10 }}>▾</span>
+            </button>
+            {datasetMenuOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  zIndex: 50,
+                  top: "100%",
+                  left: 0,
+                  right: 0,
+                  marginTop: 4,
+                  maxHeight: 260,
+                  overflowY: "auto",
+                  background: "#141416",
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  borderRadius: 8,
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+                }}
+              >
+                {datasets.length === 0 ? (
+                  <div style={{ padding: "8px 12px", color: "rgba(237,236,234,0.45)", fontSize: 13 }}>
+                    {t(language, "No datasets", "暂无数据集")}
+                  </div>
+                ) : (
+                  datasets.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 12px",
+                        background: d.id === datasetId ? "rgba(188,155,255,0.18)" : "transparent",
+                        border: "none",
+                        borderTop: "1px solid rgba(255,255,255,0.06)",
+                        color: "#EDECEA",
+                        cursor: "pointer",
+                        fontSize: 13,
+                      }}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setSelectedDataset(d);
+                        setSelectedNodeId(null);
+                        setLensGoalId("");
+                        setSelectedGoal(null);
+                        setGoalQuery("");
+                        setDatasetMenuOpen(false);
+                      }}
+                    >
+                      {d.name}
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
 
           <span style={{ width: 1, height: 22, background: "rgba(255,255,255,0.1)" }} />
 
@@ -747,7 +801,11 @@ export default function TeleologyPage() {
           </label>
           <div style={{ position: "relative", minWidth: 260, maxWidth: 420, flex: "1 1 260px" }}>
             <input
-              style={{ ...inputStyle, width: "100%" }}
+              style={{
+                ...inputStyle,
+                width: "100%",
+                paddingRight: goalQuery || lensGoalId ? 36 : inputStyle.padding,
+              }}
               value={goalQuery}
               placeholder={
                 goalsTotal != null
@@ -760,7 +818,8 @@ export default function TeleologyPage() {
               }
               onFocus={() => {
                 setGoalMenuOpen(true);
-                if (goalHits.length === 0) void searchGoals(goalQuery);
+                // Always refresh a default page so the menu is never empty on open.
+                void searchGoals(goalQuery);
               }}
               onChange={(e) => {
                 setGoalQuery(e.target.value);
@@ -774,6 +833,39 @@ export default function TeleologyPage() {
                 window.setTimeout(() => setGoalMenuOpen(false), 150);
               }}
             />
+            {goalQuery || lensGoalId ? (
+              <button
+                type="button"
+                title={t(language, "Clear", "清除")}
+                aria-label={t(language, "Clear purpose", "清除当前目的")}
+                style={{
+                  position: "absolute",
+                  right: 8,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  width: 22,
+                  height: 22,
+                  borderRadius: 11,
+                  border: "none",
+                  background: "rgba(255,255,255,0.1)",
+                  color: "rgba(237,236,234,0.75)",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  lineHeight: "22px",
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  pickGoal(null);
+                  setGoalMenuOpen(false);
+                }}
+              >
+                ×
+              </button>
+            ) : null}
             {goalMenuOpen ? (
               <div
                 style={{
@@ -809,13 +901,13 @@ export default function TeleologyPage() {
                 >
                   {t(language, "Clear selection", "清除选择")}
                 </button>
-                {goalSearching ? (
+                {goalSearching && goalHits.length === 0 ? (
                   <div style={{ padding: "10px 12px", fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
                     {t(language, "Searching…", "搜索中…")}
                   </div>
                 ) : goalHits.length === 0 ? (
                   <div style={{ padding: "10px 12px", fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
-                    {t(language, "Type to search goals", "输入关键词搜索目标")}
+                    {t(language, "No matching purposes", "没有匹配的目的")}
                   </div>
                 ) : (
                   goalHits.map((g) => (
@@ -960,8 +1052,8 @@ export default function TeleologyPage() {
             >
               {t(
                 language,
-                "Search and pick a purpose above — only its neighbourhood is drawn.",
-                "先在上方搜索并选择一个目的，只画它的邻域。",
+                "Default view shows a connected goal-tree slice with advances lines.",
+                "默认展示连通的目标树切片，并带 advances 连线。",
               )}
             </div>
           ) : (

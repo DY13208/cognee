@@ -7,6 +7,7 @@ scope by ``goal_id``.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 from uuid import UUID
 
@@ -153,6 +154,325 @@ def _index_graph(
     return by_id, annotations
 
 
+def _parse_node_props(raw_props: Any) -> dict[str, Any]:
+    props: dict[str, Any] = {}
+    if isinstance(raw_props, dict):
+        props = dict(raw_props)
+        nested = props.pop("properties", None)
+        if nested:
+            try:
+                props.update(json.loads(nested) if isinstance(nested, str) else nested)
+            except (TypeError, json.JSONDecodeError, ValueError):
+                pass
+    elif isinstance(raw_props, str) and raw_props.strip():
+        try:
+            props.update(json.loads(raw_props))
+        except (TypeError, json.JSONDecodeError, ValueError):
+            pass
+    return props
+
+
+async def _count_teleology_goals(graph: Any) -> int:
+    types = list(_TELEOLOGY_NODE_TYPES)
+    try:
+        rows = await graph.query(
+            """
+            MATCH (n:Node)
+            WHERE n.type IN $types
+            RETURN count(n)
+            """,
+            {"types": types},
+        )
+        if rows and rows[0]:
+            return int(rows[0][0] or 0)
+    except Exception:
+        pass
+    return -1
+
+
+async def _fetch_goals_page(
+    graph: Any,
+    *,
+    needle: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Bounded Goal/Purpose/Constraint listing — never scans the full graph."""
+    if limit <= 0:
+        return []
+    types = list(_TELEOLOGY_NODE_TYPES)
+    # Over-fetch a bit when searching so CONTAINS-less backends can filter in Python.
+    fetch_cap = min(max(limit * 8, limit), 800) if needle else limit
+    rows: list[Any] = []
+    try:
+        if needle:
+            rows = await graph.query(
+                """
+                MATCH (n:Node)
+                WHERE n.type IN $types
+                RETURN n.id, n.name, n.type, n.properties
+                LIMIT $limit
+                """,
+                {"types": types, "limit": fetch_cap},
+            )
+        else:
+            rows = await graph.query(
+                """
+                MATCH (n:Node)
+                WHERE n.type IN $types
+                RETURN n.id, n.name, n.type, n.properties
+                LIMIT $limit
+                """,
+                {"types": types, "limit": limit},
+            )
+    except Exception:
+        # Fallback: filtered graph by type (still narrower than get_graph_data).
+        try:
+            nodes, _edges = await graph.get_filtered_graph_data([{"type": types}])
+            rows = [
+                (nid, (props or {}).get("name"), (props or {}).get("type"), props)
+                for nid, props in nodes
+            ]
+        except Exception:
+            return []
+
+    goals: list[dict[str, Any]] = []
+    for row in rows:
+        if not row:
+            continue
+        node_id = str(row[0])
+        name = str(row[1] or "")
+        node_type = str(row[2] or "Goal")
+        props = _parse_node_props(row[3] if len(row) > 3 else None)
+        props.setdefault("name", name)
+        props.setdefault("type", node_type)
+        row_out = _node_row(node_id, props)
+        if needle:
+            hay = f"{row_out['name']} {row_out.get('description') or ''} {row_out['id']}".lower()
+            # Also match stripped HTML variants from mind-map titles.
+            hay2 = (
+                hay.replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("<p>", " ")
+                .replace("</p>", " ")
+            )
+            if needle not in hay and needle not in hay2:
+                continue
+        goals.append(row_out)
+        if len(goals) >= limit:
+            break
+
+    goals.sort(
+        key=lambda row: (
+            0 if row.get("cpd_kind") == "goal" else 1 if row.get("cpd_kind") else 2,
+            row["type"],
+            row["name"],
+        )
+    )
+    return goals[:limit]
+
+
+async def _find_cpd_root(graph: Any) -> str | None:
+    """Prefer a company-tree root (no incoming has_subgoal), else any Goal."""
+    try:
+        named = await graph.query(
+            """
+            MATCH (n:Node)
+            WHERE n.type = 'Goal' AND n.name CONTAINS $needle
+            RETURN n.id
+            LIMIT 3
+            """,
+            {"needle": "公司运营"},
+        )
+        if named and named[0] and named[0][0]:
+            return str(named[0][0])
+    except Exception:
+        pass
+    try:
+        roots = await graph.query(
+            """
+            MATCH (n:Node)
+            WHERE n.type = 'Goal'
+            OPTIONAL MATCH (p:Node)-[r:EDGE]->(n)
+            WHERE r.relationship_name = 'has_subgoal'
+            WITH n, count(p) AS parents
+            WHERE parents = 0
+            RETURN n.id
+            LIMIT 1
+            """,
+            {},
+        )
+        if roots and roots[0] and roots[0][0]:
+            return str(roots[0][0])
+    except Exception:
+        pass
+    try:
+        any_goal = await graph.query(
+            """
+            MATCH (n:Node)
+            WHERE n.type = 'Goal'
+            RETURN n.id
+            LIMIT 1
+            """,
+            {},
+        )
+        if any_goal and any_goal[0] and any_goal[0][0]:
+            return str(any_goal[0][0])
+    except Exception:
+        pass
+    return None
+
+
+async def _connected_preview(
+    graph: Any,
+    *,
+    limit: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return a connected CPD slice (goals + advances/serves annotations + candidates)."""
+    root_id = await _find_cpd_root(graph)
+    if not root_id:
+        goals = await _fetch_goals_page(graph, needle="", limit=limit)
+        return goals, [], []
+
+    try:
+        nodes, edges = await graph.get_neighborhood(
+            [root_id],
+            depth=2,
+            edge_types=["has_subgoal", "serves", "advances", "blocks"],
+        )
+    except Exception:
+        goals = await _fetch_goals_page(graph, needle="", limit=limit)
+        return goals, [], []
+
+    by_id = {str(nid): (props or {}) for nid, props in nodes}
+    if root_id not in by_id:
+        try:
+            focus_node = await graph.get_node(root_id)
+            if focus_node:
+                by_id[root_id] = focus_node
+        except Exception:
+            pass
+
+    goal_rows = [
+        _node_row(nid, props)
+        for nid, props in by_id.items()
+        if _props_type(props) in _TELEOLOGY_NODE_TYPES
+    ]
+    # Keep root first, then fill up to limit.
+    goal_rows.sort(
+        key=lambda row: (
+            0 if row["id"] == root_id else 1,
+            0 if row.get("cpd_kind") == "goal" else 1,
+            row["name"],
+        )
+    )
+    goals = goal_rows[: max(1, limit)]
+    keep = {g["id"] for g in goals}
+    if root_id not in keep and root_id in by_id:
+        goals = [_node_row(root_id, by_id[root_id])] + goals
+        goals = goals[: max(1, limit)]
+        keep = {g["id"] for g in goals}
+
+    annotations: list[dict[str, Any]] = []
+    for source_id, target_id, relationship, _props in edges:
+        sid, tid = str(source_id), str(target_id)
+        if sid not in keep or tid not in keep:
+            continue
+        rel = str(relationship or "").lower()
+        if rel == "has_subgoal":
+            child_id, parent_id = tid, sid
+            annotations.append(
+                {
+                    "source_id": child_id,
+                    "source_name": _props_name(by_id.get(child_id)) or child_id,
+                    "source_type": _props_type(by_id.get(child_id)) or "Goal",
+                    "target_id": parent_id,
+                    "target_name": _props_name(by_id.get(parent_id)) or parent_id,
+                    "target_type": _props_type(by_id.get(parent_id)) or "Goal",
+                    "relationship": "advances",
+                }
+            )
+        elif rel in TELEOLOGY_RELATIONSHIPS:
+            annotations.append(
+                {
+                    "source_id": sid,
+                    "source_name": _props_name(by_id.get(sid)) or sid,
+                    "source_type": _props_type(by_id.get(sid)),
+                    "target_id": tid,
+                    "target_name": _props_name(by_id.get(tid)) or tid,
+                    "target_type": _props_type(by_id.get(tid)),
+                    "relationship": rel,
+                }
+            )
+
+    candidates = [
+        _node_row(nid, props)
+        for nid, props in by_id.items()
+        if nid in keep and _is_annotatable(props)
+    ]
+    return goals, annotations, candidates
+
+
+async def _materialize_advances(
+    graph: Any,
+    annotations: list[dict[str, Any]],
+) -> int:
+    """Persist synthetic advances so recall(goal_id=...) works without a full-tree sync."""
+    created = 0
+    for row in annotations:
+        if str(row.get("relationship") or "").lower() != "advances":
+            continue
+        child_id = str(row["source_id"])
+        parent_id = str(row["target_id"])
+        try:
+            if await graph.has_edge(child_id, parent_id, "advances"):
+                continue
+            await graph.add_edges(
+                [
+                    (
+                        child_id,
+                        parent_id,
+                        "advances",
+                        {"edge_text": "advances", "relationship_name": "advances"},
+                    )
+                ]
+            )
+            created += 1
+        except Exception:
+            continue
+    return created
+
+
+async def _edges_among_ids(
+    graph: Any,
+    node_ids: list[str],
+    *,
+    relationship_names: frozenset[str],
+) -> list[tuple[str, str, str, dict[str, Any]]]:
+    if not node_ids:
+        return []
+    try:
+        rows = await graph.query(
+            """
+            MATCH (a:Node)-[r:EDGE]->(b:Node)
+            WHERE a.id IN $ids AND b.id IN $ids
+            RETURN a.id, b.id, r.relationship_name, r.properties
+            """,
+            {"ids": node_ids},
+        )
+    except Exception:
+        return []
+    out: list[tuple[str, str, str, dict[str, Any]]] = []
+    for row in rows or []:
+        if not row:
+            continue
+        rel = str(row[2] or "").lower()
+        if rel not in relationship_names:
+            continue
+        props = _parse_node_props(row[3] if len(row) > 3 else None)
+        out.append((str(row[0]), str(row[1]), rel, props))
+    return out
+
+
 async def list_graph_annotations(
     dataset_id: UUID,
     user: User,
@@ -164,9 +484,8 @@ async def list_graph_annotations(
 ) -> dict[str, Any]:
     """Return goals, annotatable nodes, and teleology edges for a dataset graph.
 
-    Large CPD datasets can have 10k+ Goal nodes — always cap ``goals`` /
-    ``annotations`` in the payload so the UI stays responsive. Pass ``goal_id``
-    to scope purpose edges to that goal's 1-hop neighbourhood.
+    Uses bounded Cypher queries (LIMIT / neighbourhood) so large CPD trees
+    (~10k goals) do not force a full ``get_graph_data()`` scan on every open.
     """
     from cognee.context_global_variables import set_database_global_context_variables
     from cognee.infrastructure.databases.graph import get_graph_engine
@@ -179,87 +498,122 @@ async def list_graph_annotations(
 
     async with set_database_global_context_variables(dataset_id, dataset.owner_id):
         graph = await get_graph_engine()
-        nodes, edges = await graph.get_graph_data()
-        by_id, annotations = _index_graph(nodes, edges)
+
+        goals_total = await _count_teleology_goals(graph)
+        annotations: list[dict[str, Any]] = []
+        goals: list[dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
+        by_id: dict[str, dict[str, Any]] = {}
 
         if focus:
-            neighbor = {focus}
-            scoped = []
-            for row in annotations:
-                if row["source_id"] == focus or row["target_id"] == focus:
-                    neighbor.add(row["source_id"])
-                    neighbor.add(row["target_id"])
-                    scoped.append(row)
-            annotations = scoped
-            # Also include company-tree parent/child hops as synthetic advances
-            # only when no teleology edges exist yet — cheap structural hint.
-            if not annotations:
-                for source_id, target_id, relationship, _props in edges:
-                    sid, tid = str(source_id), str(target_id)
-                    rel = str(relationship or "").lower()
-                    if rel != "has_subgoal":
-                        continue
-                    # parent → child in tree; teleology advances is child → parent
-                    if sid == focus or tid == focus:
+            try:
+                nodes, edges = await graph.get_neighborhood(
+                    [focus],
+                    depth=1,
+                    edge_types=["serves", "advances", "blocks", "has_subgoal"],
+                )
+            except Exception:
+                nodes, edges = [], []
+            by_id = {str(nid): (props or {}) for nid, props in nodes}
+            if focus not in by_id:
+                try:
+                    focus_node = await graph.get_node(focus)
+                    if focus_node:
+                        by_id[focus] = focus_node
+                except Exception:
+                    pass
+            for source_id, target_id, relationship, props in edges:
+                sid, tid = str(source_id), str(target_id)
+                rel = str(relationship or "").lower()
+                if rel == "has_subgoal":
+                    # Tree parent→child becomes teleology advances child→parent.
+                    child_id, parent_id = tid, sid
+                    annotations.append(
+                        {
+                            "source_id": child_id,
+                            "source_name": _props_name(by_id.get(child_id)) or child_id,
+                            "source_type": _props_type(by_id.get(child_id)) or "Goal",
+                            "target_id": parent_id,
+                            "target_name": _props_name(by_id.get(parent_id)) or parent_id,
+                            "target_type": _props_type(by_id.get(parent_id)) or "Goal",
+                            "relationship": "advances",
+                        }
+                    )
+                elif rel in TELEOLOGY_RELATIONSHIPS:
+                    annotations.append(
+                        {
+                            "source_id": sid,
+                            "source_name": _props_name(by_id.get(sid)) or sid,
+                            "source_type": _props_type(by_id.get(sid)),
+                            "target_id": tid,
+                            "target_name": _props_name(by_id.get(tid)) or tid,
+                            "target_type": _props_type(by_id.get(tid)),
+                            "relationship": rel,
+                        }
+                    )
+            goals = [
+                _node_row(nid, props)
+                for nid, props in by_id.items()
+                if _props_type(props) in _TELEOLOGY_NODE_TYPES
+            ]
+            if focus not in {g["id"] for g in goals} and focus in by_id:
+                goals.insert(0, _node_row(focus, by_id.get(focus)))
+            candidates = [
+                _node_row(nid, props)
+                for nid, props in by_id.items()
+                if _is_annotatable(props)
+            ][:cap]
+            # Persist advances for this neighbourhood so recall(goal_id) works.
+            await _materialize_advances(graph, annotations)
+        else:
+            fetch_n = goals_cap if goals_cap > 0 else 24
+            if needle:
+                goals = await _fetch_goals_page(graph, needle=needle, limit=fetch_n)
+                goal_ids = [g["id"] for g in goals]
+                edge_rows = await _edges_among_ids(
+                    graph,
+                    goal_ids,
+                    relationship_names=TELEOLOGY_RELATIONSHIPS | frozenset({"has_subgoal"}),
+                )
+                name_by_id = {g["id"]: g["name"] for g in goals}
+                type_by_id = {g["id"]: g["type"] for g in goals}
+                for sid, tid, rel, _props in edge_rows:
+                    if rel == "has_subgoal":
                         child_id, parent_id = tid, sid
-                        neighbor.add(child_id)
-                        neighbor.add(parent_id)
                         annotations.append(
                             {
                                 "source_id": child_id,
-                                "source_name": _props_name(by_id.get(child_id)) or child_id,
-                                "source_type": _props_type(by_id.get(child_id)) or "Goal",
+                                "source_name": name_by_id.get(child_id, child_id),
+                                "source_type": type_by_id.get(child_id, "Goal"),
                                 "target_id": parent_id,
-                                "target_name": _props_name(by_id.get(parent_id)) or parent_id,
-                                "target_type": _props_type(by_id.get(parent_id)) or "Goal",
+                                "target_name": name_by_id.get(parent_id, parent_id),
+                                "target_type": type_by_id.get(parent_id, "Goal"),
                                 "relationship": "advances",
                             }
                         )
+                    else:
+                        annotations.append(
+                            {
+                                "source_id": sid,
+                                "source_name": name_by_id.get(sid, sid),
+                                "source_type": type_by_id.get(sid, "Entity"),
+                                "target_id": tid,
+                                "target_name": name_by_id.get(tid, tid),
+                                "target_type": type_by_id.get(tid, "Goal"),
+                                "relationship": rel,
+                            }
+                        )
+            else:
+                # Default open: connected CPD root slice so the canvas has real lines.
+                goals, annotations, candidates = await _connected_preview(
+                    graph, limit=fetch_n
+                )
+                await _materialize_advances(graph, annotations)
 
-        goals = [
-            _node_row(node_id, props)
-            for node_id, props in by_id.items()
-            if _props_type(props) in _TELEOLOGY_NODE_TYPES
-        ]
-        if focus:
-            goals = [row for row in goals if row["id"] in neighbor] or [
-                _node_row(focus, by_id.get(focus))
-            ]
-        if needle:
-            def _goal_hay(row: dict[str, Any]) -> str:
-                return f"{row.get('name') or ''} {row.get('description') or ''} {row.get('id') or ''}".lower()
+        if goals_total < 0:
+            goals_total = len(goals)
+        goals_truncated = bool(goals_total > len(goals))
 
-            goals = [row for row in goals if needle in _goal_hay(row)]
-        # CPD company-tree goals first — they are the production purpose source.
-        goals.sort(
-            key=lambda row: (
-                0 if row.get("cpd_kind") == "goal" else 1 if row.get("cpd_kind") else 2,
-                row["type"],
-                row["name"],
-            )
-        )
-        goals_total = len(goals)
-        goals_truncated = goals_total > goals_cap
-        goals = goals[:goals_cap]
-
-        candidates = [
-            _node_row(node_id, props)
-            for node_id, props in by_id.items()
-            if _is_annotatable(props)
-        ]
-        if needle:
-            candidates = [
-                row
-                for row in candidates
-                if needle in row["name"].lower()
-                or needle in row["type"].lower()
-                or needle in row["id"].lower()
-            ]
-        candidates.sort(key=lambda row: (row["type"], row["name"]))
-        truncated = len(candidates) > cap
-        candidates = candidates[:cap]
-
-        # Cap purpose-edge payload too — a full CPD sync can create 10k+ advances.
         ann_cap = max(cap, 400)
         annotations_total = len(annotations)
         annotations_truncated = annotations_total > ann_cap
@@ -272,7 +626,7 @@ async def list_graph_annotations(
             "goals_total": goals_total,
             "goals_truncated": goals_truncated,
             "nodes": candidates,
-            "nodes_truncated": truncated,
+            "nodes_truncated": len(candidates) >= cap,
             "annotations": annotations,
             "annotations_total": annotations_total,
             "annotations_truncated": annotations_truncated,

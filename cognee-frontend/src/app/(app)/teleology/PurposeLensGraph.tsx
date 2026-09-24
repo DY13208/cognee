@@ -75,16 +75,60 @@ export default function PurposeLensGraph({
 
   useEffect(() => {
     if (!graphRef.current || dimensions.width === 0) return;
-    const timer = setTimeout(() => graphRef.current?.zoomToFit(400, 48), 200);
+    const timer = setTimeout(() => graphRef.current?.zoomToFit(400, 48), 280);
     return () => clearTimeout(timer);
   }, [nodes, links, dimensions.width, dimensions.height]);
 
-  const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
+  // Always re-hydrate links as string ids against the current node set.
+  // Stale object refs from a previous force tick otherwise float at (0,0) as a
+  // tangled "orphan" edge bunch in the middle of the canvas.
+  const graphData = useMemo(() => {
+    const ids = new Set(nodes.map((n) => String(n.id)));
+    const safeNodes = nodes.map((n) => ({ ...n, id: String(n.id) }));
+    const safeLinks = links
+      .map((l) => {
+        const source =
+          typeof l.source === "object" && l.source
+            ? String((l.source as PurposeGraphNode).id)
+            : String(l.source);
+        const target =
+          typeof l.target === "object" && l.target
+            ? String((l.target as PurposeGraphNode).id)
+            : String(l.target);
+        return { ...l, source, target };
+      })
+      .filter((l) => ids.has(l.source) && ids.has(l.target));
+    return { nodes: safeNodes, links: safeLinks };
+  }, [nodes, links]);
+
+  const graphKey = useMemo(
+    () =>
+      `${graphData.nodes
+        .map((n) => n.id)
+        .sort()
+        .join("|")}::${graphData.links
+        .map((l) => `${l.source}->${l.target}:${l.relationship}`)
+        .sort()
+        .join("|")}`,
+    [graphData],
+  );
+
+  useEffect(() => {
+    const fg = graphRef.current;
+    if (!fg) return;
+    try {
+      fg.d3Force("charge")?.strength(-220);
+      fg.d3Force("link")?.distance(90);
+    } catch {
+      // force helpers unavailable on some builds
+    }
+  }, [graphKey]);
 
   return (
     <div ref={containerRef} className={className} style={{ width: "100%", height: "100%", minHeight: 320 }}>
       {dimensions.width > 0 && dimensions.height > 0 ? (
         <ForceGraph
+          key={graphKey}
           ref={graphRef as never}
           width={dimensions.width}
           height={dimensions.height}
@@ -93,7 +137,7 @@ export default function PurposeLensGraph({
           linkDirectionalArrowLength={5}
           linkDirectionalArrowRelPos={0.92}
           linkCurvature={0.12}
-          cooldownTicks={80}
+          cooldownTicks={100}
           onNodeClick={(node) => onSelectNode?.(node as PurposeGraphNode)}
           onBackgroundClick={() => onSelectNode?.(null)}
           nodeCanvasObject={(node, ctx, globalScale) => {
