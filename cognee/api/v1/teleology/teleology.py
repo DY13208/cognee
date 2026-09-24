@@ -41,7 +41,13 @@ def _empty_payload() -> dict[str, list]:
 
 
 class TeleologyService:
-    def get_status(self) -> dict[str, Any]:
+    def get_status(
+        self,
+        *,
+        q: str | None = None,
+        limit: int = 80,
+        offset: int = 0,
+    ) -> dict[str, Any]:
         path = resolve_teleology_file_path()
         mode = get_teleology_env_config().teleology_mode
         exists = path.is_file()
@@ -57,6 +63,10 @@ class TeleologyService:
             "goals": [],
             "purposes": [],
             "constraints": [],
+            "goals_total": 0,
+            "purposes_total": 0,
+            "constraints_total": 0,
+            "truncated": False,
         }
         if not exists:
             return payload
@@ -66,9 +76,37 @@ class TeleologyService:
             payload["enabled"] = False
             payload["error"] = str(exc)
             return payload
-        payload["goals"] = [_serialize_node(g) for g in resolver.get_goals()]
-        payload["purposes"] = [_serialize_node(p) for p in resolver.get_purposes()]
-        payload["constraints"] = [_serialize_node(c) for c in resolver.get_constraints()]
+
+        needle = (q or "").strip().lower()
+        page_size = max(1, min(int(limit or 80), 200))
+        page_skip = max(0, int(offset or 0))
+
+        def _page(nodes: list) -> tuple[list[dict[str, Any]], int]:
+            serialized = [_serialize_node(n) for n in nodes]
+            if needle:
+                serialized = [
+                    row
+                    for row in serialized
+                    if needle
+                    in f"{row.get('name') or ''} {row.get('description') or ''} {row.get('id') or ''}".lower()
+                ]
+            total = len(serialized)
+            return serialized[page_skip : page_skip + page_size], total
+
+        goals_page, goals_total = _page(list(resolver.get_goals()))
+        purposes_page, purposes_total = _page(list(resolver.get_purposes()))
+        constraints_page, constraints_total = _page(list(resolver.get_constraints()))
+        payload["goals"] = goals_page
+        payload["purposes"] = purposes_page
+        payload["constraints"] = constraints_page
+        payload["goals_total"] = goals_total
+        payload["purposes_total"] = purposes_total
+        payload["constraints_total"] = constraints_total
+        payload["truncated"] = (
+            goals_total > len(goals_page)
+            or purposes_total > len(purposes_page)
+            or constraints_total > len(constraints_page)
+        )
         return payload
 
     def _load_raw(self) -> dict[str, list]:

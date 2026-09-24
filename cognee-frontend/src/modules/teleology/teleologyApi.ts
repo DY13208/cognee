@@ -21,6 +21,10 @@ export interface TeleologyStatus {
   goals: TeleologyNode[];
   purposes: TeleologyNode[];
   constraints: TeleologyNode[];
+  goals_total?: number;
+  purposes_total?: number;
+  constraints_total?: number;
+  truncated?: boolean;
   error?: string;
   uploaded_filename?: string;
   created?: TeleologyNode;
@@ -60,6 +64,7 @@ export interface GraphAnnotationsPayload {
   dataset_name?: string | null;
   goals: GraphNodeSummary[];
   goals_total?: number;
+  goals_offset?: number;
   goals_truncated?: boolean;
   nodes: GraphNodeSummary[];
   nodes_truncated: boolean;
@@ -67,6 +72,7 @@ export interface GraphAnnotationsPayload {
   annotations_total?: number;
   annotations_truncated?: boolean;
   yaml_goals: GraphNodeSummary[];
+  yaml_goals_total?: number;
 }
 
 async function readError(resp: Response): Promise<string> {
@@ -77,8 +83,16 @@ async function readError(resp: Response): Promise<string> {
   return `Request failed: ${resp.status}`;
 }
 
-export async function getTeleology(instance: CogneeInstance): Promise<TeleologyStatus> {
-  const resp = await instance.fetch("/v1/teleology");
+export async function getTeleology(
+  instance: CogneeInstance,
+  opts?: { q?: string; limit?: number; offset?: number },
+): Promise<TeleologyStatus> {
+  const params = new URLSearchParams();
+  if (opts?.q) params.set("q", opts.q);
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  if (opts?.offset != null) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  const resp = await instance.fetch(`/v1/teleology${qs ? `?${qs}` : ""}`);
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();
 }
@@ -152,12 +166,19 @@ export async function clearTeleology(instance: CogneeInstance): Promise<Teleolog
 export async function getGraphAnnotations(
   instance: CogneeInstance,
   datasetId: string,
-  opts?: { q?: string; limit?: number; goalsLimit?: number; goalId?: string },
+  opts?: {
+    q?: string;
+    limit?: number;
+    goalsLimit?: number;
+    goalsOffset?: number;
+    goalId?: string;
+  },
 ): Promise<GraphAnnotationsPayload> {
   const params = new URLSearchParams({ dataset_id: datasetId });
   if (opts?.q) params.set("q", opts.q);
   if (opts?.limit) params.set("limit", String(opts.limit));
   if (opts?.goalsLimit != null) params.set("goals_limit", String(opts.goalsLimit));
+  if (opts?.goalsOffset != null) params.set("goals_offset", String(opts.goalsOffset));
   if (opts?.goalId) params.set("goal_id", opts.goalId);
   const resp = await instance.fetch(`/v1/teleology/annotations?${params}`);
   if (!resp.ok) throw new Error(await readError(resp));

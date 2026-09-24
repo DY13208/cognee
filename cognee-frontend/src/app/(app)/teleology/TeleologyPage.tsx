@@ -136,6 +136,12 @@ export default function TeleologyPage() {
   const [showRecall, setShowRecall] = useState(false);
 
   const [vocabOpen, setVocabOpen] = useState(false);
+  const [vocabQuery, setVocabQuery] = useState("");
+  const [vocabHits, setVocabHits] = useState<GraphNodeSummary[]>([]);
+  const [vocabTotal, setVocabTotal] = useState<number | null>(null);
+  const [vocabLoading, setVocabLoading] = useState(false);
+  const [vocabHasMore, setVocabHasMore] = useState(false);
+  const vocabSeq = useRef(0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TeleologyNode | null>(null);
   const [deleteEdge, setDeleteEdge] = useState<GraphAnnotation | null>(null);
@@ -170,7 +176,7 @@ export default function TeleologyPage() {
     try {
       // Bounded preview (not full CPD tree): first N goals + edges among them.
       const [yaml, sample] = await Promise.all([
-        getTeleology(cogniInstance).catch(() => null),
+        getTeleology(cogniInstance, { limit: 40 }).catch(() => null),
         getGraphAnnotations(cogniInstance, datasetId, {
           limit: 40,
           goalsLimit: 24,
@@ -278,6 +284,48 @@ export default function TeleologyPage() {
     }, 280);
     return () => window.clearTimeout(handle);
   }, [goalQuery, goalMenuOpen, cogniInstance, datasetId, searchGoals]);
+
+  const loadVocabPage = useCallback(
+    async (query: string, offset: number, append: boolean) => {
+      if (!cogniInstance || !datasetId) return;
+      const seq = ++vocabSeq.current;
+      setVocabLoading(true);
+      try {
+        const pageSize = 40;
+        const res = await getGraphAnnotations(cogniInstance, datasetId, {
+          q: query.trim() || undefined,
+          limit: 1,
+          goalsLimit: pageSize,
+          goalsOffset: offset,
+        });
+        if (seq !== vocabSeq.current) return;
+        const cleaned = (res.goals || []).map((g) => ({
+          ...g,
+          name: displayName(g.name, g.id),
+          description: displayName(g.description || ""),
+        }));
+        setVocabHits((prev) => (append ? [...prev, ...cleaned] : cleaned));
+        const total = res.goals_total ?? cleaned.length;
+        setVocabTotal(total);
+        setVocabHasMore(offset + cleaned.length < total && cleaned.length > 0);
+      } catch {
+        if (seq !== vocabSeq.current) return;
+        if (!append) setVocabHits([]);
+        setVocabHasMore(false);
+      } finally {
+        if (seq === vocabSeq.current) setVocabLoading(false);
+      }
+    },
+    [cogniInstance, datasetId],
+  );
+
+  useEffect(() => {
+    if (!vocabOpen || !cogniInstance || !datasetId) return;
+    const handle = window.setTimeout(() => {
+      void loadVocabPage(vocabQuery, 0, false);
+    }, 280);
+    return () => window.clearTimeout(handle);
+  }, [vocabOpen, vocabQuery, cogniInstance, datasetId, loadVocabPage]);
 
   function pickGoal(goal: GraphNodeSummary | null) {
     if (!goal) {
@@ -468,6 +516,10 @@ export default function TeleologyPage() {
     ...(status?.purposes ?? []),
     ...(status?.constraints ?? []),
   ];
+  const yamlGoalsTotal =
+    (status?.goals_total ?? status?.goals?.length ?? 0) +
+    (status?.purposes_total ?? status?.purposes?.length ?? 0) +
+    (status?.constraints_total ?? status?.constraints?.length ?? 0);
 
   async function handleSync() {
     if (!cogniInstance || !datasetId) return;
@@ -701,7 +753,16 @@ export default function TeleologyPage() {
             <button type="button" style={btn(false)} disabled={busy || !datasetId} onClick={handleSync}>
               {t(language, "Sync YAML goals", "同步 YAML 目标")}
             </button>
-            <button type="button" style={btn(false)} onClick={() => setVocabOpen(true)}>
+            <button
+              type="button"
+              style={btn(false)}
+              onClick={() => {
+                setVocabQuery("");
+                setVocabHits([]);
+                setVocabTotal(null);
+                setVocabOpen(true);
+              }}
+            >
               {t(language, "Manage goals", "管理目标")}
             </button>
           </div>
@@ -1238,7 +1299,7 @@ export default function TeleologyPage() {
         </aside>
       </div>
 
-      {/* Vocabulary drawer */}
+      {/* Manage goals — searchable / paginated graph goals (not a full YAML dump) */}
       {vocabOpen ? (
         <div
           style={{
@@ -1253,7 +1314,7 @@ export default function TeleologyPage() {
         >
           <div
             style={{
-              width: 400,
+              width: 420,
               maxWidth: "100%",
               height: "100%",
               background: "#141416",
@@ -1267,20 +1328,39 @@ export default function TeleologyPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>
-                {t(language, "Purpose vocabulary", "目的词汇表")}
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA" }}>
+                  {t(language, "Manage goals", "管理目标")}
+                </div>
+                <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", marginTop: 2 }}>
+                  {vocabTotal != null
+                    ? t(
+                        language,
+                        `${vocabTotal} in graph — search & load more`,
+                        `图谱中共 ${vocabTotal} 个 — 搜索并持续加载`,
+                      )
+                    : t(language, "Search the graph; nothing is fully loaded.", "在图谱中搜索，不会一次全量加载。")}
+                </div>
               </div>
               <button type="button" style={btn(false)} onClick={() => setVocabOpen(false)}>
                 {t(language, "Close", "关闭")}
               </button>
             </div>
+
+            <input
+              style={inputStyle}
+              value={vocabQuery}
+              placeholder={t(language, "Search goals…", "搜索目标…")}
+              onChange={(e) => setVocabQuery(e.target.value)}
+            />
+
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
                 style={btn(true)}
                 onClick={() => setEditor({ mode: "create", defaultType: "goal" })}
               >
-                {t(language, "New goal", "新建目标")}
+                {t(language, "New YAML goal", "新建 YAML 目标")}
               </button>
               <button
                 type="button"
@@ -1304,12 +1384,13 @@ export default function TeleologyPage() {
                 {t(language, "Sample", "示例")}
               </button>
             </div>
-            {yamlGoals.length === 0 ? (
+
+            {vocabHits.length === 0 && !vocabLoading ? (
               <div style={{ fontSize: 13, color: "rgba(237,236,234,0.4)" }}>
-                {t(language, "No goals yet.", "还没有目标。")}
+                {t(language, "No matching goals.", "没有匹配的目标。")}
               </div>
             ) : (
-              yamlGoals.map((node) => (
+              vocabHits.map((node) => (
                 <div
                   key={node.id}
                   style={{
@@ -1322,22 +1403,94 @@ export default function TeleologyPage() {
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 650, color: "#EDECEA" }}>{node.name}</div>
-                    <div style={{ fontSize: 11, color: "rgba(237,236,234,0.45)" }}>{node.type}</div>
+                    <div style={{ fontSize: 13, fontWeight: 650, color: "#EDECEA" }}>
+                      {node.cpd_kind === "goal" ? `CPD · ${node.name}` : node.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: "rgba(237,236,234,0.45)" }}>
+                      {node.type}
+                      {node.description ? ` · ${node.description.slice(0, 80)}` : ""}
+                    </div>
                   </div>
-                  <button type="button" style={btn(false)} onClick={() => setEditor({ mode: "edit", node })}>
-                    {t(language, "Edit", "编辑")}
-                  </button>
-                  <button type="button" style={btn(false)} onClick={() => setDeleteTarget(node)}>
-                    {t(language, "Delete", "删除")}
+                  <button
+                    type="button"
+                    style={btn(false)}
+                    onClick={() => {
+                      pickGoal(node);
+                      setVocabOpen(false);
+                    }}
+                  >
+                    {t(language, "Use", "选用")}
                   </button>
                 </div>
               ))
             )}
-            {yamlGoals.length > 0 ? (
-              <button type="button" style={{ ...btn(false), alignSelf: "flex-start" }} onClick={() => setConfirmClear(true)}>
-                {t(language, "Clear vocabulary", "清空词汇表")}
+
+            {vocabLoading ? (
+              <div style={{ fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
+                {t(language, "Loading…", "加载中…")}
+              </div>
+            ) : null}
+
+            {vocabHasMore && !vocabLoading ? (
+              <button
+                type="button"
+                style={{ ...btn(false), alignSelf: "stretch" }}
+                onClick={() => void loadVocabPage(vocabQuery, vocabHits.length, true)}
+              >
+                {t(language, "Load more", "加载更多")}
               </button>
+            ) : null}
+
+            {yamlGoals.length > 0 ? (
+              <>
+                <div
+                  style={{
+                    marginTop: 8,
+                    paddingTop: 12,
+                    borderTop: "1px solid rgba(255,255,255,0.08)",
+                    fontSize: 12,
+                    fontWeight: 650,
+                    color: "rgba(237,236,234,0.55)",
+                  }}
+                >
+                  {t(
+                    language,
+                    `YAML vocabulary (${yamlGoals.length}${yamlGoalsTotal > yamlGoals.length ? ` / ${yamlGoalsTotal}` : ""})`,
+                    `YAML 词汇表（${yamlGoals.length}${yamlGoalsTotal > yamlGoals.length ? ` / ${yamlGoalsTotal}` : ""}）`,
+                  )}
+                </div>
+                {yamlGoals.map((node) => (
+                  <div
+                    key={node.id}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      padding: 10,
+                      borderRadius: 8,
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 650, color: "#EDECEA" }}>{node.name}</div>
+                      <div style={{ fontSize: 11, color: "rgba(237,236,234,0.45)" }}>{node.type}</div>
+                    </div>
+                    <button type="button" style={btn(false)} onClick={() => setEditor({ mode: "edit", node })}>
+                      {t(language, "Edit", "编辑")}
+                    </button>
+                    <button type="button" style={btn(false)} onClick={() => setDeleteTarget(node)}>
+                      {t(language, "Delete", "删除")}
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  style={{ ...btn(false), alignSelf: "flex-start" }}
+                  onClick={() => setConfirmClear(true)}
+                >
+                  {t(language, "Clear vocabulary", "清空词汇表")}
+                </button>
+              </>
             ) : null}
           </div>
         </div>

@@ -195,35 +195,31 @@ async def _fetch_goals_page(
     *,
     needle: str,
     limit: int,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Bounded Goal/Purpose/Constraint listing — never scans the full graph."""
     if limit <= 0:
         return []
+    skip = max(0, int(offset or 0))
     types = list(_TELEOLOGY_NODE_TYPES)
     # Over-fetch a bit when searching so CONTAINS-less backends can filter in Python.
-    fetch_cap = min(max(limit * 8, limit), 800) if needle else limit
+    # When paging without a needle, fetch skip+limit then slice.
+    fetch_cap = (
+        min(max((skip + limit) * 8, limit), 2000)
+        if needle
+        else min(skip + limit, 2000)
+    )
     rows: list[Any] = []
     try:
-        if needle:
-            rows = await graph.query(
-                """
-                MATCH (n:Node)
-                WHERE n.type IN $types
-                RETURN n.id, n.name, n.type, n.properties
-                LIMIT $limit
-                """,
-                {"types": types, "limit": fetch_cap},
-            )
-        else:
-            rows = await graph.query(
-                """
-                MATCH (n:Node)
-                WHERE n.type IN $types
-                RETURN n.id, n.name, n.type, n.properties
-                LIMIT $limit
-                """,
-                {"types": types, "limit": limit},
-            )
+        rows = await graph.query(
+            """
+            MATCH (n:Node)
+            WHERE n.type IN $types
+            RETURN n.id, n.name, n.type, n.properties
+            LIMIT $limit
+            """,
+            {"types": types, "limit": fetch_cap},
+        )
     except Exception:
         # Fallback: filtered graph by type (still narrower than get_graph_data).
         try:
@@ -258,8 +254,6 @@ async def _fetch_goals_page(
             if needle not in hay and needle not in hay2:
                 continue
         goals.append(row_out)
-        if len(goals) >= limit:
-            break
 
     goals.sort(
         key=lambda row: (
@@ -268,7 +262,7 @@ async def _fetch_goals_page(
             row["name"],
         )
     )
-    return goals[:limit]
+    return goals[skip : skip + limit]
 
 
 async def _find_cpd_root(graph: Any) -> str | None:
@@ -480,6 +474,7 @@ async def list_graph_annotations(
     q: str | None = None,
     limit: int = 200,
     goals_limit: int = 120,
+    goals_offset: int = 0,
     goal_id: str | None = None,
 ) -> dict[str, Any]:
     """Return goals, annotatable nodes, and teleology edges for a dataset graph.
@@ -494,6 +489,7 @@ async def list_graph_annotations(
     needle = (q or "").strip().lower()
     cap = max(1, min(int(limit or 200), 1000))
     goals_cap = max(0, min(int(goals_limit if goals_limit is not None else 120), 500))
+    goals_skip = max(0, int(goals_offset or 0))
     focus = (goal_id or "").strip() or None
 
     async with set_database_global_context_variables(dataset_id, dataset.owner_id):
@@ -567,8 +563,11 @@ async def list_graph_annotations(
             await _materialize_advances(graph, annotations)
         else:
             fetch_n = goals_cap if goals_cap > 0 else 24
-            if needle:
-                goals = await _fetch_goals_page(graph, needle=needle, limit=fetch_n)
+            if needle or goals_skip > 0:
+                # Search / load-more: page of goals only (no full-tree canvas rebuild).
+                goals = await _fetch_goals_page(
+                    graph, needle=needle, limit=fetch_n, offset=goals_skip
+                )
                 goal_ids = [g["id"] for g in goals]
                 edge_rows = await _edges_among_ids(
                     graph,
@@ -611,25 +610,33 @@ async def list_graph_annotations(
                 await _materialize_advances(graph, annotations)
 
         if goals_total < 0:
-            goals_total = len(goals)
-        goals_truncated = bool(goals_total > len(goals))
+            goals_total = len(goals) + goals_skip
+        goals_truncated = bool(goals_total > (len(goals) + goals_skip))
 
         ann_cap = max(cap, 400)
         annotations_total = len(annotations)
         annotations_truncated = annotations_total > ann_cap
         annotations = annotations[:ann_cap]
 
+        # Never dump the full YAML vocab into every annotations response — a
+        # prior sync-from-company-tree could have mirrored 10k+ goals there.
+        yaml_nodes = _yaml_teleology_nodes()
+        yaml_total = len(yaml_nodes)
+        yaml_sample = yaml_nodes[: min(40, yaml_total)]
+
         return {
             "dataset_id": str(dataset_id),
             "dataset_name": getattr(dataset, "name", None),
             "goals": goals,
             "goals_total": goals_total,
+            "goals_offset": goals_skip,
             "goals_truncated": goals_truncated,
             "nodes": candidates,
             "nodes_truncated": len(candidates) >= cap,
             "annotations": annotations,
             "annotations_total": annotations_total,
             "annotations_truncated": annotations_truncated,
+            "yaml_goals_total": yaml_total,
             "yaml_goals": [
                 {
                     "id": str(node.id),
@@ -638,7 +645,7 @@ async def list_graph_annotations(
                     "status": node.status,
                     "description": node.description,
                 }
-                for node in _yaml_teleology_nodes()
+                for node in yaml_sample
             ],
         }
 
@@ -702,10 +709,11 @@ async def sync_from_company_tree(
 
     - each ``has_subgoal`` parent→child becomes teleology ``advances`` child→parent
     - optionally, knowledge entities whose names overlap a goal get ``serves``
-    - goals are mirrored into the teleology YAML vocab so the UI / cognify
-      keyword path can see them (optional; not required for graph lens/recall)
+
+    Does **not** mirror the tree into the teleology YAML — that previously
+    wrote 10k+ rows into ``goals.yaml`` and made Manage Goals / get_status
+    unusable. Graph nodes are the source of truth for the purpose lens.
     """
-    from cognee.api.v1.teleology.teleology import TeleologyService
     from cognee.context_global_variables import set_database_global_context_variables
     from cognee.infrastructure.databases.graph import get_graph_engine
     from cognee.modules.company_tree.upsert import get_company_tree
@@ -724,19 +732,6 @@ async def sync_from_company_tree(
             "annotations": [],
             "message": "No company goal tree on this dataset. Import/build the company tree first.",
         }
-
-    # Mirror into teleology vocabulary (stable graph ids). Optional for UI/cognify.
-    yaml_entries = [
-        {
-            "id": n.id,
-            "name": n.name,
-            "status": "active" if n.children_complete else "proposed",
-            "description": (n.note or "").strip(),
-            "keywords": [],
-        }
-        for n in goal_nodes
-    ]
-    yaml_upserted = TeleologyService().upsert_goals(yaml_entries)
 
     advances_created = 0
     serves_created = 0
@@ -763,7 +758,17 @@ async def sync_from_company_tree(
             advances_created += 1
 
         if link_entities:
-            nodes, _edges = await graph.get_graph_data()
+            # Cap entity scan — full get_graph_data() on a 12k-goal tree is too
+            # expensive for a sync button. Overlap-match against a bounded slice.
+            try:
+                nodes, _edges = await graph.get_filtered_graph_data(
+                    [{"type": ["Entity", "DocumentChunk", "TextDocument"]}]
+                )
+            except Exception:
+                nodes, _edges = await graph.get_graph_data()
+            # Soft cap so sync stays interactive on huge graphs.
+            if len(nodes) > 4000:
+                nodes = nodes[:4000]
             goal_ids = {n.id for n in goal_nodes}
             goal_meta = {n.id: n for n in goal_nodes}
             for raw_id, props in nodes:
@@ -797,29 +802,17 @@ async def sync_from_company_tree(
                     )
                     serves_created += 1
 
-        nodes, edges = await graph.get_graph_data()
-        by_id, annotations = _index_graph(nodes, edges)
-        goals = [
-            _node_row(node_id, props)
-            for node_id, props in by_id.items()
-            if _props_type(props) in _TELEOLOGY_NODE_TYPES
-        ]
-        goals.sort(
-            key=lambda row: (
-                0 if row.get("cpd_kind") == "goal" else 1 if row.get("cpd_kind") else 2,
-                row["type"],
-                row["name"],
-            )
-        )
+        # Sample only — never return the full 10k-goal list in the HTTP body.
+        sample_goals = await _fetch_goals_page(graph, needle="", limit=24, offset=0)
 
     return {
         "dataset_id": str(dataset_id),
         "tree_goals": len(goal_nodes),
         "advances_created": advances_created,
         "serves_created": serves_created,
-        "yaml_upserted": yaml_upserted,
-        "goals": goals,
-        "annotations": annotations,
+        "yaml_upserted": 0,
+        "goals": sample_goals,
+        "annotations": [],
     }
 
 

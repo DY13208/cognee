@@ -66,10 +66,17 @@ def get_teleology_router() -> APIRouter:
     service = TeleologyService()
 
     @router.get("", response_model=dict)
-    async def get_teleology(user: User = Depends(get_authenticated_user)):
-        """Return the active teleology YAML status and parsed goals/constraints."""
+    async def get_teleology(
+        q: Optional[str] = Query(default=None, description="Filter YAML vocab by name"),
+        limit: int = Query(default=80, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Return the active teleology YAML status (paginated — never dumps 10k rows)."""
         _ = user
-        return await asyncio.to_thread(service.get_status)
+        return await asyncio.to_thread(
+            lambda: service.get_status(q=q, limit=limit, offset=offset)
+        )
 
     @router.post("/nodes", response_model=dict)
     async def create_teleology_node(
@@ -193,6 +200,11 @@ def get_teleology_router() -> APIRouter:
             le=500,
             description="Max Goal/Purpose/Constraint rows to return (0 = count only). Large CPD trees exceed this.",
         ),
+        goals_offset: int = Query(
+            default=0,
+            ge=0,
+            description="Skip this many goals before applying goals_limit (load-more / pagination).",
+        ),
         goal_id: Optional[str] = Query(
             default=None,
             description="If set, only return that goal's 1-hop purpose neighbourhood.",
@@ -207,6 +219,7 @@ def get_teleology_router() -> APIRouter:
                 q=q,
                 limit=limit,
                 goals_limit=goals_limit,
+                goals_offset=goals_offset,
                 goal_id=goal_id,
             )
         except DatasetNotFoundError as exc:
