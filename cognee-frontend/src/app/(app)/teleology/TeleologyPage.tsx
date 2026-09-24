@@ -25,6 +25,7 @@ import {
   type TeleologyRelationship,
   type GraphAnnotationsPayload,
   type GraphAnnotation,
+  type GraphNodeSummary,
 } from "@/modules/teleology/teleologyApi";
 import PageLoading from "@/ui/elements/PageLoading";
 import DeleteConfirmModal from "@/ui/elements/DeleteConfirmModal";
@@ -183,7 +184,7 @@ export default function TeleologyPage() {
     refresh();
   }, [cogniInstance, isInitializing, datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const goalOptions = useMemo(() => {
+  const goalOptions = useMemo((): GraphNodeSummary[] => {
     if (graph?.goals?.length) return graph.goals;
     if (graph?.yaml_goals?.length) return graph.yaml_goals;
     // Fall back to vocabulary from GET /teleology when annotations payload is empty.
@@ -197,6 +198,8 @@ export default function TeleologyPage() {
       type: g.type || "Goal",
       description: g.description || "",
       status: g.status,
+      cpd_kind: null,
+      source: null,
     }));
   }, [graph, status]);
 
