@@ -136,7 +136,19 @@ export default function PurposeLensGraph({
               }
             }
 
-            const label = n.name || n.id;
+            const label = (n.name || n.id)
+              .replace(/&lt;/gi, "<")
+              .replace(/&gt;/gi, ">")
+              .replace(/&amp;/gi, "&")
+              .replace(/<[^>]*>/g, " ")
+              .replace(/\s+/g, " ")
+              .trim() || n.id;
+            // Hide labels when zoomed out or crowded — keeps dense graphs readable.
+            const showLabel = selected || isGoal || globalScale >= 0.85 || nodes.length <= 40;
+            if (!showLabel) {
+              ctx.restore();
+              return;
+            }
             const fontSize = Math.max(10 / globalScale, 2.8);
             ctx.font = `${isGoal ? 600 : 500} ${fontSize}px sans-serif`;
             ctx.textAlign = "center";

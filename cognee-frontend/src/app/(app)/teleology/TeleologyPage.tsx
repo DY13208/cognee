@@ -45,6 +45,26 @@ const REL_ZH: Record<TeleologyRelationship, string> = {
   blocks: "阻碍",
 };
 
+/** Mind-map titles often arrive as HTML / entities — clean for UI labels. */
+function displayName(raw: string, fallback = ""): string {
+  let s = String(raw || "");
+  for (let i = 0; i < 3; i += 1) {
+    const next = s
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&nbsp;/gi, " ");
+    if (next === s) break;
+    s = next;
+  }
+  s = s.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return s || fallback || String(raw || "").trim();
+}
+
+const MAX_LENS_NODES = 64;
+
 const selectStyle: CSSProperties = {
   background: "#1a1a1c",
   border: "1px solid rgba(255,255,255,0.12)",
@@ -98,6 +118,10 @@ export default function TeleologyPage() {
   const [status, setStatus] = useState<TeleologyStatus | null>(null);
   const [graph, setGraph] = useState<GraphAnnotationsPayload | null>(null);
   const [brainNodes, setBrainNodes] = useState<{ id: string; name: string; type: string }[]>([]);
+  /** Company-tree has_subgoal edges — drawn as advances when teleology sync hasn't run yet. */
+  const [treeAdvances, setTreeAdvances] = useState<
+    { childId: string; parentId: string; childName: string; parentName: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -135,26 +159,87 @@ export default function TeleologyPage() {
       const yaml = await getTeleology(cogniInstance).catch(() => null);
       if (yaml) setStatus(yaml);
 
+      // Only a sparse fallback when there are no purpose edges yet — never dump the full brain.
       const brain = await getBrainGraph(cogniInstance, datasetId).catch(() => null);
       const entities = (brain?.nodes ?? [])
         .filter((n) => {
           const typ = String(n.type || "");
           if (["Goal", "Purpose", "Constraint"].includes(typ)) return false;
-          if (["Document", "DocumentChunk", "TextSummary", "TextDocument", "PdfDocument"].includes(typ)) {
+          if (
+            [
+              "Document",
+              "DocumentChunk",
+              "TextSummary",
+              "TextDocument",
+              "PdfDocument",
+              "CompanyTreeNode",
+            ].includes(typ)
+          ) {
             return false;
           }
           return Boolean(n.name || n.id);
         })
-        .slice(0, 180)
+        .slice(0, 24)
         .map((n) => ({
           id: String(n.id),
-          name: String(n.name || n.id),
+          name: displayName(String(n.name || n.id)),
           type: String(n.type || "Entity"),
         }));
       setBrainNodes(entities);
 
+      // Load CPD goal-tree edges so the lens can draw structure even before teleology sync.
       try {
-        const annotations = await getGraphAnnotations(cogniInstance, datasetId, { limit: 300 });
+        const treeResp = await cogniInstance.fetch(
+          `/v1/datasets/${encodeURIComponent(datasetId)}/company-tree`,
+        );
+        if (treeResp.ok) {
+          const tree = (await treeResp.json()) as {
+            nodes?: { id: string; name: string; kind?: string }[];
+            edges?: { source: string; target: string; label: string }[];
+          };
+          const byId = new Map((tree.nodes || []).map((n) => [n.id, n]));
+          setTreeAdvances(
+            (tree.edges || [])
+              .filter((e) => e.label === "has_subgoal")
+              .map((e) => ({
+                // Teleology advances is child → parent; tree stores parent → child.
+                childId: e.target,
+                parentId: e.source,
+                childName: displayName(byId.get(e.target)?.name || e.target),
+                parentName: displayName(byId.get(e.source)?.name || e.source),
+              })),
+          );
+        } else {
+          setTreeAdvances([]);
+        }
+      } catch {
+        setTreeAdvances([]);
+      }
+
+      try {
+        let annotations = await getGraphAnnotations(cogniInstance, datasetId, { limit: 300 });
+        const purposeCount = (annotations.annotations || []).filter((a) =>
+          ["serves", "advances", "blocks"].includes(String(a.relationship).toLowerCase()),
+        ).length;
+        // Production datasets often have CPD goals but no purpose edges yet — sync once.
+        if (purposeCount === 0) {
+          const synced = await syncTeleologyFromCompanyTree(cogniInstance, datasetId).catch(
+            () => null,
+          );
+          if (synced && (synced.advances_created > 0 || synced.serves_created > 0)) {
+            annotations = await getGraphAnnotations(cogniInstance, datasetId, { limit: 300 });
+            notifications.show({
+              title: t(language, "Purpose edges built", "已生成目的边"),
+              message: t(
+                language,
+                `${synced.advances_created} advances · ${synced.serves_created} serves from the goal tree.`,
+                `从目标树生成 ${synced.advances_created} 条 advances · ${synced.serves_created} 条 serves。`,
+              ),
+              color: "green",
+              autoClose: 4000,
+            });
+          }
+        }
         setGraph(annotations);
         const goals = annotations.goals?.length
           ? annotations.goals
@@ -185,98 +270,174 @@ export default function TeleologyPage() {
   }, [cogniInstance, isInitializing, datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goalOptions = useMemo((): GraphNodeSummary[] => {
-    if (graph?.goals?.length) return graph.goals;
-    if (graph?.yaml_goals?.length) return graph.yaml_goals;
-    // Fall back to vocabulary from GET /teleology when annotations payload is empty.
-    return [
-      ...(status?.goals ?? []),
-      ...(status?.purposes ?? []),
-      ...(status?.constraints ?? []),
-    ].map((g) => ({
-      id: g.id,
-      name: g.name,
-      type: g.type || "Goal",
-      description: g.description || "",
-      status: g.status,
-      cpd_kind: null,
-      source: null,
+    const raw = graph?.goals?.length
+      ? graph.goals
+      : graph?.yaml_goals?.length
+        ? graph.yaml_goals
+        : [
+            ...(status?.goals ?? []),
+            ...(status?.purposes ?? []),
+            ...(status?.constraints ?? []),
+          ].map((g) => ({
+            id: g.id,
+            name: g.name,
+            type: g.type || "Goal",
+            description: g.description || "",
+            status: g.status,
+            cpd_kind: null as string | null,
+            source: null as string | null,
+          }));
+    return raw.map((g) => ({
+      ...g,
+      name: displayName(g.name, g.id),
+      description: displayName(g.description || ""),
     }));
   }, [graph, status]);
 
-  const annotations = graph?.annotations ?? [];
+  const annotations = useMemo(
+    () =>
+      (graph?.annotations ?? []).map((edge) => ({
+        ...edge,
+        source_name: displayName(edge.source_name, edge.source_id),
+        target_name: displayName(edge.target_name, edge.target_id),
+      })),
+    [graph],
+  );
+
+  // Merge synced purpose edges with CPD tree structure (child→parent as advances).
+  const purposeEdges = useMemo(() => {
+    const key = (s: string, t: string, r: string) => `${s}|${t}|${r}`;
+    const seen = new Set<string>();
+    const out: GraphAnnotation[] = [];
+    for (const edge of annotations) {
+      const k = key(edge.source_id, edge.target_id, String(edge.relationship));
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(edge);
+    }
+    for (const edge of treeAdvances) {
+      const k = key(edge.childId, edge.parentId, "advances");
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({
+        source_id: edge.childId,
+        source_name: edge.childName,
+        source_type: "Goal",
+        target_id: edge.parentId,
+        target_name: edge.parentName,
+        target_type: "Goal",
+        relationship: "advances",
+      });
+    }
+    return out;
+  }, [annotations, treeAdvances]);
 
   const linkedIdsForLens = useMemo(() => {
     if (!lensGoalId) return null;
     const ids = new Set<string>([lensGoalId]);
-    for (const edge of annotations) {
+    for (const edge of purposeEdges) {
       if (edge.target_id === lensGoalId || edge.source_id === lensGoalId) {
         ids.add(edge.source_id);
         ids.add(edge.target_id);
       }
     }
     return ids;
-  }, [annotations, lensGoalId]);
+  }, [purposeEdges, lensGoalId]);
 
   const graphNodes: PurposeGraphNode[] = useMemo(() => {
     const byId = new Map<string, PurposeGraphNode>();
 
+    const add = (node: PurposeGraphNode) => {
+      if (byId.has(node.id)) return;
+      if (linkedIdsForLens && !linkedIdsForLens.has(node.id)) return;
+      byId.set(node.id, node);
+    };
+
     for (const g of goalOptions) {
-      byId.set(g.id, {
+      if (!linkedIdsForLens) {
+        const onPurposeEdge = purposeEdges.some(
+          (e) => e.source_id === g.id || e.target_id === g.id,
+        );
+        if (!onPurposeEdge) continue;
+      }
+      add({
         id: g.id,
-        name: g.name,
+        name: displayName(g.name, g.id),
         type: g.type || "Goal",
         kind: "goal",
-        dimmed: linkedIdsForLens ? !linkedIdsForLens.has(g.id) : false,
+        dimmed: false,
       });
     }
 
-    for (const edge of annotations) {
-      if (!byId.has(edge.source_id)) {
-        byId.set(edge.source_id, {
-          id: edge.source_id,
-          name: edge.source_name,
-          type: edge.source_type,
+    for (const edge of purposeEdges) {
+      if (linkedIdsForLens) {
+        const touches =
+          linkedIdsForLens.has(edge.source_id) && linkedIdsForLens.has(edge.target_id);
+        if (!touches) continue;
+      }
+      add({
+        id: edge.source_id,
+        name: displayName(edge.source_name, edge.source_id),
+        type: edge.source_type,
+        kind: ["Goal", "Purpose", "Constraint"].includes(edge.source_type) ? "goal" : "entity",
+        dimmed: false,
+      });
+      add({
+        id: edge.target_id,
+        name: displayName(edge.target_name, edge.target_id),
+        type: edge.target_type,
+        kind: ["Goal", "Purpose", "Constraint"].includes(edge.target_type) ? "goal" : "entity",
+        dimmed: false,
+      });
+    }
+
+    if (purposeEdges.length === 0 && !linkedIdsForLens) {
+      for (const n of brainNodes) {
+        add({
+          id: n.id,
+          name: displayName(n.name, n.id),
+          type: n.type,
           kind: "entity",
-          dimmed: linkedIdsForLens ? !linkedIdsForLens.has(edge.source_id) : false,
-        });
-      }
-      if (!byId.has(edge.target_id)) {
-        const isGoal = ["Goal", "Purpose", "Constraint"].includes(edge.target_type);
-        byId.set(edge.target_id, {
-          id: edge.target_id,
-          name: edge.target_name,
-          type: edge.target_type,
-          kind: isGoal ? "goal" : "entity",
-          dimmed: linkedIdsForLens ? !linkedIdsForLens.has(edge.target_id) : false,
+          dimmed: true,
         });
       }
     }
 
-    // Surrounding knowledge nodes so the canvas isn't empty before annotations exist.
-    for (const n of brainNodes) {
-      if (byId.has(n.id)) continue;
-      byId.set(n.id, {
-        id: n.id,
-        name: n.name,
-        type: n.type,
-        kind: "entity",
-        dimmed: linkedIdsForLens ? !linkedIdsForLens.has(n.id) : annotations.length > 0,
-      });
+    let nodes = Array.from(byId.values());
+    if (nodes.length > MAX_LENS_NODES) {
+      const onEdge = new Set<string>();
+      for (const edge of purposeEdges) {
+        onEdge.add(edge.source_id);
+        onEdge.add(edge.target_id);
+      }
+      nodes = nodes
+        .sort((a, b) => {
+          const score = (n: PurposeGraphNode) =>
+            (n.kind === "goal" ? 0 : 1) + (onEdge.has(n.id) ? 0 : 2);
+          return score(a) - score(b);
+        })
+        .slice(0, MAX_LENS_NODES);
     }
+    return nodes;
+  }, [goalOptions, purposeEdges, brainNodes, linkedIdsForLens]);
 
-    return Array.from(byId.values());
-  }, [goalOptions, annotations, brainNodes, linkedIdsForLens]);
-
-  const graphLinks: PurposeGraphLink[] = useMemo(
-    () =>
-      annotations.map((edge) => ({
+  const graphLinks: PurposeGraphLink[] = useMemo(() => {
+    const nodeIds = new Set(graphNodes.map((n) => n.id));
+    return purposeEdges
+      .filter((edge) => {
+        if (!nodeIds.has(edge.source_id) || !nodeIds.has(edge.target_id)) return false;
+        if (!linkedIdsForLens) return true;
+        return (
+          linkedIdsForLens.has(edge.source_id) && linkedIdsForLens.has(edge.target_id)
+        );
+      })
+      .map((edge) => ({
         source: edge.source_id,
         target: edge.target_id,
         relationship: edge.relationship,
         color: relationshipColor(edge.relationship),
-      })),
-    [annotations],
-  );
+      }));
+  }, [purposeEdges, graphNodes, linkedIdsForLens]);
 
   const selectedNode = useMemo(
     () => graphNodes.find((n) => n.id === selectedNodeId) || null,
