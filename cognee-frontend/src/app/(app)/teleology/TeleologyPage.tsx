@@ -159,6 +159,9 @@ export default function TeleologyPage() {
   const [goalSearching, setGoalSearching] = useState(false);
   const [goalsTotal, setGoalsTotal] = useState<number | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<GraphNodeSummary | null>(null);
+  /** Tree-browse stack for the purpose picker (empty = roots). */
+  const [browseStack, setBrowseStack] = useState<GraphNodeSummary[]>([]);
+  const [pickerMode, setPickerMode] = useState<"browse" | "search">("browse");
   const goalSearchSeq = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -209,15 +212,19 @@ export default function TeleologyPage() {
   }, [cogniInstance, datasetId, lensGoalId]);
 
   const searchGoals = useCallback(
-    async (query: string) => {
+    async (query: string, opts?: { parentId?: string; mode?: "browse" | "search" }) => {
       if (!cogniInstance || !datasetId) return;
       const seq = ++goalSearchSeq.current;
+      const trimmed = query.trim();
+      const mode = opts?.mode ?? (trimmed ? "search" : "browse");
+      setPickerMode(mode);
       setGoalSearching(true);
       try {
         const res = await getGraphAnnotations(cogniInstance, datasetId, {
-          q: query.trim() || undefined,
+          q: mode === "search" && trimmed ? trimmed : undefined,
           limit: 1,
           goalsLimit: 40,
+          parentId: mode === "browse" ? opts?.parentId ?? "_roots" : undefined,
         });
         if (seq !== goalSearchSeq.current) return;
         setGoalsTotal(res.goals_total ?? res.goals.length);
@@ -226,6 +233,7 @@ export default function TeleologyPage() {
             ...g,
             name: displayName(g.name, g.id),
             description: displayName(g.description || ""),
+            parent_name: g.parent_name ? displayName(g.parent_name) : g.parent_name,
           })),
         );
       } catch {
@@ -250,13 +258,14 @@ export default function TeleologyPage() {
     setSelectedGoal(null);
     setGoalQuery("");
     setGoalHits([]);
+    setBrowseStack([]);
+    setPickerMode("browse");
     refresh();
   }, [cogniInstance, isInitializing, datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!cogniInstance || !datasetId || isInitializing) return;
     if (!lensGoalId) {
-      // Keep the default preview graph; do not wipe it when selection is cleared.
       return;
     }
     let cancelled = false;
@@ -280,10 +289,16 @@ export default function TeleologyPage() {
   useEffect(() => {
     if (!goalMenuOpen || !cogniInstance || !datasetId) return;
     const handle = window.setTimeout(() => {
-      void searchGoals(goalQuery);
-    }, 280);
+      const trimmed = goalQuery.trim();
+      if (trimmed) {
+        void searchGoals(trimmed, { mode: "search" });
+      } else {
+        const parentId = browseStack.length ? browseStack[browseStack.length - 1].id : "_roots";
+        void searchGoals("", { mode: "browse", parentId });
+      }
+    }, 220);
     return () => window.clearTimeout(handle);
-  }, [goalQuery, goalMenuOpen, cogniInstance, datasetId, searchGoals]);
+  }, [goalQuery, goalMenuOpen, cogniInstance, datasetId, searchGoals, browseStack]);
 
   const loadVocabPage = useCallback(
     async (query: string, offset: number, append: boolean) => {
@@ -332,6 +347,8 @@ export default function TeleologyPage() {
       setLensGoalId("");
       setSelectedGoal(null);
       setGoalQuery("");
+      setBrowseStack([]);
+      setPickerMode("browse");
       setGoalMenuOpen(false);
       return;
     }
@@ -344,6 +361,34 @@ export default function TeleologyPage() {
     setLensGoalId(cleaned.id);
     setGoalQuery(cleaned.cpd_kind === "goal" ? `CPD · ${cleaned.name}` : cleaned.name);
     setGoalMenuOpen(false);
+  }
+
+  function drillIntoGoal(goal: GraphNodeSummary) {
+    const cleaned = {
+      ...goal,
+      name: displayName(goal.name, goal.id),
+      description: displayName(goal.description || ""),
+    };
+    setGoalQuery("");
+    setPickerMode("browse");
+    setBrowseStack((prev) => [...prev, cleaned]);
+    void searchGoals("", { mode: "browse", parentId: cleaned.id });
+  }
+
+  function browseUpTo(index: number) {
+    setGoalQuery("");
+    setPickerMode("browse");
+    if (index < 0) {
+      setBrowseStack([]);
+      void searchGoals("", { mode: "browse", parentId: "_roots" });
+      return;
+    }
+    setBrowseStack((prev) => {
+      const next = prev.slice(0, index + 1);
+      const parent = next[next.length - 1];
+      void searchGoals("", { mode: "browse", parentId: parent.id });
+      return next;
+    });
   }
 
   const annotations = useMemo(
@@ -860,7 +905,7 @@ export default function TeleologyPage() {
           <label style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", fontWeight: 600 }}>
             {t(language, "Current purpose", "当前目的")}
           </label>
-          <div style={{ position: "relative", minWidth: 260, maxWidth: 420, flex: "1 1 260px" }}>
+          <div style={{ position: "relative", minWidth: 280, maxWidth: 480, flex: "1 1 280px" }}>
             <input
               style={{
                 ...inputStyle,
@@ -868,19 +913,19 @@ export default function TeleologyPage() {
                 paddingRight: goalQuery || lensGoalId ? 36 : inputStyle.padding,
               }}
               value={goalQuery}
-              placeholder={
-                goalsTotal != null
-                  ? t(
-                      language,
-                      `Search ${goalsTotal} purposes…`,
-                      `搜索目的（共 ${goalsTotal} 个）…`,
-                    )
-                  : t(language, "Search purposes…", "搜索目的…")
-              }
+              placeholder={t(
+                language,
+                "Type to search, or open to browse the tree…",
+                "输入关键词搜索，或点开按目标树浏览…",
+              )}
               onFocus={() => {
                 setGoalMenuOpen(true);
-                // Always refresh a default page so the menu is never empty on open.
-                void searchGoals(goalQuery);
+                if (!goalQuery.trim()) {
+                  const parentId = browseStack.length
+                    ? browseStack[browseStack.length - 1].id
+                    : "_roots";
+                  void searchGoals("", { mode: "browse", parentId });
+                }
               }}
               onChange={(e) => {
                 setGoalQuery(e.target.value);
@@ -891,7 +936,7 @@ export default function TeleologyPage() {
                 }
               }}
               onBlur={() => {
-                window.setTimeout(() => setGoalMenuOpen(false), 150);
+                window.setTimeout(() => setGoalMenuOpen(false), 180);
               }}
             />
             {goalQuery || lensGoalId ? (
@@ -936,7 +981,7 @@ export default function TeleologyPage() {
                   left: 0,
                   right: 0,
                   marginTop: 4,
-                  maxHeight: 280,
+                  maxHeight: 340,
                   overflowY: "auto",
                   background: "#141416",
                   border: "1px solid rgba(255,255,255,0.12)",
@@ -944,6 +989,69 @@ export default function TeleologyPage() {
                   boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
                 }}
               >
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    fontSize: 11,
+                    color: "rgba(237,236,234,0.45)",
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    alignItems: "center",
+                  }}
+                >
+                  {pickerMode === "search" ? (
+                    <span>
+                      {t(language, "Search hits", "搜索结果")}
+                      {goalsTotal != null ? ` · ${goalsTotal}` : ""}
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: browseStack.length === 0 ? "#EDECEA" : "rgba(188,155,255,0.9)",
+                          cursor: "pointer",
+                          padding: 0,
+                          fontSize: 11,
+                          fontWeight: 650,
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => browseUpTo(-1)}
+                      >
+                        {t(language, "Roots", "顶层")}
+                      </button>
+                      {browseStack.map((node, idx) => (
+                        <span key={node.id} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                          <span style={{ opacity: 0.35 }}>/</span>
+                          <button
+                            type="button"
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: idx === browseStack.length - 1 ? "#EDECEA" : "rgba(188,155,255,0.9)",
+                              cursor: "pointer",
+                              padding: 0,
+                              fontSize: 11,
+                              fontWeight: 650,
+                              maxWidth: 120,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => browseUpTo(idx)}
+                          >
+                            {node.name}
+                          </button>
+                        </span>
+                      ))}
+                    </>
+                  )}
+                </div>
                 <button
                   type="button"
                   style={{
@@ -964,34 +1072,92 @@ export default function TeleologyPage() {
                 </button>
                 {goalSearching && goalHits.length === 0 ? (
                   <div style={{ padding: "10px 12px", fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
-                    {t(language, "Searching…", "搜索中…")}
+                    {t(language, "Loading…", "加载中…")}
                   </div>
                 ) : goalHits.length === 0 ? (
                   <div style={{ padding: "10px 12px", fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
-                    {t(language, "No matching purposes", "没有匹配的目的")}
+                    {pickerMode === "search"
+                      ? t(language, "No matching purposes", "没有匹配的目的")
+                      : t(language, "No child goals here", "这一层没有子目标")}
                   </div>
                 ) : (
                   goalHits.map((g) => (
-                    <button
+                    <div
                       key={g.id}
-                      type="button"
                       style={{
-                        display: "block",
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "8px 12px",
-                        background: g.id === lensGoalId ? "rgba(188,155,255,0.15)" : "transparent",
-                        border: "none",
+                        display: "flex",
+                        alignItems: "stretch",
                         borderTop: "1px solid rgba(255,255,255,0.06)",
-                        color: "#EDECEA",
-                        cursor: "pointer",
-                        fontSize: 13,
+                        background: g.id === lensGoalId ? "rgba(188,155,255,0.15)" : "transparent",
                       }}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => pickGoal(g)}
                     >
-                      {g.cpd_kind === "goal" ? `CPD · ${g.name}` : g.name}
-                    </button>
+                      <button
+                        type="button"
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          textAlign: "left",
+                          padding: "8px 12px",
+                          background: "transparent",
+                          border: "none",
+                          color: "#EDECEA",
+                          cursor: "pointer",
+                          fontSize: 13,
+                        }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pickGoal(g)}
+                      >
+                        <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {g.name}
+                        </div>
+                        {g.parent_name ? (
+                          <div style={{ fontSize: 11, color: "rgba(237,236,234,0.4)", marginTop: 2 }}>
+                            {t(language, "under", "隶属于")} {g.parent_name}
+                          </div>
+                        ) : pickerMode === "browse" && browseStack.length === 0 ? (
+                          <div style={{ fontSize: 11, color: "rgba(237,236,234,0.4)", marginTop: 2 }}>
+                            {t(language, "Top-level goal", "顶层目标")}
+                          </div>
+                        ) : null}
+                      </button>
+                      {pickerMode === "browse" || !goalQuery.trim() ? (
+                        <button
+                          type="button"
+                          title={t(language, "Open children", "查看子目标")}
+                          style={{
+                            width: 36,
+                            border: "none",
+                            borderLeft: "1px solid rgba(255,255,255,0.06)",
+                            background: "transparent",
+                            color: "rgba(237,236,234,0.55)",
+                            cursor: "pointer",
+                            fontSize: 14,
+                          }}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => drillIntoGoal(g)}
+                        >
+                          ›
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          title={t(language, "Browse from here", "从这里浏览")}
+                          style={{
+                            width: 36,
+                            border: "none",
+                            borderLeft: "1px solid rgba(255,255,255,0.06)",
+                            background: "transparent",
+                            color: "rgba(237,236,234,0.55)",
+                            cursor: "pointer",
+                            fontSize: 14,
+                          }}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => drillIntoGoal(g)}
+                        >
+                          ›
+                        </button>
+                      )}
+                    </div>
                   ))
                 )}
               </div>
@@ -1222,7 +1388,11 @@ export default function TeleologyPage() {
                       placeholder={t(language, "Search goal…", "搜索目标…")}
                       onFocus={() => {
                         setGoalMenuOpen(true);
-                        if (goalHits.length === 0) void searchGoals(goalQuery);
+                        if (goalHits.length === 0) {
+                          const trimmed = goalQuery.trim();
+                          if (trimmed) void searchGoals(trimmed, { mode: "search" });
+                          else void searchGoals("", { mode: "browse", parentId: "_roots" });
+                        }
                       }}
                       onChange={(e) => {
                         setGoalQuery(e.target.value);

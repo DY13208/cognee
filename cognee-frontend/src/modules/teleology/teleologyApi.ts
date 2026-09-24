@@ -47,6 +47,8 @@ export interface GraphNodeSummary {
   status?: string | null;
   cpd_kind?: string | null;
   source?: string | null;
+  parent_id?: string | null;
+  parent_name?: string | null;
 }
 
 export interface GraphAnnotation {
@@ -172,6 +174,7 @@ export async function getGraphAnnotations(
     goalsLimit?: number;
     goalsOffset?: number;
     goalId?: string;
+    parentId?: string;
   },
 ): Promise<GraphAnnotationsPayload> {
   const params = new URLSearchParams({ dataset_id: datasetId });
@@ -180,6 +183,7 @@ export async function getGraphAnnotations(
   if (opts?.goalsLimit != null) params.set("goals_limit", String(opts.goalsLimit));
   if (opts?.goalsOffset != null) params.set("goals_offset", String(opts.goalsOffset));
   if (opts?.goalId) params.set("goal_id", opts.goalId);
+  if (opts?.parentId) params.set("parent_id", opts.parentId);
   const resp = await instance.fetch(`/v1/teleology/annotations?${params}`);
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();

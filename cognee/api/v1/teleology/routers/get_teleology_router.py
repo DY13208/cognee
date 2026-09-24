@@ -209,6 +209,13 @@ def get_teleology_router() -> APIRouter:
             default=None,
             description="If set, only return that goal's 1-hop purpose neighbourhood.",
         ),
+        parent_id: Optional[str] = Query(
+            default=None,
+            description=(
+                "Purpose-picker tree browse: '_roots' for top-level goals, "
+                "or a goal id for its direct has_subgoal children."
+            ),
+        ),
         user: User = Depends(get_authenticated_user),
     ):
         """List purpose edges and annotatable nodes on a dataset knowledge graph."""
@@ -221,6 +228,7 @@ def get_teleology_router() -> APIRouter:
                 goals_limit=goals_limit,
                 goals_offset=goals_offset,
                 goal_id=goal_id,
+                parent_id=parent_id,
             )
         except DatasetNotFoundError as exc:
             return JSONResponse(status_code=404, content={"error": str(exc)})

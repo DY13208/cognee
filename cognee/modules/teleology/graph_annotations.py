@@ -202,26 +202,47 @@ async def _fetch_goals_page(
         return []
     skip = max(0, int(offset or 0))
     types = list(_TELEOLOGY_NODE_TYPES)
-    # Over-fetch a bit when searching so CONTAINS-less backends can filter in Python.
-    # When paging without a needle, fetch skip+limit then slice.
-    fetch_cap = (
-        min(max((skip + limit) * 8, limit), 2000)
-        if needle
-        else min(skip + limit, 2000)
-    )
+    needle = (needle or "").strip()
     rows: list[Any] = []
     try:
-        rows = await graph.query(
-            """
-            MATCH (n:Node)
-            WHERE n.type IN $types
-            RETURN n.id, n.name, n.type, n.properties
-            LIMIT $limit
-            """,
-            {"types": types, "limit": fetch_cap},
-        )
+        if needle:
+            # Push the filter into Cypher when possible — Python post-filter over
+            # thousands of CPD goals made the purpose picker feel broken.
+            try:
+                rows = await graph.query(
+                    """
+                    MATCH (n:Node)
+                    WHERE n.type IN $types AND n.name CONTAINS $needle
+                    RETURN n.id, n.name, n.type, n.properties
+                    LIMIT $limit
+                    """,
+                    {
+                        "types": types,
+                        "needle": needle,
+                        "limit": min(skip + limit, 200),
+                    },
+                )
+            except Exception:
+                rows = await graph.query(
+                    """
+                    MATCH (n:Node)
+                    WHERE n.type IN $types
+                    RETURN n.id, n.name, n.type, n.properties
+                    LIMIT $limit
+                    """,
+                    {"types": types, "limit": min(max((skip + limit) * 8, limit), 800)},
+                )
+        else:
+            rows = await graph.query(
+                """
+                MATCH (n:Node)
+                WHERE n.type IN $types
+                RETURN n.id, n.name, n.type, n.properties
+                LIMIT $limit
+                """,
+                {"types": types, "limit": min(skip + limit, 2000)},
+            )
     except Exception:
-        # Fallback: filtered graph by type (still narrower than get_graph_data).
         try:
             nodes, _edges = await graph.get_filtered_graph_data([{"type": types}])
             rows = [
@@ -231,6 +252,7 @@ async def _fetch_goals_page(
         except Exception:
             return []
 
+    needle_l = needle.lower()
     goals: list[dict[str, Any]] = []
     for row in rows:
         if not row:
@@ -242,27 +264,129 @@ async def _fetch_goals_page(
         props.setdefault("name", name)
         props.setdefault("type", node_type)
         row_out = _node_row(node_id, props)
-        if needle:
+        if needle_l:
             hay = f"{row_out['name']} {row_out.get('description') or ''} {row_out['id']}".lower()
-            # Also match stripped HTML variants from mind-map titles.
             hay2 = (
                 hay.replace("&lt;", "<")
                 .replace("&gt;", ">")
                 .replace("<p>", " ")
                 .replace("</p>", " ")
             )
-            if needle not in hay and needle not in hay2:
+            # CONTAINS may already have filtered; keep Python filter for fallback path.
+            if needle_l not in hay and needle_l not in hay2:
                 continue
         goals.append(row_out)
 
     goals.sort(
         key=lambda row: (
             0 if row.get("cpd_kind") == "goal" else 1 if row.get("cpd_kind") else 2,
+            0 if needle_l and row["name"].lower().startswith(needle_l) else 1,
             row["type"],
             row["name"],
         )
     )
     return goals[skip : skip + limit]
+
+
+async def _list_goal_roots(graph: Any, *, limit: int = 40) -> list[dict[str, Any]]:
+    """Top-level CPD goals (no incoming has_subgoal)."""
+    if limit <= 0:
+        return []
+    try:
+        rows = await graph.query(
+            """
+            MATCH (n:Node)
+            WHERE n.type = 'Goal'
+            OPTIONAL MATCH (p:Node)-[r:EDGE]->(n)
+            WHERE r.relationship_name = 'has_subgoal'
+            WITH n, count(p) AS parents
+            WHERE parents = 0
+            RETURN n.id, n.name, n.type, n.properties
+            LIMIT $limit
+            """,
+            {"limit": limit},
+        )
+    except Exception:
+        return await _fetch_goals_page(graph, needle="", limit=limit)
+    goals: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not row:
+            continue
+        props = _parse_node_props(row[3] if len(row) > 3 else None)
+        props.setdefault("name", str(row[1] or ""))
+        props.setdefault("type", str(row[2] or "Goal"))
+        goals.append(_node_row(str(row[0]), props))
+    return goals
+
+
+async def _list_goal_children(
+    graph: Any,
+    parent_id: str,
+    *,
+    limit: int = 80,
+) -> list[dict[str, Any]]:
+    """Direct has_subgoal children of a goal — for tree drill-down in the picker."""
+    if limit <= 0 or not parent_id:
+        return []
+    try:
+        rows = await graph.query(
+            """
+            MATCH (p:Node)-[r:EDGE]->(c:Node)
+            WHERE p.id = $pid AND r.relationship_name = 'has_subgoal'
+            RETURN c.id, c.name, c.type, c.properties
+            LIMIT $limit
+            """,
+            {"pid": parent_id, "limit": limit},
+        )
+    except Exception:
+        return []
+    goals: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not row:
+            continue
+        props = _parse_node_props(row[3] if len(row) > 3 else None)
+        props.setdefault("name", str(row[1] or ""))
+        props.setdefault("type", str(row[2] or "Goal"))
+        goals.append(_node_row(str(row[0]), props))
+    return goals
+
+
+async def _attach_parent_paths(
+    graph: Any,
+    goals: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Add parent_name / parent_id so the picker can show where a hit sits."""
+    if not goals:
+        return goals
+    ids = [g["id"] for g in goals]
+    parent_by_child: dict[str, tuple[str, str]] = {}
+    try:
+        rows = await graph.query(
+            """
+            MATCH (p:Node)-[r:EDGE]->(c:Node)
+            WHERE c.id IN $ids AND r.relationship_name = 'has_subgoal'
+            RETURN c.id, p.id, p.name
+            """,
+            {"ids": ids},
+        )
+        for row in rows or []:
+            if not row:
+                continue
+            parent_by_child[str(row[0])] = (str(row[1]), str(row[2] or ""))
+    except Exception:
+        pass
+    out: list[dict[str, Any]] = []
+    for g in goals:
+        row = dict(g)
+        parent = parent_by_child.get(g["id"])
+        if parent:
+            row["parent_id"] = parent[0]
+            row["parent_name"] = parent[1]
+        else:
+            row["parent_id"] = None
+            row["parent_name"] = None
+        out.append(row)
+    return out
 
 
 async def _find_cpd_root(graph: Any) -> str | None:
@@ -476,11 +600,16 @@ async def list_graph_annotations(
     goals_limit: int = 120,
     goals_offset: int = 0,
     goal_id: str | None = None,
+    parent_id: str | None = None,
 ) -> dict[str, Any]:
     """Return goals, annotatable nodes, and teleology edges for a dataset graph.
 
     Uses bounded Cypher queries (LIMIT / neighbourhood) so large CPD trees
     (~10k goals) do not force a full ``get_graph_data()`` scan on every open.
+
+    ``parent_id``: tree drill-down for the purpose picker.
+    - ``parent_id="_roots"`` → top-level goals (no incoming has_subgoal)
+    - ``parent_id=<uuid>`` → direct children via has_subgoal
     """
     from cognee.context_global_variables import set_database_global_context_variables
     from cognee.infrastructure.databases.graph import get_graph_engine
@@ -491,6 +620,7 @@ async def list_graph_annotations(
     goals_cap = max(0, min(int(goals_limit if goals_limit is not None else 120), 500))
     goals_skip = max(0, int(goals_offset or 0))
     focus = (goal_id or "").strip() or None
+    browse_parent = (parent_id or "").strip() or None
 
     async with set_database_global_context_variables(dataset_id, dataset.owner_id):
         graph = await get_graph_engine()
@@ -561,6 +691,16 @@ async def list_graph_annotations(
             ][:cap]
             # Persist advances for this neighbourhood so recall(goal_id) works.
             await _materialize_advances(graph, annotations)
+        elif browse_parent is not None and not needle and not focus:
+            # Purpose-picker tree drill-down (never dumps 12k flat goals).
+            fetch_n = goals_cap if goals_cap > 0 else 40
+            if browse_parent in ("_roots", "roots", ""):
+                goals = await _list_goal_roots(graph, limit=fetch_n)
+            else:
+                goals = await _list_goal_children(
+                    graph, browse_parent, limit=fetch_n
+                )
+            goals = await _attach_parent_paths(graph, goals)
         else:
             fetch_n = goals_cap if goals_cap > 0 else 24
             if needle or goals_skip > 0:
@@ -568,6 +708,7 @@ async def list_graph_annotations(
                 goals = await _fetch_goals_page(
                     graph, needle=needle, limit=fetch_n, offset=goals_skip
                 )
+                goals = await _attach_parent_paths(graph, goals)
                 goal_ids = [g["id"] for g in goals]
                 edge_rows = await _edges_among_ids(
                     graph,
@@ -578,15 +719,15 @@ async def list_graph_annotations(
                 type_by_id = {g["id"]: g["type"] for g in goals}
                 for sid, tid, rel, _props in edge_rows:
                     if rel == "has_subgoal":
-                        child_id, parent_id = tid, sid
+                        child_id, parent_goal_id = tid, sid
                         annotations.append(
                             {
                                 "source_id": child_id,
                                 "source_name": name_by_id.get(child_id, child_id),
                                 "source_type": type_by_id.get(child_id, "Goal"),
-                                "target_id": parent_id,
-                                "target_name": name_by_id.get(parent_id, parent_id),
-                                "target_type": type_by_id.get(parent_id, "Goal"),
+                                "target_id": parent_goal_id,
+                                "target_name": name_by_id.get(parent_goal_id, parent_goal_id),
+                                "target_type": type_by_id.get(parent_goal_id, "Goal"),
                                 "relationship": "advances",
                             }
                         )
@@ -608,6 +749,7 @@ async def list_graph_annotations(
                     graph, limit=fetch_n
                 )
                 await _materialize_advances(graph, annotations)
+                goals = await _attach_parent_paths(graph, goals)
 
         if goals_total < 0:
             goals_total = len(goals) + goals_skip
