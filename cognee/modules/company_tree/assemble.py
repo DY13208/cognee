@@ -114,6 +114,42 @@ def _uid_from_props(props: Dict[str, Any]) -> str:
     return parsed[1] if parsed else ""
 
 
+def _dedupe_rank(props: Dict[str, Any], room: str) -> tuple[int, int, int]:
+    """Higher is better when collapsing duplicate source_key graph nodes."""
+    stamped = 1 if _is_stamped(props, room) else 0
+    imported = 1 if _is_imported_member(props) else 0
+    has_kind = 1 if props.get("cpd_kind") in ("goal", "map_reference") else 0
+    return (stamped, imported, has_kind)
+
+
+def _collapse_duplicate_source_keys(
+    keep: set[str],
+    by_id: Dict[str, RawNode],
+    room: str,
+) -> tuple[set[str], Dict[str, str]]:
+    """Keep one graph node per source_key; map dropped ids onto the winner."""
+    by_key: Dict[str, List[str]] = defaultdict(list)
+    for nid in keep:
+        props = _props(by_id[nid])
+        source_key = str(props.get("source_key") or "")
+        uid = _uid_from_props(props)
+        if not source_key and uid:
+            source_key = make_source_key(room, uid)
+        if source_key:
+            by_key[source_key].append(nid)
+
+    alias: Dict[str, str] = {}
+    for nids in by_key.values():
+        if len(nids) < 2:
+            continue
+        winner = max(nids, key=lambda nid: _dedupe_rank(_props(by_id[nid]), room))
+        for nid in nids:
+            if nid != winner:
+                alias[nid] = winner
+                keep.discard(nid)
+    return keep, alias
+
+
 def assemble_company_tree(
     nodes: List[RawNode],
     edges: List[RawEdge],
@@ -125,7 +161,8 @@ def assemble_company_tree(
     room's source_key prefix, or that parent those seeds via has_subgoal /
     has_detail_reference, are included so a mixed write path still reads as one
     tree. Linked mind maps imported under a seed stay in the tree even when their
-    source room differs. Completeness is reported, never inferred as an empty tree.
+    source room differs. Duplicate source_key nodes collapse to one (stamped
+    preferred). Completeness is reported, never inferred as an empty tree.
     """
     missing: List[str] = []
     room = infer_source_room(nodes, source_room)
@@ -164,6 +201,15 @@ def assemble_company_tree(
 
     if not keep:
         return CompanyTreeOut(missing=["empty"])
+
+    keep, alias = _collapse_duplicate_source_keys(keep, by_id, room)
+
+    def _resolve(nid: str) -> str:
+        seen: set[str] = set()
+        while nid in alias and nid not in seen:
+            seen.add(nid)
+            nid = alias[nid]
+        return nid
 
     view_nodes: List[CompanyTreeNodeOut] = []
     for nid in keep:
@@ -205,8 +251,8 @@ def assemble_company_tree(
     for src, tgt, label, _ in edges:
         if label not in TREE_EDGE_TYPES:
             continue
-        sid, tid = str(src), str(tgt)
-        if sid not in by_view or tid not in by_view:
+        sid, tid = _resolve(str(src)), _resolve(str(tgt))
+        if sid not in by_view or tid not in by_view or sid == tid:
             continue
         parent, child = by_view[sid], by_view[tid]
         if parent.kind != "goal":
@@ -224,7 +270,7 @@ def assemble_company_tree(
             continue
         parent_key = str(_props(by_id[node.id]).get("source_parent_key") or "")
         parent_view = by_key.get(parent_key)
-        if parent_view is None:
+        if parent_view is None or parent_view.id == node.id:
             continue
         label = "has_subgoal" if node.kind == "goal" else "has_detail_reference"
         parents[node.id] = parent_view.id
@@ -297,3 +343,34 @@ def assemble_company_tree(
         complete=complete,
         missing=sorted(set(missing)),
     )
+
+
+def find_duplicate_source_key_ids(
+    nodes: List[RawNode],
+    source_room: Optional[str] = None,
+) -> List[str]:
+    """Graph node ids that lose the source_key collapse (safe to delete)."""
+    room = infer_source_room(nodes, source_room) or ""
+    by_id = {_node_id(n): n for n in nodes}
+    by_key: Dict[str, List[str]] = defaultdict(list)
+    for nid, raw in by_id.items():
+        props = _props(raw)
+        if str(props.get("type") or "") not in ("Goal", ""):
+            if props.get("cpd_kind") not in ("goal", "map_reference"):
+                continue
+        source_key = str(props.get("source_key") or "")
+        uid = _uid_from_props(props)
+        if not source_key and uid and room:
+            source_key = make_source_key(room, uid)
+        if source_key:
+            by_key[source_key].append(nid)
+
+    drop: List[str] = []
+    for nids in by_key.values():
+        if len(nids) < 2:
+            continue
+        winner = max(nids, key=lambda nid: _dedupe_rank(_props(by_id[nid]), room))
+        for nid in nids:
+            if nid != winner:
+                drop.append(nid)
+    return sorted(drop)

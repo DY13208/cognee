@@ -166,6 +166,31 @@ def test_assemble_keeps_imported_mindmap_under_its_link():
     assert tree.complete is True
 
 
+def test_assemble_collapses_duplicate_source_key_nodes():
+    stamped = _stamped("profit", "公司利润分", parent=ROOT)
+    stamped[1]["source_child_count"] = 0
+    root = _stamped(ROOT, "公司运营分")
+    root[1]["source_child_count"] = 1
+    unstamped = (
+        "profit-dup",
+        {
+            "type": "Goal",
+            "name": "公司利润分",
+            "source_key": f"mindmap:{ROOM}:profit",
+            "source_uid": "profit",
+        },
+    )
+    edges = [
+        (ROOT, "profit", "has_subgoal", {}),
+        (ROOT, "profit-dup", "has_subgoal", {}),
+    ]
+    tree = assemble_company_tree([root, stamped, unstamped], edges)
+    assert sum(1 for node in tree.nodes if node.name == "公司利润分") == 1
+    assert {node.id for node in tree.nodes} == {ROOT, "profit"}
+    assert "duplicate_source_key" not in tree.missing
+    assert "unstamped:profit-dup" not in tree.missing
+
+
 def test_assemble_infers_primary_room_when_linked_maps_are_stamped():
     root = _stamped(ROOT, "公司运营分")
     root[1]["source_child_count"] = 1

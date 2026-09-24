@@ -5,7 +5,10 @@ from uuid import UUID
 
 from cognee.context_global_variables import set_database_global_context_variables
 from cognee.infrastructure.databases.graph import get_graph_engine
-from cognee.modules.company_tree.assemble import assemble_company_tree
+from cognee.modules.company_tree.assemble import (
+    assemble_company_tree,
+    find_duplicate_source_key_ids,
+)
 from cognee.modules.company_tree.schema import (
     CompanyTreeNode,
     CompanyTreeOut,
@@ -122,10 +125,18 @@ async def reconcile_company_tree(
     user: User,
     source_room: Optional[str] = None,
 ) -> CompanyTreeOut:
-    """Stamp Goal ancestors that belong to the tree but were written without
-    company-tree fields. Does not invent nodes; only fills the write contract
-    on members assemble_company_tree already includes."""
+    """Stamp Goal ancestors and drop duplicate source_key graph nodes.
+
+    Does not invent nodes. Fills the write contract on members already in the
+    tree, then deletes extra Goal nodes that share a source_key with a stamped
+    winner so reads stop showing the same mind-map entry twice.
+    """
     _dataset, graph, nodes, edges = await _load_graph(dataset_id, user, "write")
+    drop_ids = find_duplicate_source_key_ids(nodes, source_room)
+    if drop_ids:
+        await graph.delete_nodes(drop_ids)
+        nodes, edges = await graph.get_graph_data()
+
     assembled = assemble_company_tree(nodes, edges, source_room)
     if assembled.root_id is None:
         return assembled
