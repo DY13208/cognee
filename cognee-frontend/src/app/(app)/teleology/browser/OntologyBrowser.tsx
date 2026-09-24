@@ -101,9 +101,9 @@ export default function OntologyBrowser({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingFocus, setLoadingFocus] = useState(false);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("relation");
-  const [hopDepth, setHopDepth] = useState(1);
-  const [relatedOnly, setRelatedOnly] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>("hierarchy");
+  const [hopDepth, setHopDepth] = useState(3);
+  const [relatedOnly, setRelatedOnly] = useState(false);
   const [hiddenRels, setHiddenRels] = useState<Set<string>>(new Set());
   const [kindFilter, setKindFilter] = useState<Set<EntityKind>>(
     () => new Set(["Goal", "Project", "Metric", "Department", "Person", "Document", "Entity", "Other"]),
@@ -121,6 +121,93 @@ export default function OntologyBrowser({
   const [pathStart, setPathStart] = useState<string | null>(null);
   const [pathEnd, setPathEnd] = useState<string | null>(null);
   const [datasetMenu, setDatasetMenu] = useState(false);
+
+  const loadConnectedTree = useCallback(async () => {
+      if (!instance || !datasetId) return;
+      setLoadingFocus(true);
+      setLoadError(null);
+      try {
+        // Prefer the full company-tree (CPD C→P→D). Fall back to annotations preview.
+        let ents: OntologyEntity[] = [];
+        let eds: OntologyEdge[] = [];
+        let rootId: string | null = null;
+
+        try {
+          const treeResp = await instance.fetch(
+            `/v1/datasets/${encodeURIComponent(datasetId)}/company-tree`,
+          );
+          if (treeResp.ok) {
+            const tree = (await treeResp.json()) as {
+              nodes?: {
+                id: string;
+                name: string;
+                kind?: string;
+                note?: string;
+              }[];
+              edges?: { source: string; target: string; label: string }[];
+              rootId?: string | null;
+            };
+            if (tree.nodes?.length && tree.rootId) {
+              const byId = new Map(tree.nodes.map((n) => [n.id, n]));
+              ents = tree.nodes.map((n) => ({
+                id: n.id,
+                name: displayName(n.name, n.id),
+                type: "Goal",
+                kind: "Goal" as EntityKind,
+                description: displayName(n.note || ""),
+              }));
+              eds = (tree.edges || [])
+                .filter((e) => byId.has(e.source) && byId.has(e.target))
+                .map((e, i) => ({
+                  id: `${e.source}|${e.label}|${e.target}|${i}`,
+                  sourceId: e.source,
+                  targetId: e.target,
+                  relationship:
+                    e.label === "has_detail_reference" ? "has_detail_reference" : "has_subgoal",
+                  sourceName: displayName(byId.get(e.source)!.name, e.source),
+                  targetName: displayName(byId.get(e.target)!.name, e.target),
+                  sourceType: "Goal",
+                  targetType: "Goal",
+                }));
+              rootId = tree.rootId;
+            }
+          }
+        } catch {
+          /* fall through to annotations preview */
+        }
+
+        if (!ents.length) {
+          const res = await getGraphAnnotations(instance, datasetId, {
+            limit: 120,
+            goalsLimit: 48,
+          });
+          ents = mergeEntitiesFromPayload(res.goals || [], res.nodes || [], res.annotations || []);
+          eds = edgesFromAnnotations(res.annotations || []);
+          rootId = res.goals?.[0]?.id || ents[0]?.id || null;
+        }
+
+        setEntities(ents);
+        setEdges(eds);
+        if (rootId) {
+          setFocusId(rootId);
+          setSelectedId(rootId);
+        }
+        // Populate browse list with roots / first page of tree
+        const childIds = new Set(eds.map((e) => e.targetId));
+        const roots = ents.filter((e) => !childIds.has(e.id));
+        setBrowseHits(
+          (roots.length ? roots : ents).slice(0, 40).map((h) => ({
+            id: h.id,
+            name: h.name,
+            kind: h.kind,
+          })),
+        );
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoadingFocus(false);
+      }
+    }, [instance, datasetId]);
 
   const loadFocus = useCallback(
     async (id: string, depth: number) => {
@@ -232,7 +319,7 @@ export default function OntologyBrowser({
     setPathEnd(null);
     if (datasetId) {
       setBrowseLoading(true);
-      void runSearch("").finally(() => setBrowseLoading(false));
+      void loadConnectedTree().finally(() => setBrowseLoading(false));
     }
   }, [datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -242,15 +329,18 @@ export default function OntologyBrowser({
     return () => window.clearTimeout(h);
   }, [searchQ, searchOpen, runSearch]);
 
-  useEffect(() => {
-    if (focusId) void loadFocus(focusId, hopDepth);
-  }, [hopDepth]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const setFocus = useCallback(
     (id: string) => {
+      // If the node is already in the loaded CPD tree, just re-center — don't
+      // wipe the hierarchy with a 1-hop neighbourhood fetch.
+      if (entities.some((e) => e.id === id) && edges.length > 0) {
+        setFocusId(id);
+        setSelectedId(id);
+        return;
+      }
       void loadFocus(id, hopDepth);
     },
-    [loadFocus, hopDepth],
+    [entities, edges, loadFocus, hopDepth],
   );
 
   const onSelectNode = useCallback(
@@ -345,6 +435,7 @@ export default function OntologyBrowser({
         color: "green",
       });
       if (focusId) void loadFocus(focusId, hopDepth);
+      else void loadConnectedTree();
     } catch (err) {
       notifications.show({
         title: t("Sync failed", "同步失败"),
@@ -384,8 +475,8 @@ export default function OntologyBrowser({
           <div className="onto-title">{t("Teleology", "目的论")}</div>
           <div className="onto-subtitle">
             {t(
-              "Explore goals, entities and relations — focus first, expand on demand.",
-              "探索目标、实体与关系 — 先定焦点，再按需展开。",
+              "CPD hierarchy and purpose edges — company tree on open, expand on demand.",
+              "打开即加载公司目标树（CPD 层级），再按需展开目的论关系。",
             )}
           </div>
         </div>

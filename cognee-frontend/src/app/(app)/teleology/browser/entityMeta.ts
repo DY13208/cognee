@@ -38,6 +38,7 @@ export const REL_LABEL_ZH: Record<string, string> = {
   advances: "推进",
   blocks: "阻碍",
   has_subgoal: "含子目标",
+  has_detail_reference: "细节引用",
   depends_on: "依赖",
   contributes: "贡献于",
 };

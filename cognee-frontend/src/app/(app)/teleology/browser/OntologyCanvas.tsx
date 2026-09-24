@@ -368,7 +368,11 @@ export default function OntologyCanvas({
               return (
                 <g key={e.id} opacity={muted ? 0.15 : hi && activeChain.size ? 1 : 0.55}>
                   <path
-                    d={`M ${e.x1} ${e.y1} C ${e.x1 + 40} ${e.y1}, ${e.x2 - 40} ${e.y2}, ${e.x2} ${e.y2}`}
+                    d={
+                      viewMode === "hierarchy"
+                        ? `M ${e.x1} ${e.y1} C ${e.x1} ${e.y1 + 28}, ${e.x2} ${e.y2 - 28}, ${e.x2} ${e.y2}`
+                        : `M ${e.x1} ${e.y1} C ${e.x1 + 40} ${e.y1}, ${e.x2 - 40} ${e.y2}, ${e.x2} ${e.y2}`
+                    }
                     fill="none"
                     stroke={hi && activeChain.size ? "rgba(232,231,228,0.55)" : "rgba(232,231,228,0.22)"}
                     strokeWidth={hi && activeChain.size ? 1.5 : 1}
@@ -451,7 +455,23 @@ export default function OntologyCanvas({
                 {language === "zh" ? "下游" : "Downstream"}
               </span>
             </div>
-          ) : null}
+          ) : (
+            <div
+              style={{
+                position: "absolute",
+                left: 48,
+                top: 12,
+                fontSize: 10,
+                fontWeight: 650,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "rgba(232,231,228,0.28)",
+                pointerEvents: "none",
+              }}
+            >
+              {language === "zh" ? "CPD 层级 · 上→下" : "CPD hierarchy · top→down"}
+            </div>
+          )}
 
           <div className="onto-minimap" aria-hidden>
             {nodesWithOffsets.map((n) => (

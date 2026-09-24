@@ -14,7 +14,7 @@ const ALL_KINDS: EntityKind[] = [
   "Other",
 ];
 
-const REL_OPTIONS = ["serves", "advances", "blocks", "has_subgoal"];
+const REL_OPTIONS = ["has_subgoal", "serves", "advances", "blocks"];
 
 export default function NavPanel({
   language,
