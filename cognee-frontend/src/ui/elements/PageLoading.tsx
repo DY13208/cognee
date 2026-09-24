@@ -1,6 +1,27 @@
 "use client";
 
+import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
+
+const PAGE_NAME_ZH: Record<string, string> = {
+  Overview: "总览",
+  Brain: "脑库",
+  Brains: "脑库",
+  Sessions: "会话",
+  Search: "搜索",
+  Skills: "技能",
+  Mindmap: "脑图",
+  Integrations: "集成",
+  "API Keys": "API 密钥",
+  "MCP Access": "MCP 接入",
+  Settings: "设置",
+  Files: "文件",
+  Workspace: "工作区",
+  Dashboard: "总览",
+};
+
 export default function PageLoading({ name }: { name: string }) {
+  const { language } = useBusinessLanguage();
+  const label = language === "zh" ? PAGE_NAME_ZH[name] || name : name;
   return (
     <div style={{
       display: "flex",
@@ -37,7 +58,7 @@ export default function PageLoading({ name }: { name: string }) {
         letterSpacing: "0.01em",
         animation: "pl-fade 1.8s ease-in-out infinite",
       }}>
-        {name}
+        {name ? label : t(language, "Loading…", "加载中…")}
       </span>
     </div>
   );

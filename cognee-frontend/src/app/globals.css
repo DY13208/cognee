@@ -71,6 +71,40 @@ body {
   background-size: 33px 33px;
 }
 
+.business-language-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.business-language-switch:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.business-language-switch:focus-visible {
+  outline: 2px solid #43d9e8;
+  outline-offset: 2px;
+}
+
+.business-language-switch span {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(237, 236, 234, 0.7);
+}
+
+.business-language-switch span[data-lang="en"] {
+  font-size: 10px;
+  letter-spacing: -0.02em;
+}
+
 html,
 body {
   font-family: "TWKLausanne", sans-serif;

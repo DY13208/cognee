@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import Link from "next/link";
 import useBoolean from "@/utils/useBoolean";
 import useOutsideClick from "@/utils/useOutsideClick";
+import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
 function PersonIcon() {
   return (
@@ -32,6 +33,7 @@ interface ProfileMenuProps {
 }
 
 export default function ProfileMenu({ userName, userEmail, profileHref = "/settings", logoutHref = "/api/signout" }: ProfileMenuProps) {
+  const { language } = useBusinessLanguage();
   const { value: isOpen, toggle, setFalse: close } = useBoolean(false);
   const closeCallback = useCallback(() => close(), [close]);
   const containerRef = useOutsideClick<HTMLDivElement>(closeCallback, isOpen);
@@ -87,7 +89,7 @@ export default function ProfileMenu({ userName, userEmail, profileHref = "/setti
             style={{ fontSize: 13, color: "#333333", textDecoration: "none" }}
           >
             <PersonIcon />
-            Profile
+            {language === "zh" ? "个人资料" : "Profile"}
           </Link>
 
           <div style={{ height: 1, background: "#EEEEEE", margin: "2px -6px" }} />
@@ -99,7 +101,7 @@ export default function ProfileMenu({ userName, userEmail, profileHref = "/setti
             style={{ fontSize: 13, color: "#CC3333", textDecoration: "none" }}
           >
             <LogoutIcon />
-            Log out
+            {language === "zh" ? "退出登录" : "Log out"}
           </a>
         </div>
       )}

@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { CogneeInstance } from "@/modules/instances/types";
 import { treeFromCompanyTreeApi, visibleCPDRows, type CompanyTreeApi } from "./cpdTree";
+import { useBusinessLanguage } from "./BusinessLanguageContext";
 
 function safeSourceUrl(value: string): string | undefined {
   try {
@@ -23,30 +24,40 @@ export default function CPDTreePanel({
   datasetId: string;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true),
+  const { language } = useBusinessLanguage();
+  const t = (zh: string, en: string) => language === "zh" ? zh : en;
+  const countLabel = (count: number, zh: string, singular: string, plural: string) =>
+    language === "zh" ? `${count} ${zh}` : `${count} ${count === 1 ? singular : plural}`;
+  const [open, setOpen] = useState(false),
     [search, setSearch] = useState(""),
     [expanded, setExpanded] = useState<Set<string>>(new Set()),
     [selected, setSelected] = useState<string | null>(null),
     [importing, setImporting] = useState(false),
     [importError, setImportError] = useState("");
+  const treeListRef = useRef<HTMLDivElement>(null);
   const query = useQuery({
     queryKey: ["cpd-company-tree", instance.instanceId, datasetId],
     queryFn: async () => {
       const r = await instance.fetch(
         `/v1/datasets/${encodeURIComponent(datasetId)}/company-tree`,
       );
-      if (!r.ok) throw new Error(`读取目标树失败（HTTP ${r.status}）`);
-      return treeFromCompanyTreeApi((await r.json()) as CompanyTreeApi);
+      if (!r.ok) throw new Error(`${t("读取目标树失败", "Failed to load goal tree")} (HTTP ${r.status})`);
+      const payload = (await r.json()) as CompanyTreeApi;
+      if (payload.missing?.includes("empty") && payload.nodes?.length === 0) return null;
+      return treeFromCompanyTreeApi(payload);
     },
-    enabled: open,
     staleTime: 30000,
     retry: false,
     throwOnError: false,
   });
   const tree = query.data;
+  const visibleOpen = open && Boolean(tree);
   useEffect(() => {
-    onOpenChange?.(open);
-  }, [open, onOpenChange]);
+    onOpenChange?.(visibleOpen);
+  }, [visibleOpen, onOpenChange]);
+  useEffect(() => {
+    if (query.isSuccess && !tree) setOpen(false);
+  }, [query.isSuccess, tree]);
   useEffect(() => {
     if (tree) {
       setExpanded(new Set([tree.root.id]));
@@ -58,6 +69,19 @@ export default function CPDTreePanel({
     [tree, expanded, search],
   );
   const detail = tree?.nodes.find((n) => n.id === selected);
+  const primaryGoals = tree?.children.get(tree.root.id)?.filter((n) => n.kind === "goal") || [];
+  function selectOutlineGoal(id: string) {
+    if (!tree) return;
+    setSearch("");
+    setSelected(id);
+    setExpanded((previous) => new Set([...previous, tree.root.id, id]));
+    requestAnimationFrame(() => {
+      const row = Array.from(
+        treeListRef.current?.querySelectorAll<HTMLElement>("[data-cpd-node-id]") || [],
+      ).find((element) => element.dataset.cpdNodeId === id);
+      row?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    });
+  }
   async function importLinkedMaps() {
     setImporting(true);
     setImportError("");
@@ -70,14 +94,12 @@ export default function CPDTreePanel({
         const body = (await response.json().catch(() => ({}))) as {
           detail?: string;
         };
-        throw new Error(
-          body.detail || `导入关联脑图失败（HTTP ${response.status}）`,
-        );
+        throw new Error(body.detail || `${t("导入关联脑图失败", "Failed to import linked maps")} (HTTP ${response.status})`);
       }
       await query.refetch();
     } catch (error) {
       setImportError(
-        error instanceof Error ? error.message : "导入关联脑图失败",
+        error instanceof Error ? error.message : t("导入关联脑图失败", "Failed to import linked maps"),
       );
     } finally {
       setImporting(false);
@@ -93,41 +115,86 @@ export default function CPDTreePanel({
   } as const;
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          ...buttonStyle,
-          position: "absolute",
-          top: 26,
-          left: 180,
-          zIndex: 31,
-        }}
-      >
-        {open ? "返回关系图" : "公司目标树"}
-      </button>
-      {open && (
+      {tree && (
+        <div
+          role="group"
+          aria-label={t("视图切换", "View switch")}
+          className="bv-company-view-switch"
+        >
+          <span className="bv-company-view-label">{t("视图", "View")}</span>
+          <div className="bv-company-view-options">
+            <button
+              type="button"
+              aria-pressed={!visibleOpen}
+              onClick={() => setOpen(false)}
+              className={!visibleOpen ? "bv-company-view-option is-active" : "bv-company-view-option"}
+            >
+              {t("关系图", "Graph")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={visibleOpen}
+              onClick={() => setOpen(true)}
+              className={visibleOpen ? "bv-company-view-option is-active" : "bv-company-view-option"}
+            >
+              {t("公司目标树", "Company goal tree")}
+            </button>
+          </div>
+        </div>
+      )}
+      {query.isError && !tree && (
+        <button
+          type="button"
+          onClick={() => void query.refetch()}
+          title={query.error instanceof Error ? query.error.message : t("目标树读取失败", "Failed to load goal tree")}
+          className="bv-company-view-retry"
+        >
+          {t("目标树读取失败，重试", "Goal tree unavailable. Retry")}
+        </button>
+      )}
+      {tree && visibleOpen && (
+        <nav aria-label={t("目标目录", "Goal outline")} className="bv-company-outline">
+          <div className="bv-company-outline-heading">
+            <span>{t("目标目录", "Goal outline")}</span>
+            <span>{countLabel(primaryGoals.length, "个分支", "branch", "branches")}</span>
+          </div>
+          <button
+            type="button"
+            className={`bv-company-outline-item bv-company-outline-root${selected === tree.root.id ? " is-selected" : ""}`}
+            aria-current={selected === tree.root.id ? "true" : undefined}
+            onClick={() => selectOutlineGoal(tree.root.id)}
+          >
+            <span className="bv-company-outline-name">{tree.root.name}</span>
+          </button>
+          {primaryGoals.map((goal) => {
+            const count = tree.children.get(goal.id)?.filter((n) => n.kind === "goal").length || 0;
+            return (
+              <button
+                key={goal.id}
+                type="button"
+                className={`bv-company-outline-item bv-company-outline-child${selected === goal.id ? " is-selected" : ""}`}
+                aria-current={selected === goal.id ? "true" : undefined}
+                onClick={() => selectOutlineGoal(goal.id)}
+              >
+                <span className="bv-company-outline-name">{goal.name}</span>
+                <span className="bv-company-outline-count">{count}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
+      {tree && (
         <section
-          aria-label="公司目标树"
+          aria-label={t("公司目标树", "Company goal tree")}
+          aria-hidden={!visibleOpen}
+          className={`bv-company-tree-overlay${visibleOpen ? " is-open" : ""}`}
           onWheel={(e) => e.stopPropagation()}
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 30,
-            isolation: "isolate",
-            pointerEvents: "auto",
-            background: "#101b2d",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            overscrollBehavior: "contain",
-          }}
         >
           <div
             style={{
               flex: 1,
               minHeight: 0,
-              margin: "66px 14px 18px",
+              margin: "14px 14px 18px 210px",
               background: "#101b2d",
               border: "1px solid #34445f",
               borderRadius: 14,
@@ -150,10 +217,10 @@ export default function CPDTreePanel({
             >
               <div>
                 <h2 style={{ fontSize: 20, margin: 0, fontWeight: 650 }}>
-                  公司目标树
+                  {t("公司目标树", "Company goal tree")}
                 </h2>
                 <div style={{ color: "#9eaec6", marginTop: 6 }}>
-                  公司模型本图。关联脑图展开后成为下级目标；读不到的链接仍显示未导入。
+                  {t("公司模型本图。关联脑图展开后成为下级目标；读不到的链接仍显示未导入。", "Goals from the company model. Linked maps become subgoals when imported; unavailable links remain marked as not imported.")}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
@@ -163,7 +230,7 @@ export default function CPDTreePanel({
                   disabled={importing || query.isFetching}
                   style={buttonStyle}
                 >
-                  {importing ? "导入中…" : "导入关联脑图"}
+                  {importing ? t("导入中…", "Importing…") : t("导入关联脑图", "Import linked maps")}
                 </button>
                 <button
                   type="button"
@@ -171,7 +238,7 @@ export default function CPDTreePanel({
                   disabled={query.isFetching || importing}
                   style={buttonStyle}
                 >
-                  {query.isFetching ? "读取中…" : "刷新目标树"}
+                  {query.isFetching ? t("读取中…", "Loading…") : t("刷新目标树", "Refresh goal tree")}
                 </button>
               </div>
             </div>
@@ -182,10 +249,10 @@ export default function CPDTreePanel({
             )}
             {tree && (
               <div style={{ marginTop: 12, color: "#62d9dc" }}>
-                来源 v{tree.revision} · {tree.goalCount} 个目标 ·{" "}
-                {tree.goalEdgeCount} 条目标分解关系 · {tree.referenceCount}{" "}
-                个链接入口 ·{" "}
-                {tree.complete ? "本图层级完整" : "本图层级不完整，仍展示已连接目标"}
+                {t("来源", "Source")} v{tree.revision} · {countLabel(tree.goalCount, "个目标", "goal", "goals")} ·{" "}
+                {countLabel(tree.goalEdgeCount, "条目标分解关系", "subgoal link", "subgoal links")} ·{" "}
+                {countLabel(tree.referenceCount, "个链接入口", "linked map entry", "linked map entries")} ·{" "}
+                {tree.complete ? t("本图层级完整", "Hierarchy complete") : t("本图层级不完整，仍展示已连接目标", "Hierarchy incomplete; showing connected goals")}
               </div>
             )}
           </header>
@@ -193,12 +260,12 @@ export default function CPDTreePanel({
             <div role="alert" style={{ padding: 24, color: "#ffd39c" }}>
               {query.error instanceof Error
                 ? query.error.message
-                : "目标树读取失败"}
-              。未将失败或不完整结果解释为空树。
+                : t("目标树读取失败", "Failed to load goal tree")}
+              {t("。未将失败或不完整结果解释为空树。", ". Failed or incomplete results are not shown as an empty tree.")}
             </div>
           ) : !tree ? (
             <div role="status" style={{ padding: 24 }}>
-              正在读取公司模型层级…
+              {t("正在读取公司模型层级…", "Loading company model hierarchy…")}
             </div>
           ) : (
             <>
@@ -212,8 +279,8 @@ export default function CPDTreePanel({
                 }}
               >
                 <input
-                  aria-label="搜索目标或项目"
-                  placeholder="搜索目标或项目，例如 AHC"
+                  aria-label={t("搜索目标或项目", "Search goals or projects")}
+                  placeholder={t("搜索目标或项目，例如 AHC", "Search goals or projects, e.g. AHC")}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   style={{
@@ -240,7 +307,7 @@ export default function CPDTreePanel({
                   }
                   style={buttonStyle}
                 >
-                  展开本图全部层级
+                  {t("展开本图全部层级", "Expand all levels")}
                 </button>
                 <button
                   type="button"
@@ -250,7 +317,7 @@ export default function CPDTreePanel({
                   }}
                   style={buttonStyle}
                 >
-                  收起到主线
+                  {t("收起到主线", "Collapse to main branches")}
                 </button>
               </div>
               <div
@@ -263,7 +330,8 @@ export default function CPDTreePanel({
               >
                 <div
                   role="tree"
-                  aria-label="目标层级"
+                  aria-label={t("目标层级", "Goal hierarchy")}
+                  ref={treeListRef}
                   style={{
                     flex: "2 1 440px",
                     minHeight: 0,
@@ -275,7 +343,7 @@ export default function CPDTreePanel({
                 >
                   {rows.length === 0 && (
                     <div style={{ padding: 20, color: "#9eaec6" }}>
-                      本图中没有匹配项。
+                      {t("本图中没有匹配项。", "No matching goals in this tree.")}
                     </div>
                   )}
                   {rows.map(({ node, depth }) => {
@@ -288,6 +356,7 @@ export default function CPDTreePanel({
                       <div
                         key={node.id}
                         role="treeitem"
+                        data-cpd-node-id={node.id}
                         aria-level={depth + 1}
                         aria-expanded={kids.length ? isExpanded : undefined}
                         aria-selected={selected === node.id}
@@ -307,7 +376,7 @@ export default function CPDTreePanel({
                         {kids.length ? (
                           <button
                             type="button"
-                            aria-label={`${isExpanded ? "收起" : "展开"} ${node.name}`}
+                            aria-label={`${isExpanded ? t("收起", "Collapse") : t("展开", "Expand")} ${node.name}`}
                             onClick={() =>
                               setExpanded((prev) => {
                                 const n = new Set(prev);
@@ -362,8 +431,8 @@ export default function CPDTreePanel({
                           }}
                         >
                           {node.kind === "map_reference"
-                            ? "链接 · 未导入"
-                            : `${goalKids ? `${goalKids} 个子目标` : ""}${goalKids && refKids ? " · " : ""}${refKids ? `${refKids} 个入口` : ""}`}
+                            ? t("链接 · 未导入", "Link · not imported")
+                            : `${goalKids ? countLabel(goalKids, "个子目标", "subgoal", "subgoals") : ""}${goalKids && refKids ? " · " : ""}${refKids ? countLabel(refKids, "个入口", "entry", "entries") : ""}`}
                         </span>
                       </div>
                     );
@@ -371,7 +440,7 @@ export default function CPDTreePanel({
                 </div>
                 {detail && (
                   <aside
-                    aria-label="节点来源详情"
+                    aria-label={t("节点来源详情", "Goal source details")}
                     style={{
                       flex: "1 1 250px",
                       maxWidth: 390,
@@ -391,7 +460,7 @@ export default function CPDTreePanel({
                         marginBottom: 10,
                       }}
                     >
-                      {detail.kind === "goal" ? "C · 目标" : "关联脑图入口"}
+                      {detail.kind === "goal" ? t("C · 目标", "C · Goal") : t("关联脑图入口", "Linked map entry")}
                     </div>
                     <h3
                       style={{
@@ -410,9 +479,9 @@ export default function CPDTreePanel({
                     <p style={{ color: "#b1bfd2", lineHeight: 1.8 }}>
                       {detail.kind === "goal"
                         ? detail.linkedUri
-                          ? "这是从关联脑图展开的目标，下级来自那张图的节点，不代表指标已经计算或目标已经达成。"
-                          : "这是来源中的目标定义与分解关系，不代表指标已经计算或目标已经达成。"
-                        : "该节点是公司模型中的引用入口。这次没有读到关联脑图，不能据此断言它没有下级。"}
+                          ? t("这是从关联脑图展开的目标，下级来自那张图的节点，不代表指标已经计算或目标已经达成。", "This goal expands from a linked map. Its subgoals come from that map; this does not mean the metrics were calculated or the goal was achieved.")
+                          : t("这是来源中的目标定义与分解关系，不代表指标已经计算或目标已经达成。", "This shows source goal definitions and their breakdown, not calculated metrics or completed goals.")
+                        : t("该节点是公司模型中的引用入口。这次没有读到关联脑图，不能据此断言它没有下级。", "This is a link from the company model. The linked map was unavailable, so its subgoals are unknown.")}
                     </p>
                     <div
                       style={{
@@ -424,9 +493,9 @@ export default function CPDTreePanel({
                         overflowWrap: "anywhere",
                       }}
                     >
-                      来源版本：v{detail.revision}
+                      {t("来源版本", "Source version")}: v{detail.revision}
                       <br />
-                      来源节点：{detail.sourceUid}
+                      {t("来源节点", "Source node")}: {detail.sourceUid}
                     </div>
                     <a
                       href={safeSourceUrl(detail.sourceUri)}
@@ -438,7 +507,7 @@ export default function CPDTreePanel({
                         color: "#69d9da",
                       }}
                     >
-                      打开公司模型来源 ↗
+                      {t("打开公司模型来源 ↗", "Open company model source ↗")}
                     </a>
                     {detail.linkedUri &&
                       safeSourceUrl(detail.linkedUri) && (
@@ -452,7 +521,7 @@ export default function CPDTreePanel({
                             color: "#d7b777",
                           }}
                         >
-                          手动打开关联脑图 ↗
+                          {t("手动打开关联脑图 ↗", "Open linked map ↗")}
                         </a>
                       )}
                   </aside>

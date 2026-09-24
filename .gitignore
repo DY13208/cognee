@@ -225,3 +225,6 @@ certs/
 
 # 本次部署的配置备份（含 .env / 私钥路径）
 .backup-tls/
+
+
+.codegraph

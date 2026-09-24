@@ -1,11 +1,14 @@
 "use client";
 
+import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
+
 /**
  * Slim sticky banner shown at the top of the app shell while the tenant pod is
  * still provisioning (`!tenantReady`). Derived from context per-render, so it
  * survives a page refresh and clears automatically when the pod comes online.
  */
 export default function ProvisioningBanner() {
+  const { language } = useBusinessLanguage();
   return (
     <div
       style={{
@@ -31,7 +34,11 @@ export default function ProvisioningBanner() {
         }}
       />
       <span style={{ fontSize: 13, color: "#EDECEA" }}>
-        Setting up your workspace — this can take a minute. Some features unlock once it&apos;s ready.
+        {t(
+          language,
+          "Setting up your workspace — this can take a minute. Some features unlock once it's ready.",
+          "正在设置工作区——通常需要一分钟。就绪后部分功能才会解锁。",
+        )}
       </span>
     </div>
   );

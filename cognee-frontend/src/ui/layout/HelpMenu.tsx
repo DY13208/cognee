@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import useBoolean from "@/utils/useBoolean";
 import useOutsideClick from "@/utils/useOutsideClick";
 import ExtractionSettingsModal from "./ExtractionSettingsModal";
+import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
 function DocsIcon() {
   return (
@@ -81,6 +82,8 @@ const CHANGELOG_ITEMS = [
 ];
 
 export default function HelpMenu() {
+  const { language } = useBusinessLanguage();
+  const label = (en: string, zh: string) => language === "zh" ? zh : en;
   const router = useRouter();
   const { value: isOpen, toggle, setFalse: close } = useBoolean(false);
   const closeCallback = useCallback(() => close(), [close]);
@@ -134,7 +137,7 @@ export default function HelpMenu() {
             onMouseLeave={e => (e.currentTarget.style.background = "none")}
           >
             <OnboardingIcon />
-            Onboarding
+            {label("Onboarding", "入门引导")}
           </button>
 
           {/* Extraction Settings */}
@@ -146,7 +149,7 @@ export default function HelpMenu() {
             onMouseLeave={e => (e.currentTarget.style.background = "none")}
           >
             <ExtractionIcon />
-            Extraction Settings
+            {label("Extraction Settings", "提取设置")}
           </button>
 
           {/* Separator */}
@@ -165,7 +168,7 @@ export default function HelpMenu() {
               onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = "transparent")}
             >
               {item.icon}
-              {item.label}
+              {language === "zh" ? ({ Docs: "使用文档", "Discord community": "Discord 社区" } as Record<string, string>)[item.label] || item.label : item.label}
             </Link>
           ))}
 
@@ -179,7 +182,7 @@ export default function HelpMenu() {
           >
             <div className="flex items-center gap-[10px]">
               <KeyboardIcon />
-              Keyboard shortcuts
+              {label("Keyboard shortcuts", "键盘快捷键")}
             </div>
             <kbd
               className="flex items-center justify-center rounded-[4px]"
@@ -202,7 +205,7 @@ export default function HelpMenu() {
             style={{ fontSize: 13, color: "rgba(237,236,234,0.8)" }}
           >
             <StatusIcon />
-            System status
+            {label("System status", "系统状态")}
             <span
               className="ml-auto rounded-full"
               style={{ width: 10, height: 10, background: "#22C55E", flexShrink: 0 }}
@@ -214,7 +217,7 @@ export default function HelpMenu() {
 
           {/* What's new */}
           <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 500, color: "rgba(237,236,234,0.35)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            {"What's new"}
+            {label("What's new", "更新动态")}
           </div>
           {CHANGELOG_ITEMS.map((item) => (
             <div
@@ -232,8 +235,10 @@ export default function HelpMenu() {
                 }}
               />
               <div>
-                <div>{item.label}</div>
-                <div style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>{item.date}</div>
+                <div>{language === "zh" ? item.date === "May 8" ? "完整代理支持：创建代理、跟踪会话与状态，并查看代理指标" : "自定义图模型、提示词及本体上传" : item.label}</div>
+                <div style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>
+                  {language === "zh" ? ({ "May 8": "5 月 8 日", "Apr 24": "4 月 24 日" } as Record<string, string>)[item.date] || item.date : item.date}
+                </div>
               </div>
             </div>
           ))}

@@ -7,6 +7,7 @@ import NavbarIconLink from "./NavbarIconLink";
 import { ReactNode } from "react";
 import { useTenant } from "@/modules/tenant/TenantContext";
 import isCloudEnvironment from "@/utils/isCloudEnvironment";
+import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
 // Sidebar widths (px). The rail shows icons only; collapsing only applies on
 // desktop, matching the Tailwind `sm` breakpoint (640px) used below.
@@ -149,8 +150,20 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+const ZH_NAV_LABELS: Record<string, string> = {
+  DATA: "数据", EXPLORE: "探索", CONNECT: "连接",
+  Overview: "总览", Sessions: "会话", Brain: "脑库",
+  Search: "搜索", Skills: "技能", Mindmap: "脑图",
+  Integrations: "集成", "MCP Access": "MCP 接入", "API Keys": "API 密钥",
+  "Expand sidebar": "展开侧栏", "Collapse sidebar": "收起侧栏",
+  "Close navigation": "关闭导航", "Available once your workspace is ready": "工作区准备就绪后可用",
+  "Billing / Pricing": "账单 / 定价",
+};
+
 export default function CustomAppShellNavbar() {
   const pathname = usePathname();
+  const { language } = useBusinessLanguage();
+  const translate = (text: string) => language === "zh" ? ZH_NAV_LABELS[text] || text : text;
   const { isOpen, close, collapsed, toggleCollapsed } = useNavbar();
   const { tenantReady } = useTenant();
 
@@ -184,8 +197,8 @@ export default function CustomAppShellNavbar() {
             edge that fades in on hover (Notion-style). No dedicated header row. */}
         <button
           onClick={toggleCollapsed}
-          aria-label={railed ? "Expand sidebar" : "Collapse sidebar"}
-          title={railed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={railed ? translate("Expand sidebar") : translate("Collapse sidebar")}
+          title={railed ? translate("Expand sidebar") : translate("Collapse sidebar")}
           className="cursor-pointer hidden sm:flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
           style={{ position: "absolute", top: 8, right: 6, width: 18, height: 44, borderRadius: 6, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", zIndex: 10 }}
           onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.12)")}
@@ -201,7 +214,7 @@ export default function CustomAppShellNavbar() {
         <div className="flex sm:hidden items-center justify-end flex-shrink-0 px-3" style={{ height: 40 }}>
           <button
             onClick={close}
-            aria-label="Close navigation"
+            aria-label={translate("Close navigation")}
             className="cursor-pointer"
             style={{ background: "none", border: "none", fontSize: 20, color: "rgba(255,255,255,0.6)", padding: 4 }}
           >
@@ -226,7 +239,7 @@ export default function CustomAppShellNavbar() {
                     textTransform: "uppercase",
                   }}
                 >
-                  {section.label}
+                  {translate(section.label)}
                 </div>
               )}
               {section.items.map((item) => {
@@ -236,20 +249,20 @@ export default function CustomAppShellNavbar() {
                   return (
                     <div
                       key={item.link}
-                      title={railed ? `${item.text} — available once your workspace is ready` : "Available once your workspace is ready"}
+                      title={railed ? `${translate(item.text)} — ${translate("Available once your workspace is ready")}` : translate("Available once your workspace is ready")}
                       className={`flex items-center gap-[10px] rounded-[6px] px-3 py-2 text-[14px] ${railed ? "justify-center" : ""}`}
                       style={{ color: "rgba(237,236,234,0.3)", cursor: "not-allowed", userSelect: "none" }}
                       aria-disabled="true"
                     >
                       {item.icon({ active: false })}
-                      {!railed && item.text}
+                      {!railed && translate(item.text)}
                     </div>
                   );
                 }
                 return (
                   <NavbarIconLink
                     key={item.link}
-                    text={item.text}
+                    text={translate(item.text)}
                     link={item.link}
                     isActive={isActive}
                     collapsed={railed}
@@ -266,7 +279,7 @@ export default function CustomAppShellNavbar() {
           <div style={{ padding: 12, borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", gap: 8 }}>
             <Link
               href="/billing"
-              title={railed ? "Billing / Pricing" : undefined}
+              title={railed ? translate("Billing / Pricing") : undefined}
               className="flex items-center justify-center rounded-[8px] w-full"
               style={{
                 padding: "10px 12px",
@@ -283,7 +296,7 @@ export default function CustomAppShellNavbar() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1e1e1c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" />
                 </svg>
-              ) : "Billing / Pricing"}
+              ) : translate("Billing / Pricing")}
             </Link>
           </div>
         )}
