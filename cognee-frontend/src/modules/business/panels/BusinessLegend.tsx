@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useBusinessLanguage } from "../BusinessLanguageContext";
 
 // The view piles up visual conventions (rings, colors, moving dots) that a
 // first-time viewer has no way to decode — this is the decoder card, the
@@ -34,17 +35,18 @@ function Glyph({ kind }: { kind: string }) {
 }
 
 const LEGEND_ITEMS = [
-  { kind: "size", label: "size = importance" },
-  { kind: "color", label: "color = which source it came from" },
-  { kind: "amber", label: "amber ring = part of the live answer" },
-  { kind: "answered", label: "dashed ring = answered questions before" },
-  { kind: "double", label: "double ring = spans sources / agent memory" },
-  { kind: "path", label: "green ring = shortest path between two records" },
-  { kind: "orphan", label: "faint dashed gray = no connections yet" },
-  { kind: "dot", label: "drifting dots = relationships at work" },
+  { kind: "size", en: "size = importance", zh: "大小代表重要程度" },
+  { kind: "color", en: "color = which source it came from", zh: "颜色代表数据来源" },
+  { kind: "amber", en: "amber ring = part of the live answer", zh: "橙色环代表当前回答引用的内容" },
+  { kind: "answered", en: "dashed ring = answered questions before", zh: "虚线环代表曾用于回答问题" },
+  { kind: "double", en: "double ring = spans sources / agent memory", zh: "双环代表跨来源或代理记忆" },
+  { kind: "path", en: "green ring = shortest path between two records", zh: "绿色环代表两条记录间的最短路径" },
+  { kind: "orphan", en: "faint dashed gray = no connections yet", zh: "浅灰虚线代表暂无连接" },
+  { kind: "dot", en: "drifting dots = relationships at work", zh: "流动光点代表活跃关系" },
 ];
 
 export default function BusinessLegend() {
+  const { language } = useBusinessLanguage();
   const [open, setOpen] = useState(false);
 
   return (
@@ -54,11 +56,11 @@ export default function BusinessLegend() {
           {LEGEND_ITEMS.map((item) => (
             <div key={item.kind} className="mb-1.5 flex items-center gap-2 last:mb-0">
               <Glyph kind={item.kind} />
-              <span>{item.label}</span>
+              <span>{item[language]}</span>
             </div>
           ))}
           <div className="mt-1.5 border-t border-[#2A3652] pt-1.5">
-            click a record to focus its neighborhood · shift+click a second to trace the path between them
+            {language === "zh" ? "点击记录可查看邻近节点；按住 Shift 再点另一条记录可追踪两者间的路径" : "click a record to focus its neighborhood · shift+click a second to trace the path between them"}
           </div>
         </div>
       )}
@@ -69,7 +71,7 @@ export default function BusinessLegend() {
           open ? "border-[#43D9E8] text-[#43D9E8]" : "border-[#2A3652] text-[#7E8CA6] hover:text-[#E9EEF6]"
         }`}
       >
-        {open ? "✕ legend" : "? legend"}
+        {open ? language === "zh" ? "✕ 图例" : "✕ legend" : language === "zh" ? "? 图例" : "? legend"}
       </button>
     </div>
   );

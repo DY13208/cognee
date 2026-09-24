@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
+import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 import {
   DEFAULT_PIPELINE_SETTINGS,
   getPipelineSettingsFromStorage,
@@ -108,6 +109,7 @@ function ToggleField({
 }
 
 export default function ExtractionSettingsModal({ onClose }: Props) {
+  const { language } = useBusinessLanguage();
   const { cogniInstance } = useCogniInstance();
   const [values, setValues] = useState<PipelineSettings>(getPipelineSettingsFromStorage);
   const [saved, setSaved] = useState<PipelineSettings>(getPipelineSettingsFromStorage);
@@ -147,7 +149,7 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
       setSaved(values);
       onClose();
     } catch {
-      setError("Failed to save settings. Please try again.");
+      setError(t(language, "Failed to save settings. Please try again.", "保存设置失败，请重试。"));
     } finally {
       setSaving(false);
     }
@@ -182,10 +184,10 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
         {/* Header */}
         <div style={{ marginBottom: 20 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "#EDECEA", margin: 0 }}>
-            Extraction Settings
+            {t(language, "Extraction Settings", "提取设置")}
           </h2>
           <p style={{ fontSize: 13, color: "rgba(237,236,234,0.55)", margin: "4px 0 0" }}>
-            Default parameters for knowledge extraction and search
+            {t(language, "Default parameters for knowledge extraction and search", "知识提取与搜索的默认参数")}
           </p>
         </div>
 
@@ -195,29 +197,29 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
         {/* Fields */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <SelectField
-            label="Chunk Size"
-            description="Characters per document chunk during ingestion"
+            label={t(language, "Chunk Size", "分块大小")}
+            description={t(language, "Characters per document chunk during ingestion", "导入时每个文档分块的字符数")}
             value={values.chunkSize}
             options={CHUNK_SIZE_OPTIONS}
             onChange={(v) => setValues((s) => ({ ...s, chunkSize: v }))}
           />
           <SelectField
-            label="Chunks Per Batch"
-            description="Chunks processed in parallel during cognification"
+            label={t(language, "Chunks Per Batch", "每批分块数")}
+            description={t(language, "Chunks processed in parallel during cognification", "构建图谱时并行处理的分块数")}
             value={values.chunksPerBatch}
             options={CHUNKS_PER_BATCH_OPTIONS}
             onChange={(v) => setValues((s) => ({ ...s, chunksPerBatch: v }))}
           />
           <SelectField
-            label="Top-K Results"
-            description="Maximum results returned per search query"
+            label={t(language, "Top-K Results", "Top-K 结果数")}
+            description={t(language, "Maximum results returned per search query", "每次搜索返回的最大结果数")}
             value={values.topK}
             options={TOP_K_OPTIONS}
             onChange={(v) => setValues((s) => ({ ...s, topK: v }))}
           />
           <ToggleField
-            label="Source references"
-            description="Attach citations and provenance links to recall answers"
+            label={t(language, "Source references", "来源引用")}
+            description={t(language, "Attach citations and provenance links to recall answers", "在召回回答中附加引用与溯源链接")}
             checked={values.includeReferences}
             onChange={(v) => setValues((s) => ({ ...s, includeReferences: v }))}
           />
@@ -250,7 +252,7 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
               marginRight: "auto",
             }}
           >
-            Reset
+            {t(language, "Reset", "重置")}
           </button>
           <button
             onClick={handleSave}
@@ -269,7 +271,7 @@ export default function ExtractionSettingsModal({ onClose }: Props) {
               transition: "background 0.15s",
             }}
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? t(language, "Saving…", "保存中…") : t(language, "Save", "保存")}
           </button>
         </div>
       </div>

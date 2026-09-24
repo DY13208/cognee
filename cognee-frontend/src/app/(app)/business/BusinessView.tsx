@@ -40,6 +40,7 @@ import BusinessLoading from "@/modules/business/panels/BusinessLoading";
 import BusinessEmptyState from "@/modules/business/panels/BusinessEmptyState";
 import ScrollFadeContainer from "@/modules/business/panels/ScrollFadeContainer";
 import { useEntitySelection } from "@/modules/business/useEntitySelection";
+import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
 const WHAT_IF_SPOTLIGHT_MS = 12000;
 
@@ -52,6 +53,7 @@ interface BusinessViewProps {
 // before this ever mounts (see POD_DEPENDENT_PATHS), the same gate every
 // other pod-backed route uses.
 export default function BusinessView({ cogniInstance }: BusinessViewProps) {
+  const { language } = useBusinessLanguage();
   const scene = useBusinessScene(cogniInstance);
   const brainsQuery = useBrains(cogniInstance);
   const governanceIndex = useGovernanceIndex(scene.layerData[GOVERNANCE_LAYER_ID]);
@@ -126,9 +128,9 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
     if (hasNarratedFirstLoadRef.current || !scene.brainState || !scene.layerData[CONTENT_LAYER_ID]) return;
     hasNarratedFirstLoadRef.current = true;
     const brain = scene.brainState;
-    narrate(
-      `this is your business — ${brain.typeNodes.length} kind${brain.typeNodes.length === 1 ? "" : "s"} of things across ${brain.sourceNames.length} source${brain.sourceNames.length === 1 ? "" : "s"}, one connected model`,
-    );
+    narrate(language === "zh"
+      ? `这是你的业务模型：${brain.typeNodes.length} 类内容、${brain.sourceNames.length} 个来源，共同组成一张关系图`
+      : `this is your business — ${brain.typeNodes.length} kind${brain.typeNodes.length === 1 ? "" : "s"} of things across ${brain.sourceNames.length} source${brain.sourceNames.length === 1 ? "" : "s"}, one connected model`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene.brainState, scene.layerData]);
 
@@ -143,7 +145,9 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
       if (first) bySet[first] = (bySet[first] || 0) + 1;
     });
     const src = Object.keys(bySet).sort((a, b) => bySet[b] - bySet[a])[0];
-    const text = `cognify complete — ${newborn.length} new entities joined the model${src ? ` from ${src}` : ""}`;
+    const text = language === "zh"
+      ? `构建完成：${newborn.length} 个新实体加入模型${src ? `，来源：${src}` : ""}`
+      : `cognify complete — ${newborn.length} new entities joined the model${src ? ` from ${src}` : ""}`;
     narrate(text, "#43D9E8");
     // A real state change gets its own dismissible toast, not just the
     // narration line — that line is shared with passive auto-insight tips
@@ -151,8 +155,8 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
     // was easy to mistake for one of those tips or miss once it faded
     // (COG-6233 UX audit).
     notifications.show({
-      title: "Cognify complete",
-      message: `${newborn.length} new ${newborn.length === 1 ? "entity" : "entities"} joined the model${src ? ` from ${src}` : ""}.`,
+      title: language === "zh" ? "构建完成" : "Cognify complete",
+      message: language === "zh" ? `${newborn.length} 个新实体加入模型${src ? `，来源：${src}` : ""}。` : `${newborn.length} new ${newborn.length === 1 ? "entity" : "entities"} joined the model${src ? ` from ${src}` : ""}.`,
       color: "teal",
       autoClose: 5000,
     });
@@ -168,7 +172,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
       setFlashedSourceName(src);
       setTimeout(() => setFlashedSourceName((current) => (current === src ? null : current)), 2000);
     }
-  }, [narrate]);
+  }, [narrate, language]);
 
   const qa = useBusinessQaSurface(
     canvasRef,
@@ -279,13 +283,13 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
   const clearSourceFocus = useCallback(() => {
     setFocusSets(null);
     setSelectedSourceName(null);
-    narrate("showing everything", "#7E8CA6");
+    narrate(language === "zh" ? "显示全部内容" : "showing everything", "#7E8CA6");
     // Without this, the camera stayed wherever the focus lens had zoomed
     // it — clearing the lens then dumped the WHOLE graph back into that
     // same tight framing instead of recentering to show it properly
     // (COG-6233).
     canvasRef.current?.fit(true);
-  }, [narrate]);
+  }, [narrate, language]);
 
   const selectedSourceDetail = selectedSourceName && scene.brainState
     ? computeSourceDetail(selectedSourceName, scene.brainState)
@@ -314,13 +318,10 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
     [scene.brainState, setSpotlight, narrate],
   );
 
-  const [companyTreeOpen, setCompanyTreeOpen] = useState(true);
-  // Narrow to string here so CPDTreePanel's datasetId prop type-checks —
-  // `activeDatasetId === CONST` alone does not eliminate null for TS.
-  const companyTreeDatasetId =
-    scene.activeDatasetId === "dd3aa689-ec26-5887-9730-310eec869d1c"
-      ? scene.activeDatasetId
-      : null;
+  const [companyTreeOpen, setCompanyTreeOpen] = useState(false);
+  // Probe the selected brain for a company tree. The panel shows its entry
+  // only when the dataset actually contains a readable tree.
+  const companyTreeDatasetId = scene.activeDatasetId;
 
   return (
     // text-[12px] is this view's base size, and the only way to size raw
@@ -337,6 +338,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
     >
       {companyTreeDatasetId && (
         <CPDTreePanel
+          key={companyTreeDatasetId}
           instance={cogniInstance}
           datasetId={companyTreeDatasetId}
           onOpenChange={setCompanyTreeOpen}
@@ -408,8 +410,8 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
       {/* leading-[15px] pins the label's line box so the switcher chip's top
           lands at exactly 10+15+4 = 29px — SearchBar (top-[29px]) and
           OperatorsRail's workspace card align to that same line. */}
-      <div className="absolute left-2.5 top-2.5 z-10">
-        <div className="mb-1 px-1 text-[10px] leading-[15px] uppercase tracking-widest text-[#7E8CA6]">brain</div>
+      <div className="bv-brain-control absolute left-2.5 top-2.5 z-10">
+        <div className="mb-1 px-1 text-[10px] leading-[15px] uppercase tracking-widest text-[#7E8CA6]">{language === "zh" ? "脑库" : "brain"}</div>
         <BrainSwitcher
           brains={brainsQuery.data ?? null}
           index={governanceIndex}
@@ -432,12 +434,14 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           hoveredPrincipalId={hoveredPrincipalId}
         />
       </div>
-      {/* top offset must clear the workspace label + BrainSwitcher block
-          above (left-2.5 top-2.5) so it doesn't cover this panel's own
-          "sources" heading. bottom offset leaves room for
+      {/* The view switch sits between Brain and Sources when a tree exists.
+          bottom offset leaves room for
           GraphConstructionLog (h-[104px], anchored bottom-24) below it in
           the same left column (COG-6233). */}
-      <div className="absolute left-0 top-[68px] bottom-[208px] w-[196px]">
+      <div
+        className="bv-sources-column absolute left-0 top-[68px] bottom-[208px] w-[196px]"
+        aria-hidden={companyTreeOpen}
+      >
         <ScrollFadeContainer className="h-full overflow-y-auto">
           <SourcesRail
             brainState={scene.brainState}
@@ -457,14 +461,15 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
               // no obvious reason why (COG-6233).
               if (!entityCount) {
                 const memberCount = scene.brainState?.setMemberCount[name] ?? 0;
-                narrate(
-                  `${sourceLabel(name)} has no extracted entities yet — ${memberCount} item${memberCount === 1 ? "" : "s"} not shown as a graph`,
-                  "#7E8CA6",
-                );
+                narrate(language === "zh"
+                  ? `${sourceLabel(name)} 尚未提取实体，${memberCount} 个项目未显示在关系图中`
+                  : `${sourceLabel(name)} has no extracted entities yet — ${memberCount} item${memberCount === 1 ? "" : "s"} not shown as a graph`, "#7E8CA6");
                 return;
               }
               setFocusSets(new Set([name]));
-              narrate(`showing only ${sourceLabel(name)} — ${entityCount} entities · click again for everything`, "#43D9E8");
+              narrate(language === "zh"
+                ? `仅显示 ${sourceLabel(name)}：${entityCount} 个实体；再次点击显示全部`
+                : `showing only ${sourceLabel(name)} — ${entityCount} entities · click again for everything`, "#43D9E8");
               // Without this, clicking a source only dimmed everyone else —
               // invisible if the camera happened to be looking somewhere else
               // already, which read as the click doing nothing at all.
@@ -501,7 +506,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           >
             ✕
           </button>
-          <div className="pr-4 text-[12px] font-semibold text-[#F5A83C]">this graph just answered a question</div>
+          <div className="pr-4 text-[12px] font-semibold text-[#F5A83C]">{language === "zh" ? "这张图刚回答了一个问题" : "this graph just answered a question"}</div>
           <div className="mt-0.5 truncate text-[11.5px] text-[#7E8CA6]">
             &ldquo;{truncate(String(qa.pendingSearchEvent.question || ""), 60)}&rdquo;
           </div>
@@ -510,7 +515,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
             onClick={qa.playPendingSearchEvent}
             className="mt-1.5 cursor-pointer font-medium text-[#43D9E8] hover:underline"
           >
-            ▶ see what it used
+            {language === "zh" ? "▶ 查看引用内容" : "▶ see what it used"}
           </button>
         </div>
       )}
@@ -569,7 +574,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           stays null forever, which otherwise pinned this "weaving…" overlay
           under the error state below with nothing left to wait for. */}
       {scene.activeDatasetId && (!scene.brainState || scene.isContentLoading) && !contentFailed && (
-        <BusinessLoading label="weaving your business model…" />
+        <BusinessLoading label={language === "zh" ? "正在构建业务模型…" : "weaving your business model…"} />
       )}
       {/* No dataset selected is its own state, not an empty dataset — the
           auto-focus effect above normally picks the first brain, so this
@@ -582,10 +587,10 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           auto-focus runs in a post-paint effect — for one paint after
           governance resolves activeDatasetId is still null. */}
       {!scene.isLoading && !scene.activeDatasetId && governanceIndex.datasets.length === 0 && !governanceFailed && (
-        <BusinessEmptyState label="no dataset selected — create a brain and upload documents to see your business model" />
+        <BusinessEmptyState label={language === "zh" ? "尚未选择脑库，请创建脑库并上传文档" : "no dataset selected — create a brain and upload documents to see your business model"} />
       )}
       {!scene.isLoading && !scene.activeDatasetId && governanceFailed && (
-        <BusinessEmptyState label="couldn't load this workspace's brains — check your connection and reload" />
+        <BusinessEmptyState label={language === "zh" ? "无法读取工作区脑库，请检查网络并刷新" : "couldn't load this workspace's brains — check your connection and reload"} />
       )}
       {/* A failed graph fetch must never masquerade as "this dataset is
           empty" — without this branch a /visualize/json 500 rendered the
@@ -594,7 +599,7 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
           through a failed poll tick (see contentFailed), and covering it with
           this overlay blocked every interaction until a later tick succeeded. */}
       {scene.activeDatasetId && contentFailed && !hasGraphContent && (
-        <BusinessEmptyState label="couldn't load this dataset's graph — check your connection and try switching to it again" />
+        <BusinessEmptyState label={language === "zh" ? "无法读取当前脑库的关系图，请检查网络或重新切换" : "couldn't load this dataset's graph — check your connection and try switching to it again"} />
       )}
       {/* The filament that used to draw a stray line to an empty source's
           territory is gated on this same "no entities, no links" condition
@@ -603,8 +608,8 @@ export default function BusinessView({ cogniInstance }: BusinessViewProps) {
         <BusinessEmptyState
           label={
             scene.brainState.sourceNames.length
-              ? "content ingested, nothing extracted into the graph yet. check back after processing finishes"
-              : "no content in this dataset yet"
+              ? language === "zh" ? "内容已导入，尚未提取到关系图；请等待处理完成" : "content ingested, nothing extracted into the graph yet. check back after processing finishes"
+              : language === "zh" ? "当前脑库暂无内容" : "no content in this dataset yet"
           }
         />
       )}

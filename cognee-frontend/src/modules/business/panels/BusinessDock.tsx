@@ -2,8 +2,10 @@
 
 import type { NarrationDisplay } from "../useNarration";
 import TourControl from "./TourControl";
+import { useBusinessLanguage } from "../BusinessLanguageContext";
 
 const ALTIMETER_LABELS = ["Business", "Players", "Connections", "Records"];
+const ZH_ALTIMETER_LABELS = ["业务", "参与者", "连接", "记录"];
 
 interface BusinessDockProps {
   narration: NarrationDisplay;
@@ -27,6 +29,7 @@ interface BusinessDockProps {
 export default function BusinessDock({
   narration, altimeter, onAltimeterLevel, live, tourPlaying, onTourStart, onTourStop, recordCount,
 }: BusinessDockProps) {
+  const { language } = useBusinessLanguage();
   return (
     <div
       className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-1.5 px-4 pb-2.5"
@@ -52,12 +55,12 @@ export default function BusinessDock({
                 key={label}
                 type="button"
                 onClick={() => onAltimeterLevel(level)}
-                title={isRecords ? "toggle the raw records layer — chunks, documents and summaries behind the entities" : undefined}
+                title={isRecords ? language === "zh" ? "显示或隐藏实体背后的原始记录、文档和摘要" : "toggle the raw records layer — chunks, documents and summaries behind the entities" : undefined}
                 className={`rounded-[6px] px-2.5 py-[3px] ${
                   active ? "bg-[#141D33] text-[#E9EEF6]" : "text-[#7E8CA6] hover:text-[#E9EEF6]"
                 }`}
               >
-                {label}
+                {language === "zh" ? ZH_ALTIMETER_LABELS[level] : label}
                 {isRecords && recordCount > 0 && (
                   <span className={`ml-1 text-[10px] ${active ? "text-[#43D9E8]" : "text-[#5B6880]"}`}>{recordCount}</span>
                 )}
@@ -67,10 +70,10 @@ export default function BusinessDock({
         </div>
         <span
           role="status"
-          aria-label={live ? "Live updates connected" : "Live updates reconnecting"}
+          aria-label={live ? language === "zh" ? "实时更新已连接" : "Live updates connected" : language === "zh" ? "实时更新重连中" : "Live updates reconnecting"}
           className={`text-[11px] ${live ? "text-[#43D9E8]" : "text-[#7E8CA6]"}`}
         >
-          {live ? "● LIVE" : "○ live: reconnecting…"}
+          {live ? language === "zh" ? "● 实时" : "● LIVE" : language === "zh" ? "○ 正在重连…" : "○ live: reconnecting…"}
         </span>
         <TourControl isPlaying={tourPlaying} onStart={onTourStart} onStop={onTourStop} />
       </div>

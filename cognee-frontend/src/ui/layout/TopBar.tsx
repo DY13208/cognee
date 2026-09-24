@@ -14,6 +14,8 @@ import { useFilter } from "./FilterContext";
 import { useTenant } from "@/modules/tenant/TenantContext";
 import useBoolean from "@/utils/useBoolean";
 import useOutsideClick from "@/utils/useOutsideClick";
+import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
+import LanguageSwitch from "./LanguageSwitch";
 
 // ── Icons ──
 
@@ -66,6 +68,18 @@ const ROUTE_LABELS: Record<string, string> = {
   "/memory-gap-analysis": "Memory coverage",
   "/analytics": "Analytics",
   "/activity": "Activity",
+  "/skills": "Skills",
+  "/connections": "Connections",
+  "/graph-models": "Graph models",
+};
+
+const ZH_ROUTE_LABELS: Record<string, string> = {
+  "/": "总览", "/dashboard": "总览", "/datasets": "脑库", "/sessions": "会话",
+  "/search": "搜索", "/knowledge-graph": "脑图", "/business": "脑图",
+  "/integrations": "集成", "/mcp-access": "MCP 接入", "/api-keys": "API 密钥",
+  "/settings": "设置", "/onboarding": "入门", "/members": "成员",
+  "/memory-gap-analysis": "记忆覆盖", "/analytics": "分析", "/activity": "活动",
+  "/skills": "技能", "/connections": "连接", "/graph-models": "图模型",
 };
 
 // ── TopBar ──
@@ -80,6 +94,7 @@ export default function TopBar() {
   const { data: cloudUser } = useCurrentUser(cloud);
   const user = cloud ? cloudUser : localUser;
   const pathname = usePathname();
+  const { language } = useBusinessLanguage();
   const { workspace, workspaces, setWorkspace } = useFilter();
   const { requestCreateWorkspace, availableTenants } = useTenant();
 
@@ -124,7 +139,7 @@ export default function TopBar() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column" }}>
                   <span style={{ fontSize: 13, fontWeight: workspace.id === ws.id ? 500 : 400, color: blocked ? "#71717A" : workspace.id === ws.id ? "rgba(188,155,255,0.60)" : "#EDECEA" }}>{ws.name}</span>
-                  {blocked && <span style={{ fontSize: 10, color: "rgba(237,236,234,0.55)" }}>No active subscription</span>}
+                  {blocked && <span style={{ fontSize: 10, color: "rgba(237,236,234,0.55)" }}>{language === "zh" ? "订阅未激活" : "No active subscription"}</span>}
                 </div>
                 {workspace.id === ws.id && !blocked && <Check />}
               </div>
@@ -140,7 +155,7 @@ export default function TopBar() {
               >
                 <PlusIcon />
                 <span style={{ fontSize: 13, fontWeight: 500, color: "#6510F4" }}>
-                  Create new workspace
+                  {language === "zh" ? "创建新工作区" : "Create new workspace"}
                 </span>
               </div>
             </>
@@ -151,17 +166,18 @@ export default function TopBar() {
         {isDatasetDetail ? (
           <>
             <Slash />
-            <Link href="/datasets" className="hover:opacity-70" style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>Brain</Link>
+            <Link href="/datasets" className="hover:opacity-70" style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.55)" }}>{language === "zh" ? "脑库" : "Brain"}</Link>
             <Slash />
-            <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.7)" }}>Documents</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.7)" }}>{language === "zh" ? "文档" : "Documents"}</span>
           </>
         ) : basePath !== "/" && basePath !== "/dashboard" ? (
-          <><Slash /><span style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.7)" }}>{pageName}</span></>
+          <><Slash /><span style={{ fontSize: 14, fontWeight: 500, color: "rgba(237,236,234,0.7)" }}>{language === "zh" ? ZH_ROUTE_LABELS[basePath] || pageName : pageName}</span></>
         ) : null}
       </div>
 
       {/* Right: help + profile */}
       <div className="flex items-center gap-3">
+        <LanguageSwitch />
         <HelpMenu />
         <ProfileMenu
           userName={user?.name || ""}

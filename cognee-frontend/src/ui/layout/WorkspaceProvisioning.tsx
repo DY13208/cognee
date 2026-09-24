@@ -1,6 +1,7 @@
 "use client";
 
 import SkeletonBar from "@/ui/elements/SkeletonBar";
+import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
 /**
  * Shared placeholder for pod-dependent pages while the tenant workspace is still
@@ -8,6 +9,7 @@ import SkeletonBar from "@/ui/elements/SkeletonBar";
  * those pages never show broken/empty data against an unready pod.
  */
 export default function WorkspaceProvisioning() {
+  const { language } = useBusinessLanguage();
   return (
     <div
       style={{
@@ -37,8 +39,11 @@ export default function WorkspaceProvisioning() {
         <SkeletonBar width={160} height={8} />
       </div>
       <p style={{ margin: 0, fontSize: 14, color: "rgba(237,236,234,0.6)", maxWidth: 360, lineHeight: "22px" }}>
-        Your workspace is being set up — usually takes under a minute.
-        This page unlocks as soon as it&apos;s ready.
+        {t(
+          language,
+          "Your workspace is being set up — usually takes under a minute. This page unlocks as soon as it's ready.",
+          "正在设置工作区——通常不到一分钟。就绪后本页即可使用。",
+        )}
       </p>
     </div>
   );

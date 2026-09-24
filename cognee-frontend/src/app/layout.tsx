@@ -10,6 +10,7 @@ import { Notifications } from "@mantine/notifications";
 import { OsPreferenceProvider } from "@/ui/layout/OsPreferenceContext";
 import QueryProvider from "@/modules/query/QueryProvider";
 import RuntimeConfigScript from "@/modules/config/RuntimeConfigScript";
+import { BusinessLanguageProvider } from "@/modules/business/BusinessLanguageContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -47,9 +48,11 @@ export default function RootLayout({
         <QueryProvider>
           <MantineProvider theme={theme}>
             <Notifications position="top-right" zIndex={10001} />
-            <OsPreferenceProvider>
-              {children}
-            </OsPreferenceProvider>
+            <BusinessLanguageProvider>
+              <OsPreferenceProvider>
+                {children}
+              </OsPreferenceProvider>
+            </BusinessLanguageProvider>
           </MantineProvider>
         </QueryProvider>
       </body>

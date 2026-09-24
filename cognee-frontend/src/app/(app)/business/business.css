@@ -6,6 +6,11 @@
   .bv-motion {
     transition: none !important;
   }
+
+  .bv-company-tree-overlay,
+  .bv-sources-column {
+    transition: none !important;
+  }
 }
 
 /* Compact markdown inside the AnswerCard: Tailwind's preflight zeroes all
@@ -51,4 +56,206 @@
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
+}
+
+/* Keep the view choice fixed under the selected Brain in both views. */
+.bv-company-view-switch {
+  position: absolute;
+  top: 64px;
+  left: 10px;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.bv-root:has(.bv-company-view-switch, .bv-company-view-retry) .bv-sources-column {
+  top: 126px;
+}
+
+.bv-sources-column {
+  transition: opacity 180ms ease;
+}
+
+.bv-root:has(.bv-company-tree-overlay.is-open) .bv-sources-column {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bv-root:has(.bv-company-tree-overlay.is-open) .bv-brain-control {
+  z-index: 31;
+}
+
+.bv-company-outline {
+  position: absolute;
+  top: 132px;
+  bottom: 18px;
+  left: 10px;
+  width: 180px;
+  z-index: 31;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 4px 12px 0;
+  border-top: 1px solid #34445f;
+  color: #aabbd3;
+}
+
+.bv-company-outline-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 7px 10px;
+  color: #8194ae;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.bv-company-outline-heading span:last-child {
+  color: #5fc4d0;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.bv-company-outline-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 33px;
+  margin-bottom: 3px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  color: #aabbd3;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bv-company-outline-item:hover,
+.bv-company-outline-item:focus-visible {
+  color: #e9eef6;
+  background: #223249;
+}
+
+.bv-company-outline-item:focus-visible {
+  outline: 2px solid #43d9e8;
+}
+
+.bv-company-outline-item.is-selected {
+  color: #e9eef6;
+  background: #263b52;
+}
+
+.bv-company-outline-root {
+  font-weight: 600;
+}
+
+.bv-company-outline-root::before {
+  content: "▾";
+  color: #63cbd4;
+  font-size: 11px;
+}
+
+.bv-company-outline-child {
+  padding-left: 17px;
+}
+
+.bv-company-outline-child::before {
+  content: "·";
+  color: #63cbd4;
+}
+
+.bv-company-outline-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bv-company-outline-count {
+  color: #78aab8;
+  font-size: 11px;
+}
+
+.bv-company-tree-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+  overscroll-behavior: contain;
+  background: #101b2d;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 200ms ease, transform 200ms ease, visibility 0s linear 200ms;
+}
+
+.bv-company-tree-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition: opacity 200ms ease, transform 200ms ease, visibility 0s;
+}
+
+.bv-company-view-label {
+  margin-left: 4px;
+  color: #7e8ca6;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.bv-company-view-options {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #34445f;
+  border-radius: 9px;
+  background: #1a2438;
+  box-shadow: 0 4px 16px #0003;
+}
+
+.bv-company-view-option {
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 10px;
+  color: #9eaec6;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bv-company-view-option:hover,
+.bv-company-view-option:focus-visible {
+  color: #e9eef6;
+}
+
+.bv-company-view-option:focus-visible {
+  outline: 2px solid #43d9e8;
+  outline-offset: 1px;
+}
+
+.bv-company-view-option.is-active {
+  color: #e9eef6;
+  background: #29415a;
+}
+
+.bv-company-view-retry {
+  position: absolute;
+  top: 72px;
+  left: 10px;
+  z-index: 31;
+  padding: 7px 10px;
+  border: 1px solid #34445f;
+  border-radius: 8px;
+  color: #ffd39c;
+  background: #1a2438;
+  cursor: pointer;
 }

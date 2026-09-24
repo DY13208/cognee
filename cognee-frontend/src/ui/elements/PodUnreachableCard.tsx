@@ -1,6 +1,7 @@
 "use client";
 
 import { trackEvent } from "@/modules/analytics";
+import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
 /**
  * Terminal error state for when pod-readiness polling has genuinely given up
@@ -9,6 +10,7 @@ import { trackEvent } from "@/modules/analytics";
  * visible, matching the rest of the dashboard's loading states.
  */
 export default function PodUnreachableCard({ pageName = "Dashboard" }: { pageName?: string }) {
+  const { language } = useBusinessLanguage();
   return (
     <div style={{ minHeight: "100%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "clamp(16px, 3vw, 32px)" }}>
       <div style={{
@@ -29,10 +31,14 @@ export default function PodUnreachableCard({ pageName = "Dashboard" }: { pageNam
           <text x="8" y="12" textAnchor="middle" fontSize="9" fontWeight="700" fill="#FBBF24">!</text>
         </svg>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#EDECEA" }}>
-          We&apos;re having trouble reaching your workspace
+          {t(language, "We're having trouble reaching your workspace", "无法连接到你的工作区")}
         </h2>
         <p style={{ margin: 0, fontSize: 13, color: "rgba(237,236,234,0.65)", lineHeight: "20px" }}>
-          This can happen during setup or a temporary hiccup. Try again, or sign out and back in.
+          {t(
+            language,
+            "This can happen during setup or a temporary hiccup. Try again, or sign out and back in.",
+            "可能出现在初始化或短暂故障时。请重试，或退出后重新登录。",
+          )}
         </p>
         <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
           <button
@@ -40,14 +46,14 @@ export default function PodUnreachableCard({ pageName = "Dashboard" }: { pageNam
             className="cursor-pointer"
             style={{ background: "none", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 500, color: "rgba(237,236,234,0.8)" }}
           >
-            Try again
+            {t(language, "Try again", "重试")}
           </button>
           <a
             href="/api/signout"
             onClick={() => trackEvent({ pageName, eventName: "sign_out" })}
             style={{ background: "#6510F4", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 500, color: "#fff", textDecoration: "none", display: "inline-flex", alignItems: "center" }}
           >
-            Sign out
+            {t(language, "Sign out", "退出登录")}
           </a>
         </div>
       </div>

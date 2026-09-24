@@ -3,6 +3,7 @@
 import { Tooltip } from "@mantine/core";
 import { sourceLabel, sourceTooltipLabel } from "../computeBrainState";
 import type { BrainState } from "../sceneTypes";
+import { useBusinessLanguage } from "../BusinessLanguageContext";
 
 type SourcesBrainState = Pick<
   BrainState,
@@ -54,6 +55,7 @@ interface SourceCardProps {
 function SourceCard({
   name, brainState, focused, dimmed, flashSourceName, registerCardRef, onToggleFocus,
 }: SourceCardProps) {
+  const { language } = useBusinessLanguage();
   const entities = brainState?.setEntityCount[name] ?? 0;
   const docs = brainState?.setDocCount[name] ?? 0;
   const members = brainState?.setMemberCount[name] ?? 0;
@@ -86,13 +88,13 @@ function SourceCard({
       </Tooltip>
       <div
         className="truncate text-[11px] text-[#7E8CA6]"
-        title="entities = concepts extracted from this source; items = source documents/records ingested"
+        title={language === "zh" ? "实体是从此来源提取的概念；项目是已导入的来源文档或记录" : "entities = concepts extracted from this source; items = source documents/records ingested"}
       >
         {entities
-          ? `${entities} entities · ${docs} item${docs === 1 ? "" : "s"}`
+          ? language === "zh" ? `${entities} 个实体 · ${docs} 个项目` : `${entities} entities · ${docs} item${docs === 1 ? "" : "s"}`
           : members
-            ? `${members} item${members === 1 ? "" : "s"}`
-            : "weaving…"}
+            ? language === "zh" ? `${members} 个项目` : `${members} item${members === 1 ? "" : "s"}`
+            : language === "zh" ? "构建中…" : "weaving…"}
       </div>
     </button>
   );
@@ -140,6 +142,7 @@ function SourceChip({ name, count, color, focused, dimmed, onToggleFocus }: Sour
 export default function SourcesRail({
   brainState, focusSets, onToggleFocus, registerCardRef, flashSourceName, reachableByHoveredPrincipal = true,
 }: SourcesRailProps) {
+  const { language } = useBusinessLanguage();
   const sourceNames = brainState?.sourceNames ?? [];
   if (!sourceNames.length) return null;
 
@@ -161,7 +164,7 @@ export default function SourcesRail({
 
   return (
     <div className="p-2.5">
-      <div className="px-1 text-[10px] uppercase tracking-widest text-[#7E8CA6]">sources</div>
+      <div className="px-1 text-[10px] uppercase tracking-widest text-[#7E8CA6]">{language === "zh" ? "来源" : "sources"}</div>
       <div className="mt-2 flex flex-col gap-2">
         {cardNames.map((name) => (
           <SourceCard

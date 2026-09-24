@@ -9,6 +9,8 @@ import PageLoading from "@/ui/elements/PageLoading";
 import PodUnreachableCard from "@/ui/elements/PodUnreachableCard";
 import ProvisioningBanner from "./ProvisioningBanner";
 import WorkspaceProvisioning from "./WorkspaceProvisioning";
+import LanguageSwitch from "./LanguageSwitch";
+import AppPageTranslator from "@/ui/i18n/AppPageTranslator";
 
 const SHELL_HIDDEN_PATHS = [
   "/account",
@@ -45,7 +47,11 @@ export default function CustomAppShell({ children }: PropsWithChildren) {
   const { tenantReady, podUnreachable } = useTenant();
 
   if (hideShell) {
-    return <>{children}</>;
+    return <>
+      <AppPageTranslator />
+      <div className="fixed right-5 top-4 z-50"><LanguageSwitch /></div>
+      <div data-app-page style={{ display: "contents" }}>{children}</div>
+    </>;
   }
 
   // Pod-dependent routes can't render real content until the pod is reachable.
@@ -75,7 +81,8 @@ export default function CustomAppShell({ children }: PropsWithChildren) {
             scrollbar is showing, so pages whose height crosses the scroll
             threshold (e.g. expanding a panel) don't reflow every element's
             width when the classic scrollbar appears/disappears. */}
-        <main className="flex-1 overflow-auto flex flex-col [scrollbar-gutter:stable]" style={{ background: "transparent" }}>
+        <main data-app-page className="flex-1 overflow-auto flex flex-col [scrollbar-gutter:stable]" style={{ background: "transparent" }}>
+          <AppPageTranslator />
           {/* App-wide provisioning banner — shown only while still connecting.
               Suppressed once podUnreachable is terminal, otherwise the
               "Setting up your workspace" banner contradicted the "trouble

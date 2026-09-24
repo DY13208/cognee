@@ -175,9 +175,8 @@ services:
       cognee:
         condition: service_healthy
     ports:
-      # 只绑回环：宿主 3030 让给 codebuddy-https 做公网 HTTPS 入口
-      # （UI_APP_URL 与 OAuth 回调登记的都是 https://xx.stillgroup.net:3030）。
-      # 明文仅本机排障用：浏览器开 http://127.0.0.1:3031
+      # Plain HTTP debug only on loopback. Public/UI entry is HTTPS :3030
+      # via codebuddy-https (profile: https).
       - "127.0.0.1:3031:3000"
     networks:
       - cognee-network

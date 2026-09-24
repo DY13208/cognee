@@ -35,6 +35,7 @@ import type { TopicScore } from "./partials/redesign/PerformancePanel";
 import { ActivityPanel } from "./partials/redesign/ActivityPanel";
 import type { DashRange } from "./partials/redesign/RangeToggle";
 import { FONT, T } from "./partials/redesign/mono";
+import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 
 const DATA_SOURCE_PROVIDERS = DATA_SOURCE_CARDS.map((card) => card.key);
 
@@ -76,6 +77,7 @@ function agentStatus(sessions: SessionRow[], prefixes: string[]): NodeStatus {
 }
 
 export default function OverviewPage(): React.ReactElement {
+  const { language } = useBusinessLanguage();
   const { cogniInstance, isInitializing, serviceUrl, apiKey } = useCogniInstance();
   const { tenantReady, podUnreachable, tenant, isOwner } = useTenant();
   const { agents, datasets, selectedAgent, loading: filterLoading } = useFilter();
@@ -119,15 +121,15 @@ export default function OverviewPage(): React.ReactElement {
   useEffect(() => {
     if (!prevWorkspaceReady.current && workspaceReady) {
       notifications.show({
-        title: "Your workspace is ready",
-        message: "All features are now available.",
+        title: language === "zh" ? "工作区已就绪" : "Your workspace is ready",
+        message: language === "zh" ? "所有功能现已可用。" : "All features are now available.",
         color: "teal",
         autoClose: 5000,
       });
       trackEvent({ pageName: "Dashboard", eventName: "workspace_active" });
     }
     prevWorkspaceReady.current = workspaceReady;
-  }, [workspaceReady]);
+  }, [workspaceReady, language]);
 
   const { runs, sessions, loading } = useDashboardTelemetry(telemetryRange);
   const { data: hourlyCosts = null } = useTenantHourlyCosts(tenant?.tenant_id ?? null, range);
@@ -251,7 +253,7 @@ export default function OverviewPage(): React.ReactElement {
         {/* Greeting — standard page-header type (matches every other page). */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <h1 style={{ ...FONT, margin: 0, fontSize: 20, fontWeight: 300, color: T.text, lineHeight: "28px" }}>
-            {greetingForTime()}{greetingName ? `, ${greetingName}` : ""}
+            {greetingForTime(language)}{greetingName ? `, ${greetingName}` : ""}
           </h1>
           {selectedAgent && (
             <span style={{ ...FONT, background: "var(--color-cognee-lavender-tint-10)", borderRadius: 100, padding: "2px 10px", fontSize: 11, fontWeight: 500, color: T.lavender }}>
@@ -358,8 +360,9 @@ export default function OverviewPage(): React.ReactElement {
   );
 }
 
-function greetingForTime(): string {
+function greetingForTime(language: "zh" | "en"): string {
   const h = new Date().getHours();
+  if (language === "zh") return h < 12 ? "早上好" : h < 18 ? "下午好" : "晚上好";
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
   return "Good evening";
