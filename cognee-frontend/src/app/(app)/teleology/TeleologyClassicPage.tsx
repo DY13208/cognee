@@ -40,6 +40,8 @@ import PurposeLensGraph, {
 import { notifications } from "@mantine/notifications";
 import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 import GoalNav, { type GoalPage } from "./browser/NavPanel";
+import SideRail from "./browser/SideRail";
+import { useSideOpen } from "./browser/useSideOpen";
 import "./browser/ontology.css";
 
 const REL_ZH: Record<TeleologyRelationship, string> = {
@@ -106,11 +108,7 @@ function btn(primary = false): CSSProperties {
 }
 
 function Shell({ children }: { children: ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-      {children}
-    </div>
-  );
+  return <div className="onto-root">{children}</div>;
 }
 
 export default function TeleologyClassicPage() {
@@ -118,6 +116,7 @@ export default function TeleologyClassicPage() {
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null);
+  const { leftOpen, rightOpen, setLeftOpen, setRightOpen } = useSideOpen();
 
   useEffect(() => {
     setActionsHost(document.getElementById("teleology-classic-actions"));
@@ -805,11 +804,14 @@ export default function TeleologyClassicPage() {
 
       {/* Header + purpose lens */}
       <div
+        className="onto-top"
         style={{
           padding: "8px 16px 10px",
           flexShrink: 0,
-          background: "transparent",
-          border: 0,
+          width: "100%",
+          alignItems: "stretch",
+          background: "#141416",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
           display: "flex",
           flexDirection: "column",
           gap: 12,
@@ -1038,20 +1040,23 @@ export default function TeleologyClassicPage() {
         ) : null}
       </div>
 
-      {/* Graph + inspector */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        <GoalNav
-          language={language === "zh" ? "zh" : "en"}
-          roots={navRoots}
-          pages={navPages}
-          focusId={lensGoalId || null}
-          pathIds={navPath}
-          loading={loading}
-          onPick={(id) => { void pickNavGoal(id); }}
-          onExpand={(id, more) => { void expandNav(id, more); }}
-          onSearch={searchNav}
-        />
-        <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+      {/* Graph + inspector — same shell as the goal hierarchy view */}
+      <div className="onto-body">
+        <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t(language, "Expand goal tree", "展开目标目录")}>
+          <GoalNav
+            language={language === "zh" ? "zh" : "en"}
+            roots={navRoots}
+            pages={navPages}
+            focusId={lensGoalId || null}
+            pathIds={navPath}
+            loading={loading}
+            onPick={(id) => { void pickNavGoal(id); }}
+            onExpand={(id, more) => { void expandNav(id, more); }}
+            onSearch={searchNav}
+            onClose={() => setLeftOpen(false)}
+          />
+        </SideRail>
+        <div className="onto-main" style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative" }}>
           {graphNodes.length === 0 ? (
             <div
               style={{
@@ -1074,6 +1079,7 @@ export default function TeleologyClassicPage() {
             </div>
           ) : (
             <PurposeLensGraph
+              className="teleology-graph-host"
               nodes={graphNodes}
               links={graphLinks}
               selectedNodeId={selectedNodeId}
@@ -1082,19 +1088,13 @@ export default function TeleologyClassicPage() {
           )}
         </div>
 
-        <aside
-          style={{
-            width: 320,
-            flexShrink: 0,
-            borderLeft: "1px solid rgba(255,255,255,0.06)",
-            background: "rgba(0,0,0,0.25)",
-            padding: 16,
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-            overflow: "auto",
-          }}
-        >
+        <SideRail side="right" open={rightOpen} onOpen={() => setRightOpen(true)} expandLabel={t(language, "Expand details", "展开详情")}>
+        <aside className="teleology-classic-inspector">
+          <div className="onto-side-head">
+            <span>{t(language, "Details", "详情")}</span>
+            <button type="button" className="onto-panel-close" onClick={() => setRightOpen(false)} aria-label={t(language, "Collapse details", "收起详情")}>×</button>
+          </div>
+          <div className="teleology-classic-inspector-body">
           {!selectedNode ? (
             <div style={{ color: "rgba(237,236,234,0.4)", fontSize: 13, lineHeight: 1.5 }}>
               {t(
@@ -1255,7 +1255,9 @@ export default function TeleologyClassicPage() {
               ) : null}
             </>
           )}
+          </div>
         </aside>
+        </SideRail>
       </div>
 
       {/* Manage goals — searchable / paginated graph goals (not a full YAML dump) */}

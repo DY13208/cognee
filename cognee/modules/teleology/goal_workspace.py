@@ -181,8 +181,8 @@ async def create_goal(
             name=name.strip(),
             description=description,
             owner=owner,
-            primary_purpose_id=parent_id,
-            primary_purpose_relation="advances",
+            primary_purpose_id=None,
+            primary_purpose_relation=None,
             source="teleology_workspace",
         )
         await graph.add_nodes([goal])
@@ -292,20 +292,6 @@ async def move_goal(dataset_id: UUID, user: User, goal_id: str, parent_id: str) 
                 )
             ]
         )
-        if goal.get("primary_purpose_id") == old_parent:
-            updated = Goal(
-                id=UUID(goal_id),
-                **({"created_at": goal["created_at"]} if goal.get("created_at") else {}),
-                name=goal["name"],
-                description=goal.get("description", ""),
-                status=goal.get("status", "proposed"),
-                owner=goal.get("owner"),
-                progress=goal.get("progress"),
-                primary_purpose_id=parent_id,
-                primary_purpose_relation=goal.get("primary_purpose_relation"),
-                source="teleology_workspace",
-            )
-            await graph.add_nodes([updated])
         return {"dataset_id": str(dataset_id), "goal_id": goal_id, "parent_id": parent_id}
 
 

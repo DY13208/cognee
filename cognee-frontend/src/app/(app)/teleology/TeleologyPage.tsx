@@ -8,6 +8,7 @@ import { useFilter } from "@/ui/layout/FilterContext";
 import PageLoading from "@/ui/elements/PageLoading";
 import OntologyBrowser from "./browser/OntologyBrowser";
 import TeleologyClassicPage from "./TeleologyClassicPage";
+import "./browser/ontology.css";
 
 const MODE_KEY = "cognee.teleology.uiMode";
 
@@ -17,7 +18,6 @@ export default function TeleologyPage() {
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"browser" | "classic">("browser");
-  const [browserHeaderCollapsed, setBrowserHeaderCollapsed] = useState(true);
   const datasetDefaulted = useRef(false);
 
   useEffect(() => {
@@ -47,15 +47,15 @@ export default function TeleologyPage() {
   const zh = language === "zh";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", background: "#0e0e10" }}>
       <TrackPageView page="teleology" />
-      {!(mode === "browser" && browserHeaderCollapsed) && <div className="teleology-mode-bar">
+      <div className="teleology-mode-bar">
         <div className="teleology-mode-tabs">
           <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
           <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
         </div>
         <div id="teleology-classic-actions" className="teleology-classic-actions" />
-      </div>}
+      </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {mode === "browser" ? (
           <OntologyBrowser
@@ -75,7 +75,6 @@ export default function TeleologyPage() {
             language={zh ? "zh" : "en"}
             busy={busy}
             onBusy={setBusy}
-            onHeaderCollapsedChange={setBrowserHeaderCollapsed}
           />
         ) : <TeleologyClassicPage />}
       </div>

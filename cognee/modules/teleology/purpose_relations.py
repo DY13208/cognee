@@ -59,6 +59,8 @@ def has_independent_justification(props: dict[str, Any], source_id: str, target_
     reason = str(props.get("reason") or "").strip()
     endpoints = {source_id, target_id}
     extra = [node_id for node_id in _evidence_ids(props) if node_id not in endpoints]
+    if origin == "ai_inferred":
+        return bool(reason) and bool(extra)
     return bool(reason or extra)
 
 
@@ -102,6 +104,8 @@ def select_purpose_relations(
         target_id = str(edge.get("target_id") or "")
         props = edge.get("properties") or {}
         if str(props.get("origin") or "") == "system_derived":
+            continue
+        if props.get("retrieval_only") in (True, "true", "True", 1):
             continue
         if is_structural_advance(relationship, source_id, target_id, props, tree_pairs):
             continue

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from urllib.parse import quote
 
 from mcp import types
+
+logger = logging.getLogger(__name__)
 
 
 def register_teleology_tools(registry, get_client) -> None:
@@ -14,7 +17,8 @@ def register_teleology_tools(registry, get_client) -> None:
             result = await get_client().api_request(method, path, json_body=body, params=params)
             return [types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False, default=str))]
         except Exception as exc:
-            return [types.TextContent(type="text", text=f"Error: {exc}")]
+            logger.exception("Teleology MCP %s %s failed", method, path)
+            return [types.TextContent(type="text", text=f"Error: {type(exc).__name__}: {exc}")]
 
     @registry.tool(tags={"teleology"})
     async def get_teleology(q: str = None, limit: int = 80, offset: int = 0) -> list:
@@ -110,14 +114,14 @@ def register_teleology_tools(registry, get_client) -> None:
 
     @registry.tool(tags={"teleology"})
     async def analyze_purpose_relations(dataset_id: str, goal_id: str) -> list:
-        """Analyze one goal and store a purpose proposal. Does not write the formal graph."""
+        """Cognee built-in analysis for one goal. Stores a proposal as purpose-agent and does not commit it. Read-only toward the company tree and the formal graph."""
         return await request("POST", "/api/v1/teleology/analyze", body={
             "dataset_id": dataset_id, "goal_id": goal_id,
         })
 
     @registry.tool(tags={"teleology"})
     async def get_purpose_context(dataset_id: str, goal_id: str) -> list:
-        """Read one goal's local purpose context. Does not return the whole company tree."""
+        """Read-only bounded context for one goal. Does not scan the company tree and does not write anything."""
         return await request(
             "GET",
             f"/api/v1/teleology/annotations/goals/{quote(goal_id, safe='')}/purpose-context",
@@ -125,23 +129,39 @@ def register_teleology_tools(registry, get_client) -> None:
         )
 
     @registry.tool(tags={"teleology"})
-    async def propose_teleology(dataset_id: str, source_goal_id: str, proposal_json: str) -> list:
-        """Store a candidate teleology. It is not written to the formal graph."""
+    async def propose_teleology(
+        dataset_id: str,
+        source_goal_id: str,
+        proposal_json: str,
+        generated_by: str = "workbuddy",
+    ) -> list:
+        """External agent submits a proposal. Does not commit and does not write the formal graph.
+
+        generated_by is workbuddy or manual. purpose-agent is reserved for Cognee /teleology/analyze.
+        Each relation must use this shape:
+        {"source": "<goal or new item name>", "relationship": "advances", "target": "<goal or new item name>", "reason": "why", "confidence": 0.8, "evidence_node_ids": ["<id from get_purpose_context>"]}
+        source_id and source_ref are accepted aliases of source. target_id and target_ref are aliases of target.
+        """
         try:
             proposal = json.loads(proposal_json)
             if not isinstance(proposal, dict):
                 raise ValueError("proposal_json must be a JSON object")
+            if generated_by not in {"workbuddy", "manual"}:
+                raise ValueError("generated_by must be workbuddy or manual")
         except (ValueError, TypeError) as exc:
             return [types.TextContent(type="text", text=f"Error: {exc}")]
         return await request("POST", "/api/v1/teleology/annotations/purpose-proposals", body={
-            "dataset_id": dataset_id, "source_goal_id": source_goal_id, "proposal": proposal,
+            "dataset_id": dataset_id,
+            "source_goal_id": source_goal_id,
+            "proposal": proposal,
+            "generated_by": generated_by or "workbuddy",
         })
 
     @registry.tool(tags={"teleology"})
     async def commit_teleology_proposal(
         proposal_id: str, dataset_id: str, accepted_item_ids: list[str]
     ) -> list:
-        """Write only the accepted proposal items into the formal teleology layer."""
+        """Commit accepted proposal items into the formal teleology graph. This is the only teleology tool that writes purpose nodes and edges."""
         return await request(
             "POST",
             f"/api/v1/teleology/annotations/purpose-proposals/{quote(proposal_id, safe='')}/commit",

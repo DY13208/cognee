@@ -31,6 +31,18 @@ def test_structural_advances_are_not_purpose_relations():
                 {"origin": "ai_inferred", "evidence_node_ids": ["child", "parent"]},
             ),
             _edge(
+                "child",
+                "parent",
+                "advances",
+                {"origin": "ai_inferred", "reason": "只有理由，没有独立证据"},
+            ),
+            _edge(
+                "sibling",
+                "parent",
+                "advances",
+                {"origin": "system_derived", "retrieval_only": "true", "reason": "检索副本"},
+            ),
+            _edge(
                 "other",
                 "parent",
                 "advances",

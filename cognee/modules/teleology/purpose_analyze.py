@@ -9,11 +9,8 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 from cognee.infrastructure.llm.LLMGateway import LLMGateway
-from cognee.modules.teleology.purpose_layer import (
-    _load,
-    get_purpose_context,
-    propose_teleology,
-)
+from cognee.modules.teleology.proposal_rules import constraint_overreach, min_relation_confidence
+from cognee.modules.teleology.purpose_layer import get_purpose_context, propose_teleology
 from cognee.modules.users.models import User
 
 _RELATIONS = frozenset({"serves", "advances", "blocks"})
@@ -25,9 +22,17 @@ Allowed relationships: serves, advances, blocks.
 Do not emit has_subgoal or any other relationship.
 Do not emit an advances edge only because one node is the child or parent of another. That structural link is already known. An advances edge needs evidence beyond those two endpoints, such as a document or entity id from the context.
 Reuse an existing purpose when the meaning matches. Do not create a near-duplicate purpose name.
-evidence_node_ids must be ids present in the context. Every item needs a reason and a confidence from 0 to 1.
+evidence_node_ids must be ids present in the context. Every item needs a non-empty reason, a confidence from 0 to 1, and at least one evidence id from this context.
 Do not invent an owner or a progress value. Do not rewrite the company tree.
-Suggested goals stay proposals. Write names and reasons in the same language as the goal."""
+Suggested goals stay proposals. Write names and reasons in the same language as the goal.
+
+Purpose must answer why the goal exists, what outcome it should produce, and what value a higher goal receives if it succeeds. Do not repackage children, tools, dashboards, weekly reports, measurement methods, or processes as a Purpose. Those belong to HOW: direct children, suggested goals, and serves or advances edges.
+
+A Constraint requires explicit evidence of a limit, boundary, precondition, compliance rule, resource limit, risk, dependency, prohibition, or an SLA, time, or cost bound. Do not turn “a tool, process, metric, or dashboard exists” into “this tool must be used”. If that is only a suggestion, leave it out of constraints.
+
+If children_truncated is true, you only see some direct children. Do not treat that sample as the whole goal tree, and do not make a global claim from it.
+Never claim that the business semantics are fully covered, that no other goal exists, that the company has no other risk, or that this is the complete business structure. Forbidden claims include “已经覆盖全部业务语义”, “不存在其他目标”, “该公司没有其他风险”, and “这是完整业务结构”. The strongest negative claim you may make is that the provided local context does not contain enough evidence to add a Suggested Goal. In the current local context, say “没有足够证据支持新增 Suggested Goal” instead of a global conclusion.
+Relations below 0.60 confidence are weak signals, not formal candidates."""
 
 
 class _Candidate(BaseModel):
@@ -76,6 +81,21 @@ def _index(context: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str
         nodes.append(goal)
     for key in ("ancestors", "children", "purposes", "constraints", "entities", "documents"):
         nodes.extend(context.get(key) or [])
+    for entry in context.get("child_evidence") or []:
+        if not isinstance(entry, dict):
+            continue
+        nodes.append(
+            {
+                "id": entry.get("goal_id"),
+                "name": entry.get("goal_name"),
+                "type": "Goal",
+                "_evidence_scope": "child",
+            }
+        )
+        for bucket in ("entities", "documents"):
+            for node in entry.get(bucket) or []:
+                if isinstance(node, dict):
+                    nodes.append({**node, "_evidence_scope": "child"})
     for relation in context.get("relations") or []:
         nodes.append(
             {
@@ -115,7 +135,14 @@ def _evidence(
             continue
         ids.append(node_id)
         node = by_id[node_id]
-        refs.append({"id": node_id, "name": str(node.get("name") or node_id)})
+        refs.append(
+            {
+                "id": node_id,
+                "name": str(node.get("name") or node_id),
+                "type": str(node.get("type") or ""),
+                "scope": str(node.get("_evidence_scope") or "goal"),
+            }
+        )
     return ids, refs
 
 
@@ -172,8 +199,14 @@ def _prompt_context(context: dict[str, Any], open_items: list[dict[str, Any]]) -
             }
             for relation in context.get("relations") or []
         ],
+        "children_total": context.get("children_total"),
+        "children_returned": context.get("children_returned"),
+        "children_truncated": bool(context.get("children_truncated")),
+        "entities_truncated": bool(context.get("entities_truncated")),
+        "documents_truncated": bool(context.get("documents_truncated")),
         "entities": [brief(node) for node in context.get("entities") or []],
         "documents": [brief(node) for node in context.get("documents") or []],
+        "child_evidence": context.get("child_evidence") or [],
         "open_proposal_names": [
             item.get("name")
             for item in open_items
@@ -203,17 +236,26 @@ def normalize_analysis(
     purposes: list[dict[str, Any]] = []
     constraints: list[dict[str, Any]] = []
     goals: list[dict[str, Any]] = []
+    weak_signals: list[dict[str, Any]] = []
+    open_conflicts: list[dict[str, Any]] = []
 
     def reuse_purpose(name: str) -> str | None:
         for node in context.get("purposes") or []:
             if _same_purpose(name, str(node.get("name") or "")):
                 return str(node.get("id"))
-        for item in open_items:
-            if item.get("kind") == "purpose" and _same_purpose(name, str(item.get("name") or "")):
-                return str(item.get("id"))
         for item in purposes:
             if _same_purpose(name, item["name"]):
                 return item["id"]
+        for item in open_items:
+            if item.get("kind") == "purpose" and _same_purpose(name, str(item.get("name") or "")):
+                open_conflicts.append(
+                    {
+                        "type": "similar_open_proposal",
+                        "proposal_id": item.get("proposal_id"),
+                        "item_id": item.get("id"),
+                        "name": item.get("name") or name,
+                    }
+                )
         return None
 
     def add_node(bucket: list[dict[str, Any]], kind: str, raw: dict[str, Any]) -> None:
@@ -228,6 +270,8 @@ def normalize_analysis(
                 created[name] = existing
                 return
         evidence_ids, evidence = _evidence(raw.get("evidence_node_ids") or [], by_id)
+        if not evidence_ids:
+            return
         item_id = str(uuid4())
         item = {
             "id": item_id,
@@ -240,6 +284,9 @@ def normalize_analysis(
             "evidence": evidence,
             "source_goal_ids": [goal_id] if goal_id else [],
         }
+        if kind == "constraint" and constraint_overreach(item):
+                weak_signals.append({**item, "weak_reason": "constraint_overreach"})
+                return
         bucket.append(item)
         created[item_id] = item_id
         created[name] = item_id
@@ -274,11 +321,49 @@ def normalize_analysis(
         reason = str(raw.get("reason") or "").strip()
         if not reason:
             continue
-        source_id = resolve(str(raw.get("source_ref") or raw.get("source") or ""))
-        target_id = resolve(str(raw.get("target_ref") or raw.get("target") or ""))
+        source_id = resolve(
+            str(raw.get("source") or raw.get("source_id") or raw.get("source_ref") or "")
+        )
+        target_id = resolve(
+            str(raw.get("target") or raw.get("target_id") or raw.get("target_ref") or "")
+        )
         if not source_id or not target_id or source_id == target_id:
             continue
         evidence_ids, evidence = _evidence(raw.get("evidence_node_ids") or [], by_id)
+        if not evidence_ids:
+            continue
+        confidence = _confidence(raw.get("confidence"))
+        if confidence < min_relation_confidence():
+            weak_signals.append(
+                {
+                    "kind": "relation",
+                    "source": source_id,
+                    "target": target_id,
+                    "relationship": relationship,
+                    "reason": reason,
+                    "confidence": confidence,
+                    "evidence_node_ids": evidence_ids,
+                    "weak_reason": "low_confidence",
+                }
+            )
+            continue
+        foreign_ids = {
+            str(item.get("id") or "")
+            for item in open_items
+            if item.get("proposal_id") and str(item.get("id") or "") not in created
+        }
+        if source_id in foreign_ids or target_id in foreign_ids:
+            blocked = source_id if source_id in foreign_ids else target_id
+            other = next(item for item in open_items if str(item.get("id")) == blocked)
+            open_conflicts.append(
+                {
+                    "type": "similar_open_proposal",
+                    "proposal_id": other.get("proposal_id"),
+                    "item_id": blocked,
+                    "name": other.get("name") or "",
+                }
+            )
+            continue
         extra = [node_id for node_id in evidence_ids if node_id not in {source_id, target_id}]
         structural = relationship == "advances" and (
             (source_id in child_ids and target_id == goal_id)
@@ -298,7 +383,7 @@ def normalize_analysis(
                 "target": target_id,
                 "relationship": relationship,
                 "reason": reason,
-                "confidence": _confidence(raw.get("confidence")),
+                "confidence": confidence,
                 "evidence_node_ids": evidence_ids,
                 "evidence": evidence,
                 "source_goal_ids": [goal_id] if goal_id else [],
@@ -312,6 +397,8 @@ def normalize_analysis(
         "constraints": constraints,
         "goals": goals,
         "relations": relations,
+        "weak_signals": weak_signals,
+        "open_conflicts": open_conflicts,
     }
 
 
@@ -323,16 +410,6 @@ def _confidence(value: Any) -> float:
     return min(1.0, max(0.0, number))
 
 
-def _open_items(dataset_id: UUID) -> list[dict[str, Any]]:
-    payload = _load(dataset_id)
-    items: list[dict[str, Any]] = []
-    for proposal in (payload.get("proposals") or {}).values():
-        if proposal.get("status") != "open":
-            continue
-        items.extend(proposal.get("items") or [])
-    return items
-
-
 async def _complete(context: dict[str, Any], open_items: list[dict[str, Any]]) -> dict[str, Any]:
     text = json.dumps(_prompt_context(context, open_items), ensure_ascii=False)
     result = await LLMGateway.acreate_structured_output(text, _SYSTEM, PurposeAnalysis)
@@ -341,8 +418,10 @@ async def _complete(context: dict[str, Any], open_items: list[dict[str, Any]]) -
 
 async def analyze_goal(dataset_id: UUID, user: User, goal_id: str) -> dict[str, Any]:
     """Read one goal, ask the configured model, and store a proposal. The graph stays unchanged."""
+    from cognee.modules.teleology.proposal_store import open_items as load_open_items
+
     context = await get_purpose_context(dataset_id, user, goal_id)
-    open_items = _open_items(dataset_id)
+    open_items = await load_open_items(dataset_id)
     draft = await _complete(context, open_items)
     proposal = normalize_analysis(context, draft, open_items)
     return await propose_teleology(

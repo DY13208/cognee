@@ -79,6 +79,9 @@ class FakeGraph:
     async def delete_nodes(self, ids):
         self.deleted_nodes.extend(ids)
 
+    async def delete_edge_triples(self, triples):
+        self.deleted_edges = triples
+
 
 @pytest.fixture
 def graph(monkeypatch):
@@ -130,6 +133,8 @@ async def test_create_goal_writes_one_child_edge(graph):
     assert len(graph.added_nodes) == 1
     assert graph.added_edges[0][0] == "root"
     assert graph.added_edges[0][2] == "has_subgoal"
+    assert result["goal"]["primary_purpose_id"] is None
+    assert result["goal"]["primary_purpose_relation"] is None
 
 
 @pytest.mark.asyncio
@@ -138,6 +143,17 @@ async def test_move_rejects_descendant_cycle(graph):
     graph.parents["grandchild"] = "child"
     with pytest.raises(ValueError, match="cycle"):
         await goal_workspace.move_goal(uuid4(), SimpleNamespace(), "child", "grandchild")
+
+
+@pytest.mark.asyncio
+async def test_move_does_not_rewrite_primary_purpose(graph):
+    graph.nodes["child"]["primary_purpose_id"] = "stored-purpose"
+    graph.nodes["child"]["primary_purpose_relation"] = "serves"
+    graph.nodes["other"] = {"name": "Other", "type": "Goal", "source": "teleology_workspace"}
+    await goal_workspace.move_goal(uuid4(), SimpleNamespace(), "child", "other")
+    assert graph.nodes["child"]["primary_purpose_id"] == "stored-purpose"
+    assert graph.nodes["child"]["primary_purpose_relation"] == "serves"
+    assert graph.added_nodes == []
 
 
 @pytest.mark.asyncio

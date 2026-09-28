@@ -141,6 +141,7 @@ export async function deleteWorkspaceGoal(instance: CogneeInstance, datasetId: s
 
 async function readError(resp: Response): Promise<string> {
   const err = await resp.json().catch(() => ({ error: resp.statusText }));
+  if (err.error === "proposal_stale") return err.message || "目标上下文已变化，请重新分析后再确认。";
   if (typeof err.error === "string" && err.error) return err.error;
   if (typeof err.detail === "string" && err.detail) return err.detail;
   if (Array.isArray(err.detail) && err.detail[0]?.msg) return String(err.detail[0].msg);
@@ -278,7 +279,7 @@ export async function syncTeleologyFromCompanyTree(
   message?: string;
 }> {
   const params = new URLSearchParams({ dataset_id: datasetId });
-  if (opts?.linkEntities === false) params.set("link_entities", "false");
+  params.set("link_entities", opts?.linkEntities ? "true" : "false");
   if (opts?.sourceRoom) params.set("source_room", opts.sourceRoom);
   const resp = await instance.fetch(`/v1/teleology/annotations/sync-from-company-tree?${params}`, {
     method: "POST",
@@ -338,12 +339,19 @@ export interface PurposeContext {
   ancestors: GraphNodeSummary[];
   children: GraphNodeSummary[];
   children_total: number;
+  children_returned?: number;
+  children_truncated?: boolean;
   note: string;
   purposes: GraphNodeSummary[];
   constraints: GraphNodeSummary[];
   relations: GraphAnnotation[];
   entities: GraphNodeSummary[];
   documents: { id: string; name: string; summary: string }[];
+  entities_total?: number;
+  documents_total?: number;
+  entities_truncated?: boolean;
+  documents_truncated?: boolean;
+  child_evidence?: { goal_id: string; goal_name: string; entities: GraphNodeSummary[]; documents: { id: string; name: string }[] }[];
   source: string | null;
   revision: string | null;
   missing_purpose: boolean;
@@ -357,7 +365,8 @@ export interface ProposalItem {
   confidence: number | null;
   reason: string;
   evidence_node_ids?: string[];
-  evidence?: { id: string; name: string }[];
+  evidence?: { id: string; name: string; type?: string; scope?: string }[];
+  weak_reason?: string;
   source_goal_ids: string[];
   relationship?: "serves" | "advances" | "blocks" | null;
   source?: string | null;
@@ -384,6 +393,10 @@ export interface TeleologyProposal {
     missing_purpose: number;
   };
   items: ProposalItem[];
+  weak_signals?: ProposalItem[];
+  open_conflicts?: { type: string; proposal_id?: string; item_id?: string; name?: string }[];
+  validation_warnings?: string[];
+  context_hash?: string;
 }
 
 export async function getPurposeContext(instance: CogneeInstance, datasetId: string, goalId: string): Promise<PurposeContext> {

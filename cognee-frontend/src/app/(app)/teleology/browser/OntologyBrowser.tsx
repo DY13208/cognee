@@ -7,11 +7,22 @@ import { notifications } from "@mantine/notifications";
 import NavPanel, { type GoalPage } from "./NavPanel";
 import DetailPanel from "./DetailPanel";
 import PurposeReview from "./PurposeReview";
+import AppDialog from "./AppDialog";
+import SideRail from "./SideRail";
+import { useSideOpen } from "./useSideOpen";
 import { displayName } from "./entityMeta";
 import type { OntologyEdge, OntologyEntity } from "./types";
 import "./ontology.css";
 
 type DatasetOpt = { id: string; name: string };
+type GoalRelation = "serves" | "advances" | "blocks";
+type GoalDialog =
+  | { mode: "create"; parentId: string; name: string }
+  | { mode: "relate"; sourceId: string; targetId: string; relationship: GoalRelation }
+  | { mode: "edit"; id: string; name: string }
+  | { mode: "move"; id: string; parentId: string }
+  | { mode: "delete"; id: string }
+  | { mode: "export"; id: string };
 const PAGE = 30;
 const CANVAS_PAGE = 17;
 function entity(goal: GraphNodeSummary): OntologyEntity {
@@ -53,8 +64,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const [drawerTotal, setDrawerTotal] = useState(0);
   const [drawerOffset, setDrawerOffset] = useState(0);
   const [drawerLoading, setDrawerLoading] = useState(false);
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
+  const { leftOpen, rightOpen, setLeftOpen, setRightOpen } = useSideOpen();
+  const [dialog, setDialog] = useState<GoalDialog | null>(null);
   const [topOpen, setTopOpen] = useState(true);
   const [datasetMenu, setDatasetMenu] = useState(false);
   const [view, setView] = useState<"focus" | "tree">("focus");
@@ -190,20 +201,11 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }
 
   function createChild(id: string) {
-    const name = window.prompt(t("New subgoal name", "新子目标名称"))?.trim();
-    if (!name) return;
-    void runGoalAction(async () => {
-      const created = await createWorkspaceGoal(instance, datasetId, { parentId: id, name });
-      return created.id;
-    });
+    setDialog({ mode: "create", parentId: id, name: "" });
   }
 
   function relateGoal(id: string) {
-    const targetId = window.prompt(t("Related goal ID", "关联目标 ID"))?.trim();
-    if (!targetId) return;
-    const relationship = window.prompt(t("Relationship: serves / advances / blocks", "关系类型：serves / advances / blocks"), "serves")?.trim();
-    if (relationship !== "serves" && relationship !== "advances" && relationship !== "blocks") return;
-    void runGoalAction(async () => { await createGraphAnnotation(instance, { datasetId, sourceId: id, targetId, relationship }); });
+    setDialog({ mode: "relate", sourceId: id, targetId: "", relationship: "serves" });
   }
 
   function copyGoal(id: string) {
@@ -217,30 +219,78 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }
 
   function editGoal(id: string) {
-    const name = window.prompt(t("Goal name", "目标名称"), selectedEntity?.name)?.trim();
-    if (!name) return;
-    void runGoalAction(async () => { await updateWorkspaceGoal(instance, datasetId, id, { name }); });
+    setDialog({ mode: "edit", id, name: selectedEntity?.id === id ? selectedEntity.name : "" });
   }
 
   function moveGoal(id: string) {
-    const parentId = window.prompt(t("New parent goal ID", "新上级目标 ID"))?.trim();
-    if (!parentId) return;
-    void runGoalAction(async () => { await moveWorkspaceGoal(instance, datasetId, id, parentId); }, id);
+    setDialog({ mode: "move", id, parentId: "" });
   }
 
   function removeGoal(id: string) {
-    if (!window.confirm(t("Delete this goal?", "确定删除此目标？"))) return;
-    const nextId = id === focusId ? parent?.id : focusId || undefined;
-    void runGoalAction(async () => { await deleteWorkspaceGoal(instance, datasetId, id); }, nextId);
+    setDialog({ mode: "delete", id });
   }
 
   function exportGoal(id: string) {
+    setDialog({ mode: "export", id });
+  }
+
+  function downloadGoal(id: string) {
     void Promise.all([getGoalDetail(instance, datasetId, id), getGoalRelations(instance, datasetId, id, { limit: 100 })]).then(([goal, purpose]) => {
       const blob = new Blob([JSON.stringify({ goal, purpose, relations_truncated: purpose.total > purpose.items.length }, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a"); link.href = url; link.download = `goal-${id}.json`; link.click();
       URL.revokeObjectURL(url);
     }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }
+
+  function confirmDialog() {
+    if (!dialog) return;
+    if (dialog.mode === "create") {
+      const name = dialog.name.trim();
+      if (!name) return;
+      const parentId = dialog.parentId;
+      setDialog(null);
+      void runGoalAction(async () => {
+        const created = await createWorkspaceGoal(instance, datasetId, { parentId, name });
+        return created.id;
+      });
+      return;
+    }
+    if (dialog.mode === "relate") {
+      const targetId = dialog.targetId.trim();
+      const relationship = dialog.relationship;
+      if (!targetId) return;
+      const sourceId = dialog.sourceId;
+      setDialog(null);
+      void runGoalAction(async () => { await createGraphAnnotation(instance, { datasetId, sourceId, targetId, relationship }); });
+      return;
+    }
+    if (dialog.mode === "edit") {
+      const name = dialog.name.trim();
+      if (!name) return;
+      const id = dialog.id;
+      setDialog(null);
+      void runGoalAction(async () => { await updateWorkspaceGoal(instance, datasetId, id, { name }); });
+      return;
+    }
+    if (dialog.mode === "move") {
+      const parentId = dialog.parentId.trim();
+      if (!parentId) return;
+      const id = dialog.id;
+      setDialog(null);
+      void runGoalAction(async () => { await moveWorkspaceGoal(instance, datasetId, id, parentId); }, id);
+      return;
+    }
+    if (dialog.mode === "delete") {
+      const id = dialog.id;
+      const nextId = id === focusId ? parent?.id : focusId || undefined;
+      setDialog(null);
+      void runGoalAction(async () => { await deleteWorkspaceGoal(instance, datasetId, id); }, nextId);
+      return;
+    }
+    const id = dialog.id;
+    setDialog(null);
+    downloadGoal(id);
   }
 
   async function analyzeCurrentGoal() {
@@ -267,6 +317,18 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     finally { onBusy(false); }
   }
 
+  const dialogTitle = !dialog ? ""
+    : dialog.mode === "create" ? t("New subgoal", "新建子目标")
+    : dialog.mode === "relate" ? t("Link goal", "关联目标")
+    : dialog.mode === "edit" ? t("Edit goal", "编辑目标")
+    : dialog.mode === "move" ? t("Move goal", "移动目标")
+    : dialog.mode === "delete" ? t("Delete this goal?", "确定删除此目标？")
+    : t("Export this goal?", "导出此目标？");
+  const dialogDescription = !dialog ? undefined
+    : dialog.mode === "delete" ? t("This removes the goal from the workspace.", "将从工作区删除此目标。")
+    : dialog.mode === "export" ? t("Downloads a JSON file for the selected goal.", "下载所选目标的 JSON 文件。")
+    : undefined;
+
   return <div className="onto-root">
     <header className={`onto-top${topOpen ? "" : " is-collapsed"}`}>
       {topOpen ? <>
@@ -281,9 +343,9 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
       <button type="button" className="onto-btn onto-collapse-btn" onClick={() => { setTopOpen(!topOpen); onHeaderCollapsedChange?.(topOpen); }}>{topOpen ? t("Collapse ↑", "收起 ↑") : t("Expand ↓", "展开 ↓")}</button>
     </header>
     <div className="onto-body">
-      <div className={`onto-side-container onto-side-left${leftOpen ? "" : " is-collapsed"}`}>
-        {leftOpen ? <NavPanel language={language} roots={roots} pages={pages} focusId={focusId} pathIds={path.map((goal) => goal.id)} loading={loading} onPick={(id) => void enter(id)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} /> : <button type="button" className="onto-panel-reopen onto-panel-reopen-left" onClick={() => setLeftOpen(true)} aria-label={t("Expand goal tree", "展开目标目录")}>›</button>}
-      </div>
+      <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t("Expand goal tree", "展开目标目录")}>
+        <NavPanel language={language} roots={roots} pages={pages} focusId={focusId} pathIds={path.map((goal) => goal.id)} loading={loading} onPick={(id) => void enter(id)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} />
+      </SideRail>
       <main className="onto-main onto-focus-main">
         {error && <div className="onto-focus-error" role="alert">{error}</div>}
         <div className="onto-breadcrumb">{path.map((goal, index) => <span key={goal.id}><button type="button" onClick={() => void enter(goal.id)}>{goal.name}</button>{index < path.length - 1 && <b>›</b>}</span>)}</div>
@@ -301,7 +363,9 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
           </>}
         </div> : <div className="onto-tree-overview"><div className="onto-lane-caption">{t("Current branch · expand goals on demand", "当前分支 · 按需展开目标")}</div>{roots.map((goal) => <button type="button" key={goal.id} onClick={() => void enter(goal.id)}>◎ {goal.name} <small>{goal.child_count || 0} {t("direct goals", "个直接目标")}</small></button>)}{rootTotal > roots.length && <button type="button" onClick={async () => { const result = await getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }); setRoots((old) => [...old, ...result.goals]); }}>{t("More roots", "加载更多根目标")}</button>}</div>}
       </main>
-      <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}>{rightOpen ? <DetailPanel entity={selectedEntity} edges={relations.filter((edge) => edge.sourceId === selectedId || edge.targetId === selectedId)} focusId={focusId} language={language} path={selectedId === focusId ? path : undefined} onViewPath={() => void viewSelectedPath()} onSetFocus={(id) => void enter(id)} onSelectNeighbor={(id) => setSelectedId(id)} onCreateChild={createChild} onRelate={relateGoal} onCopy={copyGoal} onMove={moveGoal} onDelete={removeGoal} onEdit={editGoal} onExport={exportGoal} onClose={() => setRightOpen(false)} /> : <button type="button" className="onto-panel-reopen onto-panel-reopen-right" onClick={() => setRightOpen(true)} aria-label={t("Expand details", "展开目标详情")}>‹</button>}</div>
+      <SideRail side="right" open={rightOpen} onOpen={() => setRightOpen(true)} expandLabel={t("Expand details", "展开目标详情")}>
+        <DetailPanel entity={selectedEntity} edges={relations.filter((edge) => edge.sourceId === selectedId || edge.targetId === selectedId)} focusId={focusId} language={language} path={selectedId === focusId ? path : undefined} onViewPath={() => void viewSelectedPath()} onSetFocus={(id) => void enter(id)} onSelectNeighbor={(id) => setSelectedId(id)} onCreateChild={createChild} onRelate={relateGoal} onCopy={copyGoal} onMove={moveGoal} onDelete={removeGoal} onEdit={editGoal} onExport={exportGoal} onClose={() => setRightOpen(false)} />
+      </SideRail>
     </div>
     {review && <PurposeReview instance={instance} datasetId={datasetId} proposal={review} language={language} onClose={() => setReview(null)} onCommitted={() => { setReview(null); if (focusId) void enter(focusId); }} />}
     {drawer && <div className="onto-drawer-backdrop" onMouseDown={() => setDrawer(null)}><aside className="onto-drawer" onMouseDown={(event) => event.stopPropagation()}><header><strong>{drawer === "children" ? t("Browse subgoals", "浏览子目标") : drawer === "path" ? t("Goal path", "目标路径") : t("Purpose relations", "目的关系")}</strong><button type="button" onClick={() => setDrawer(null)}>×</button></header>
@@ -309,5 +373,44 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
       {drawer === "path" && <div className="onto-drawer-list">{drawerPath.map((goal) => <button type="button" key={goal.id} onClick={() => { setDrawer(null); void enter(goal.id); }}>◎ {goal.name}</button>)}</div>}
       {drawer === "relations" && <><div className="onto-drawer-list">{drawerLoading ? t("Loading…", "加载中…") : relations.map((edge) => <button type="button" key={edge.id} onClick={() => { setSelectedId(edge.sourceId === focusId ? edge.targetId : edge.sourceId); setDrawer(null); }}>{edge.relationship} · {edge.sourceId === focusId ? edge.targetName : edge.sourceName}</button>)}</div><footer><button type="button" disabled={relationOffset === 0} onClick={() => setRelationOffset(Math.max(0, relationOffset - PAGE))}>{t("Previous", "上一页")}</button><span>{relationOffset + 1}–{Math.min(relationOffset + PAGE, relationTotal)} / {relationTotal}</span><button type="button" disabled={relationOffset + PAGE >= relationTotal} onClick={() => setRelationOffset(relationOffset + PAGE)}>{t("Next", "下一页")}</button></footer></>}
     </aside></div>}
+    <AppDialog
+      opened={dialog !== null}
+      title={dialogTitle}
+      description={dialogDescription}
+      confirmLabel={dialog?.mode === "delete" ? t("Delete", "删除") : dialog?.mode === "export" ? t("Export", "导出") : t("Confirm", "确认")}
+      cancelLabel={t("Cancel", "取消")}
+      danger={dialog?.mode === "delete"}
+      onCancel={() => setDialog(null)}
+      onConfirm={confirmDialog}
+    >
+      {dialog?.mode === "create" || dialog?.mode === "edit" ? (
+        <label>
+          {t("Name", "名称")}
+          <input className="onto-input" value={dialog.name} onChange={(event) => setDialog({ ...dialog, name: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") confirmDialog(); }} />
+        </label>
+      ) : null}
+      {dialog?.mode === "relate" ? (
+        <>
+          <label>
+            {t("Related goal ID", "关联目标 ID")}
+            <input className="onto-input" value={dialog.targetId} onChange={(event) => setDialog({ ...dialog, targetId: event.target.value })} />
+          </label>
+          <label>
+            {t("Relationship", "关系类型")}
+            <select className="onto-select" value={dialog.relationship} onChange={(event) => setDialog({ ...dialog, relationship: event.target.value as GoalRelation })}>
+              <option value="serves">serves</option>
+              <option value="advances">advances</option>
+              <option value="blocks">blocks</option>
+            </select>
+          </label>
+        </>
+      ) : null}
+      {dialog?.mode === "move" ? (
+        <label>
+          {t("New parent goal ID", "新上级目标 ID")}
+          <input className="onto-input" value={dialog.parentId} onChange={(event) => setDialog({ ...dialog, parentId: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") confirmDialog(); }} />
+        </label>
+      ) : null}
+    </AppDialog>
   </div>;
 }

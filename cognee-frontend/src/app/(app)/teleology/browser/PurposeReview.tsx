@@ -7,7 +7,7 @@ import type { CogneeInstance } from "@/modules/instances/types";
 const KIND: Record<ProposalItem["kind"], [string, string]> = {
   purpose: ["New purpose", "新目的"],
   goal: ["Suggested goal", "建议目标"],
-  constraint: ["Constraint", "阻碍"],
+  constraint: ["Constraint", "约束"],
   relation: ["Relation", "关系"],
   gap: ["Missing purpose", "缺少明确目的"],
 };
@@ -26,7 +26,11 @@ export default function PurposeReview({ instance, datasetId, proposal, language,
   const [drafts, setDrafts] = useState<Record<string, { name: string; description: string; reason: string }>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const summary = proposal.summary;
+  const weak = proposal.weak_signals || [];
+  const conflicts = proposal.open_conflicts || [];
+  const missingEvidence = (proposal.validation_warnings || []).some((warning) => warning.includes("evidence"));
 
   function draft(item: ProposalItem) {
     return drafts[item.id] || { name: item.name, description: item.description, reason: item.reason };
@@ -40,14 +44,28 @@ export default function PurposeReview({ instance, datasetId, proposal, language,
     }
     setBusy(true);
     setError(null);
+    setProgress(accepted.length ? t(`Writing ${accepted.length}…`, `已提交 0/${accepted.length}，正在继续……`) : null);
     try {
       await commitPurposeProposal(instance, datasetId, proposal.id, accepted, edits);
       onCommitted();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+      if (!message.includes("目标上下文已变化")) {
+        setProgress(message.includes("已提交") ? message : t("Write stopped. Confirm again to continue the rest.", "写入未完成，请再次确认以继续剩余项。"));
+      }
     } finally {
       setBusy(false);
     }
+  }
+
+  function evidenceKind(entry: { type?: string; scope?: string }) {
+    if (entry.scope === "child") return t("Child evidence", "子目标证据");
+    const type = entry.type || "";
+    if (type === "Goal") return "Goal";
+    if (type.includes("Document")) return "Document";
+    if (type) return "Entity";
+    return t("Evidence", "证据");
   }
 
   const chips: [string, number][] = [
@@ -69,6 +87,10 @@ export default function PurposeReview({ instance, datasetId, proposal, language,
         <button type="button" onClick={onClose} aria-label={t("Close", "关闭")}>×</button>
       </header>
       <div className="onto-review-counts">{chips.map(([label, count]) => <span key={label}><b>{count}</b>{label}</span>)}</div>
+      {(missingEvidence || conflicts.length > 0) && <div className="onto-review-note">
+        {missingEvidence && <p>{t("Some candidates were dropped because evidence was missing.", "证据不足的候选已被拿掉。")}</p>}
+        {conflicts.map((conflict) => <p key={`${conflict.proposal_id}-${conflict.item_id}`}>{t("A similar candidate is already waiting for review", "已有相似待审核候选")}：{conflict.name}</p>)}
+      </div>}
       <div className="onto-review-list">
         {proposal.items.map((item) => {
           const decision = decisions[item.id];
@@ -82,7 +104,8 @@ export default function PurposeReview({ instance, datasetId, proposal, language,
               <h3>{current.name || t("Untitled", "未命名")}</h3>
               {item.kind === "relation" && <p>{item.relationship} · {item.source} → {item.target}</p>}
               {current.reason && <p>{t("Why", "依据")}：{current.reason}</p>}
-              {!!item.evidence?.length && <p>{t("Evidence", "证据")}：{item.evidence.map((entry) => entry.name).join("、")}</p>}
+              {!item.evidence_node_ids?.length && item.kind !== "gap" && <p>{t("Missing evidence", "证据不足")}</p>}
+              {!!item.evidence?.length && <p>{item.evidence.map((entry) => `${evidenceKind(entry)} · ${entry.name}`).join("、")}</p>}
             </>}
             <div className="onto-review-actions">
               {item.kind !== "gap" && <>
@@ -93,8 +116,15 @@ export default function PurposeReview({ instance, datasetId, proposal, language,
             </div>
           </article>;
         })}
+        {weak.map((item) => <article key={item.id || item.name} className="is-weak">
+          <div className="onto-review-kind">{t("Weak signal", "弱线索")}{item.relationship ? ` · ${item.relationship}` : ""}{item.confidence != null && <em>{Math.round(item.confidence * 100)}%</em>}</div>
+          <h3>{item.name || `${item.source} → ${item.target}`}</h3>
+          <p>{t("This cannot be accepted or written.", "不能直接接受，也不会写入正式图谱。")}</p>
+          {item.reason && <p>{item.reason}</p>}
+        </article>)}
       </div>
-      {error && <p className="onto-focus-error">{error}</p>}
+      {progress && <p className="onto-review-note">{progress}</p>}
+      {error && <p className="onto-focus-error">{error.includes("目标上下文已变化") ? error : `${t("Context check", "确认")}：${error}`}</p>}
       <footer>
         <span>{t("Accepted items are written as inferred teleology. The company tree is not changed.", "接受的内容写入推导层。公司树不会被修改。")}</span>
         <button type="button" className="onto-btn onto-btn-primary" disabled={busy} onClick={() => void commit()}>{busy ? t("Writing…", "写入中…") : t("Confirm write", "确认写入")}</button>

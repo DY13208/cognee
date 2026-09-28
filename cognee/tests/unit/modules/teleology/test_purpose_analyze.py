@@ -147,7 +147,9 @@ def test_similar_purpose_is_reused_instead_of_created():
 
 @pytest.mark.asyncio
 async def test_analyze_stores_proposal_without_writing_the_graph(tmp_path, monkeypatch):
-    monkeypatch.setattr(purpose_analyze, "_load", lambda dataset_id: {"proposals": {}})
+    monkeypatch.setattr(
+        "cognee.modules.teleology.proposal_store.database_enabled", lambda: False
+    )
 
     async def context(*_args, **_kwargs):
         return _context() | {"dataset_id": "d"}
@@ -184,3 +186,115 @@ async def test_analyze_stores_proposal_without_writing_the_graph(tmp_path, monke
     assert stored["generated_by"] == "purpose-agent"
     assert stored["proposal"]["purposes"][0]["evidence_node_ids"] == ["doc"]
     assert "owner" not in stored["proposal"]["purposes"][0]
+
+
+def test_ai_purpose_without_evidence_or_outside_context_is_dropped():
+    body = normalize_analysis(
+        _context(),
+        {
+            "purposes": [
+                {
+                    "name": "没有证据的目的",
+                    "reason": "听起来合理",
+                    "confidence": 0.8,
+                    "evidence_node_ids": [],
+                },
+                {
+                    "name": "引用了上下文外的证据",
+                    "reason": "证据不在本次上下文",
+                    "confidence": 0.8,
+                    "evidence_node_ids": ["missing-doc"],
+                },
+            ]
+        },
+    )
+    assert body["purposes"] == []
+
+
+def test_weak_relation_and_constraint_overreach_stay_out_of_formal_items():
+    body = normalize_analysis(
+        _context(),
+        {
+            "constraints": [
+                {
+                    "name": "必须使用看板",
+                    "reason": "因为存在利润看板，所以必须使用看板",
+                    "confidence": 0.8,
+                    "evidence_node_ids": ["doc"],
+                }
+            ],
+            "relations": [
+                {
+                    "source": "tax",
+                    "relationship": "advances",
+                    "target": "fx",
+                    "reason": "线索很弱",
+                    "confidence": 0.4,
+                    "evidence_node_ids": ["doc"],
+                }
+            ],
+        },
+    )
+    assert body["constraints"] == []
+    assert body["relations"] == []
+    assert body["weak_signals"][0]["weak_reason"] == "constraint_overreach"
+    assert body["weak_signals"][1]["weak_reason"] == "low_confidence"
+
+
+def test_cross_proposal_purpose_is_a_conflict_not_an_endpoint():
+    body = normalize_analysis(
+        _context(),
+        {
+            "purposes": [
+                {
+                    "name": "保障韩国业务长期稳定经营",
+                    "reason": "和另一份待审候选相同",
+                    "confidence": 0.8,
+                    "evidence_node_ids": ["doc"],
+                }
+            ],
+            "relations": [
+                {
+                    "source_id": "fx",
+                    "target_id": "open-item-1",
+                    "relationship": "serves",
+                    "reason": "不应指向别的提案",
+                    "confidence": 0.8,
+                    "evidence_node_ids": ["doc"],
+                }
+            ],
+        },
+        open_items=[
+            {
+                "id": "open-item-1",
+                "proposal_id": "proposal-a",
+                "kind": "purpose",
+                "name": "保障韩国业务长期稳定经营",
+            }
+        ],
+    )
+    assert body["relations"] == []
+    assert body["open_conflicts"]
+    assert body["open_conflicts"][0]["proposal_id"] == "proposal-a"
+    assert all(item["target"] != "open-item-1" for item in body["relations"])
+    assert body["purposes"][0]["id"] != "open-item-1"
+
+
+def test_relation_aliases_normalize_to_source_and_target():
+    body = normalize_analysis(
+        _context(),
+        {
+            "relations": [
+                {
+                    "source_ref": "外汇",
+                    "target_id": "stable",
+                    "relationship": "blocks",
+                    "reason": "别名也能解析",
+                    "confidence": 0.7,
+                    "evidence_node_ids": ["doc"],
+                }
+            ]
+        },
+    )
+    assert body["relations"][0]["source"] == "fx"
+    assert body["relations"][0]["target"] == "stable"

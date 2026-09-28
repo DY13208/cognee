@@ -37,6 +37,8 @@ from cognee.modules.teleology.graph_annotations import (
 )
 from cognee.modules.teleology.purpose_analyze import analyze_goal
 from cognee.modules.teleology.purpose_layer import (
+    ProposalCommitIncomplete,
+    ProposalStaleError,
     commit_teleology_proposal,
     get_purpose_context,
     propose_teleology,
@@ -117,6 +119,7 @@ class PurposeProposalCreate(InDTO):
     dataset_id: UUID
     source_goal_id: str = Field(min_length=1)
     proposal: dict = Field(default_factory=dict)
+    generated_by: Optional[str] = None
 
 
 class PurposeProposalCommit(InDTO):
@@ -530,11 +533,14 @@ def get_teleology_router() -> APIRouter:
     ):
         """Store an AI candidate. It stays out of the formal graph until commit."""
         try:
+            from cognee.modules.teleology.proposal_rules import normalize_generated_by
+
             return await propose_teleology(
                 payload.dataset_id,
                 user,
                 source_goal_id=payload.source_goal_id,
                 proposal=payload.proposal,
+                generated_by=normalize_generated_by(payload.generated_by, external=True),
             )
         except (DatasetNotFoundError, KeyError) as exc:
             return JSONResponse(status_code=404, content={"error": str(exc)})
@@ -562,6 +568,19 @@ def get_teleology_router() -> APIRouter:
             return JSONResponse(status_code=404, content={"error": str(exc)})
         except ValueError as exc:
             return JSONResponse(status_code=400, content={"error": str(exc)})
+        except ProposalStaleError:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "proposal_stale",
+                    "message": "目标上下文已变化，请重新分析后再确认。",
+                },
+            )
+        except ProposalCommitIncomplete as exc:
+            return JSONResponse(
+                status_code=409,
+                content={"error": str(exc), "code": "commit_incomplete"},
+            )
 
     @router.post("/analyze", response_model=dict)
     async def analyze_purpose(

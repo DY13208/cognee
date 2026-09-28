@@ -109,6 +109,68 @@ async def test_known_fields_fill_created_at_and_purpose() -> None:
     assert rows[3]["created_at"] == 5
 
 
+@pytest.mark.asyncio
+async def test_sync_does_not_create_name_overlap_serves(monkeypatch):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from cognee.modules.teleology import graph_annotations
+
+    parent = SimpleNamespace(id="parent", kind="goal", name="检索质量", note="提升检索质量")
+    child = SimpleNamespace(id="child", kind="goal", name="周报", note="")
+    tree = SimpleNamespace(
+        nodes=[parent, child],
+        edges=[SimpleNamespace(label="has_subgoal", source="parent", target="child")],
+    )
+
+    class Graph:
+        def __init__(self):
+            self.edges = []
+
+        async def has_edge(self, *_args):
+            return False
+
+        async def add_edges(self, edges):
+            self.edges.extend(edges)
+
+        async def query(self, *_args, **_kwargs):
+            return []
+
+        async def get_filtered_graph_data(self, *_args):
+            return ([("entity-1", {"name": "检索质量周报", "type": "Entity"})], [])
+
+    graph = Graph()
+
+    async def company_tree(*_args, **_kwargs):
+        return tree
+
+    async def engine():
+        return graph
+
+    async def authorized(*_args, **_kwargs):
+        return SimpleNamespace(owner_id=uuid4())
+
+    @asynccontextmanager
+    async def context(*_args, **_kwargs):
+        yield
+
+    monkeypatch.setattr("cognee.modules.company_tree.upsert.get_company_tree", company_tree)
+    monkeypatch.setattr(graph_annotations, "_authorized_dataset", authorized)
+    monkeypatch.setattr("cognee.infrastructure.databases.graph.get_graph_engine", engine)
+    monkeypatch.setattr(
+        "cognee.context_global_variables.set_database_global_context_variables", context
+    )
+    result = await graph_annotations.sync_from_company_tree(
+        uuid4(), SimpleNamespace(), link_entities=True
+    )
+    assert result["serves_created"] == 0
+    assert all(edge[2] != "serves" for edge in graph.edges)
+    advances = [edge for edge in graph.edges if edge[2] == "advances"]
+    assert advances[0][3]["origin"] == "system_derived"
+    assert advances[0][3]["retrieval_only"] == "true"
+
+
 def test_token_overlap_matches_chinese_and_substring() -> None:
     assert _token_overlap("提升检索质量", "检索质量目标")
     assert _token_overlap("Hybrid search", "Improve hybrid search ranking")

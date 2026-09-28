@@ -11,8 +11,8 @@ import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext"
 
 // Sidebar widths (px). The rail shows icons only; collapsing only applies on
 // desktop, matching the Tailwind `sm` breakpoint (640px) used below.
-const EXPANDED_WIDTH = 240;
-const COLLAPSED_WIDTH = 72;
+export const EXPANDED_WIDTH = 240;
+export const COLLAPSED_WIDTH = 72;
 
 // -- Icon components for nav items --
 

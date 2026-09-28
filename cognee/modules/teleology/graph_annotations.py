@@ -698,11 +698,12 @@ async def _connected_preview(
 
 
 def _system_edge(relationship: str) -> dict[str, str]:
-    """Structural copy of the company tree. Not an AI-inferred purpose edge."""
+    """Structural copy of the company tree. Retrieval may walk it; purpose views must not."""
     return {
         "edge_text": relationship,
         "relationship_name": relationship,
         "origin": "system_derived",
+        "retrieval_only": "true",
         "generated_by": "company-tree-sync",
     }
 
@@ -978,17 +979,15 @@ async def sync_from_company_tree(
     dataset_id: UUID,
     user: User,
     *,
-    link_entities: bool = True,
+    link_entities: bool = False,
     source_room: str | None = None,
 ) -> dict[str, Any]:
-    """Read the company tree and stamp structural edges for recall.
+    """Copy company-tree structure for retrieval. Does not infer purpose relations.
 
-    This does not generate teleology. Company-tree nodes stay as they are.
-    Each ``has_subgoal`` parent→child may be copied to ``advances`` child→parent
-    with ``origin=system_derived`` so retrieval can walk the tree. Those copies
-    are hidden from purpose analysis and the purpose UI. Optional name-overlap
-    ``serves`` edges, when requested, get the same origin. Nothing here is an
-    AI-inferred purpose, and the company tree itself is not rewritten.
+    ``has_subgoal`` stays the fact edge. A child→parent ``advances`` copy is
+    written only for retrieval, with ``origin=system_derived`` and
+    ``retrieval_only=true``. Name overlap never creates ``serves``.
+    ``link_entities`` is ignored and kept so older callers do not break.
     """
     from cognee.context_global_variables import set_database_global_context_variables
     from cognee.infrastructure.databases.graph import get_graph_engine
@@ -1024,50 +1023,8 @@ async def sync_from_company_tree(
             await graph.add_edges([(child_id, parent_id, "advances", _system_edge("advances"))])
             advances_created += 1
 
-        if link_entities:
-            # Cap entity scan — full get_graph_data() on a 12k-goal tree is too
-            # expensive for a sync button. Overlap-match against a bounded slice.
-            try:
-                nodes, _edges = await graph.get_filtered_graph_data(
-                    [{"type": ["Entity", "DocumentChunk", "TextDocument"]}]
-                )
-            except Exception:
-                nodes, _edges = await graph.get_graph_data()
-            # Soft cap so sync stays interactive on huge graphs.
-            if len(nodes) > 4000:
-                nodes = nodes[:4000]
-            goal_ids = {n.id for n in goal_nodes}
-            goal_meta = {n.id: n for n in goal_nodes}
-            for raw_id, props in nodes:
-                nid = str(raw_id)
-                if nid in goal_ids:
-                    continue
-                if not _is_annotatable(props):
-                    continue
-                # Skip company-tree structural members (already Goals / refs).
-                if (props or {}).get("source_scope") == "company_model_only":
-                    continue
-                if (props or {}).get("cpd_kind") in ("goal", "map_reference"):
-                    continue
-                entity_name = _props_name(props)
-                entity_text = f"{entity_name} {(props or {}).get('description') or ''}"
-                for gid, gnode in goal_meta.items():
-                    hay = f"{gnode.name} {gnode.note or ''}"
-                    if not _token_overlap(entity_text, hay):
-                        continue
-                    if await graph.has_edge(nid, gid, "serves"):
-                        continue
-                    await graph.add_edges(
-                        [
-                            (
-                                nid,
-                                gid,
-                                "serves",
-                                _system_edge("serves"),
-                            )
-                        ]
-                    )
-                    serves_created += 1
+        # Name overlap must not invent serves. link_entities is accepted and ignored.
+        _ = link_entities
 
         # Sample only — never return the full 10k-goal list in the HTTP body.
         sample_goals = await _fetch_goals_page(graph, needle="", limit=24, offset=0)
