@@ -102,6 +102,10 @@ export default function OntologyCanvas({
   const dragRef = useRef<DragState | null>(null);
   const panRef = useRef<PanState | null>(null);
   const marqueeRef = useRef<MarqueeState | null>(null);
+  const pointerMoveRef = useRef<(e: PointerEvent) => void>(() => {});
+  const pointerEndRef = useRef<(e: PointerEvent) => void>(() => {});
+  const onWindowMove = useCallback((e: PointerEvent) => pointerMoveRef.current(e), []);
+  const onWindowEnd = useCallback((e: PointerEvent) => pointerEndRef.current(e), []);
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set());
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -274,18 +278,18 @@ export default function OntologyCanvas({
       if (pan && e.pointerId === pan.pointerId) {
         panRef.current = null;
         setPanning(false);
-        window.removeEventListener("pointermove", onPointerMove);
-        window.removeEventListener("pointerup", endPointer);
-        window.removeEventListener("pointercancel", endPointer);
+        window.removeEventListener("pointermove", onWindowMove);
+        window.removeEventListener("pointerup", onWindowEnd);
+        window.removeEventListener("pointercancel", onWindowEnd);
         return;
       }
       const selection = marqueeRef.current;
       if (selection && e.pointerId === selection.pointerId) {
         marqueeRef.current = null;
         setMarquee(null);
-        window.removeEventListener("pointermove", onPointerMove);
-        window.removeEventListener("pointerup", endPointer);
-        window.removeEventListener("pointercancel", endPointer);
+        window.removeEventListener("pointermove", onWindowMove);
+        window.removeEventListener("pointerup", onWindowEnd);
+        window.removeEventListener("pointercancel", onWindowEnd);
         if (selection.moved) {
           window.setTimeout(() => { didDragRef.current = false; }, 0);
         }
@@ -296,9 +300,9 @@ export default function OntologyCanvas({
       const wasMove = drag.moved;
       dragRef.current = null;
       setDraggingId(null);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", endPointer);
-      window.removeEventListener("pointercancel", endPointer);
+      window.removeEventListener("pointermove", onWindowMove);
+      window.removeEventListener("pointerup", onWindowEnd);
+      window.removeEventListener("pointercancel", onWindowEnd);
       // Allow click handler to see whether this was a drag
       if (wasMove) {
         window.setTimeout(() => {
@@ -306,7 +310,7 @@ export default function OntologyCanvas({
         }, 0);
       }
     },
-    [onPointerMove],
+    [onPointerMove, onWindowMove, onWindowEnd],
   );
 
   const startCanvasPointerDown = useCallback(
@@ -323,9 +327,9 @@ export default function OntologyCanvas({
         const startY = (e.clientY - rect.top) / zoom;
         didDragRef.current = false;
         marqueeRef.current = { pointerId: e.pointerId, startX, startY, endX: startX, endY: startY, moved: false };
-        window.addEventListener("pointermove", onPointerMove);
-        window.addEventListener("pointerup", endPointer);
-        window.addEventListener("pointercancel", endPointer);
+        window.addEventListener("pointermove", onWindowMove);
+        window.addEventListener("pointerup", onWindowEnd);
+        window.addEventListener("pointercancel", onWindowEnd);
         return;
       }
       // Middle or right button keeps canvas panning available.
@@ -339,16 +343,17 @@ export default function OntologyCanvas({
         scrollTop: el.scrollTop,
       };
       setPanning(true);
-      window.addEventListener("pointermove", onPointerMove);
-      window.addEventListener("pointerup", endPointer);
-      window.addEventListener("pointercancel", endPointer);
+      window.addEventListener("pointermove", onWindowMove);
+      window.addEventListener("pointerup", onWindowEnd);
+      window.addEventListener("pointercancel", onWindowEnd);
     },
-    [onPointerMove, endPointer, zoom],
+    [onWindowMove, onWindowEnd, zoom],
   );
 
   const startDrag = useCallback(
     (id: string, node: LaidOutNode, e: ReactPointerEvent) => {
       if (e.button !== 0) return;
+      e.preventDefault();
       e.stopPropagation();
       const group = selectedNodeIds.has(id) && selectedNodeIds.size > 1;
       const ids = group ? [...selectedNodeIds] : [id];
@@ -372,20 +377,23 @@ export default function OntologyCanvas({
         moved: false,
       };
       onSelect(id);
-      window.addEventListener("pointermove", onPointerMove);
-      window.addEventListener("pointerup", endPointer);
-      window.addEventListener("pointercancel", endPointer);
+      window.addEventListener("pointermove", onWindowMove);
+      window.addEventListener("pointerup", onWindowEnd);
+      window.addEventListener("pointercancel", onWindowEnd);
     },
-    [offsets, onSelect, onPointerMove, endPointer, selectedNodeIds, nodesWithOffsets],
+    [offsets, onSelect, onWindowMove, onWindowEnd, selectedNodeIds, nodesWithOffsets],
   );
+
+  pointerMoveRef.current = onPointerMove;
+  pointerEndRef.current = endPointer;
 
   useEffect(() => {
     return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", endPointer);
-      window.removeEventListener("pointercancel", endPointer);
+      window.removeEventListener("pointermove", onWindowMove);
+      window.removeEventListener("pointerup", onWindowEnd);
+      window.removeEventListener("pointercancel", onWindowEnd);
     };
-  }, [onPointerMove, endPointer]);
+  }, [onWindowMove, onWindowEnd]);
 
   const relatedIds = useMemo(() => {
     if (!relatedOnly || !focusId || !layout) return null;

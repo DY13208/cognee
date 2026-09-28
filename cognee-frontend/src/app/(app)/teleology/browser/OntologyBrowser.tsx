@@ -648,23 +648,6 @@ export default function OntologyBrowser({
         </div>
 
         <div className="onto-main" ref={mainRef}>
-          <div className="onto-canvas-toolbar">
-            <button type="button" className="onto-btn" onClick={() => setLeftOpen((v) => !v)} aria-expanded={leftOpen}>{leftOpen ? t("Collapse tree", "收起目录") : t("Expand tree", "展开目录")}</button>
-            <button type="button" className="onto-btn" onClick={() => setRightOpen((v) => !v)} aria-expanded={rightOpen}>{rightOpen ? t("Collapse details", "收起详情") : t("Expand details", "展开详情")}</button>
-            <div className="onto-toolbar-filters">
-              <button type="button" className="onto-btn" onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen}>{t("Display filters", "显示筛选")} ▾</button>
-              {filtersOpen && <div className="onto-filter-popover">
-                <label className="onto-check"><input type="checkbox" checked={relatedOnly} onChange={(e) => setRelatedOnly(e.target.checked)} />{t("Related nodes only", "仅显示相关节点")}</label>
-                <div className="onto-nav-sub">{t("Hide relations", "隐藏关系类型")}</div>
-                {["has_subgoal", "has_detail_reference", "serves", "advances", "blocks"].map((rel) => <label key={rel} className="onto-check"><input type="checkbox" checked={hiddenRels.has(rel)} onChange={() => setHiddenRels((prev) => { const next = new Set(prev); if (next.has(rel)) next.delete(rel); else next.add(rel); return next; })} />{rel}</label>)}
-                <div className="onto-nav-sub">{t("Entity types", "对象类型")}</div>
-                {(["Goal", "Project", "Metric", "Department", "Person", "Document", "Entity", "Other"] as EntityKind[]).map((kind) => <label key={kind} className="onto-check"><input type="checkbox" checked={kindFilter.has(kind)} onChange={() => setKindFilter((prev) => { const next = new Set(prev); if (next.has(kind)) next.delete(kind); else next.add(kind); return next; })} />{kind}</label>)}
-              </div>}
-            </div>
-            <div className="onto-toolbar-spacer" />
-            <div className="onto-zoom-group"><button type="button" onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))} aria-label={t("Zoom out", "缩小")}>−</button><button type="button" onClick={() => setZoom(1)} aria-label={t("Reset zoom", "重置缩放")}>{Math.round(zoom * 100)}%</button><button type="button" onClick={() => setZoom((value) => Math.min(1.6, Math.round((value + 0.1) * 10) / 10))} aria-label={t("Zoom in", "放大")}>＋</button></div>
-            <button type="button" className="onto-btn" onClick={() => { if (document.fullscreenElement === mainRef.current) void document.exitFullscreen(); else void mainRef.current?.requestFullscreen(); }} aria-label={t("Toggle fullscreen", "切换全屏")}>⛶</button>
-          </div>
           {loadError ? (
             <div style={{ padding: 12, color: "#F87171", fontSize: 12 }}>{loadError}</div>
           ) : null}
@@ -687,6 +670,21 @@ export default function OntologyBrowser({
             onCanvasClick={() => setSelectedId(null)}
             onHover={setHoverId}
           />
+          <div className="onto-canvas-toolbar">
+            <div className="onto-zoom-group"><button type="button" onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))} aria-label={t("Zoom out", "缩小")}>−</button><button type="button" onClick={() => setZoom(1)} aria-label={t("Reset zoom", "重置缩放")}>{Math.round(zoom * 100)}%</button><button type="button" onClick={() => setZoom((value) => Math.min(1.6, Math.round((value + 0.1) * 10) / 10))} aria-label={t("Zoom in", "放大")}>＋</button></div>
+            <button type="button" className="onto-btn" onClick={() => { if (document.fullscreenElement === mainRef.current) void document.exitFullscreen(); else void mainRef.current?.requestFullscreen(); }} aria-label={t("Toggle fullscreen", "切换全屏")}>⛶</button>
+            <div className="onto-toolbar-spacer" />
+            <div className="onto-toolbar-filters">
+              <button type="button" className="onto-btn" onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen}>{t("Display filters", "显示筛选")} ▾</button>
+              {filtersOpen && <div className="onto-filter-popover">
+                <label className="onto-check"><input type="checkbox" checked={relatedOnly} onChange={(e) => setRelatedOnly(e.target.checked)} />{t("Related nodes only", "仅显示相关节点")}</label>
+                <div className="onto-nav-sub">{t("Hide relations", "隐藏关系类型")}</div>
+                {["has_subgoal", "has_detail_reference", "serves", "advances", "blocks"].map((rel) => <label key={rel} className="onto-check"><input type="checkbox" checked={hiddenRels.has(rel)} onChange={() => setHiddenRels((prev) => { const next = new Set(prev); if (next.has(rel)) next.delete(rel); else next.add(rel); return next; })} />{rel}</label>)}
+                <div className="onto-nav-sub">{t("Entity types", "对象类型")}</div>
+                {(["Goal", "Project", "Metric", "Department", "Person", "Document", "Entity", "Other"] as EntityKind[]).map((kind) => <label key={kind} className="onto-check"><input type="checkbox" checked={kindFilter.has(kind)} onChange={() => setKindFilter((prev) => { const next = new Set(prev); if (next.has(kind)) next.delete(kind); else next.add(kind); return next; })} />{kind}</label>)}
+              </div>}
+            </div>
+          </div>
         </div>
 
         <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}>

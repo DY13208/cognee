@@ -54,19 +54,19 @@ export default function EntityCard({
     gap: 6,
     padding: "11px 12px 10px 14px",
     borderRadius: 10,
-    background: isFocus ? "#1b2140" : "#151a2d",
+    background: isFocus ? "#1a1a1a" : "#101010",
     border: isFocus
-      ? "1px solid #8478ff"
+      ? "1px solid rgba(232,231,228,0.72)"
       : selected
-        ? "1px solid #8478ff"
-        : "1px solid rgba(112,130,199,0.34)",
+        ? "1px solid rgba(232,231,228,0.55)"
+        : "1px solid rgba(255,255,255,0.12)",
     boxShadow: isFocus
-      ? "0 0 0 3px rgba(117,104,255,0.16), 0 0 22px rgba(108,93,255,0.24), 0 10px 28px rgba(0,0,0,0.35)"
+      ? "0 0 0 1px rgba(255,255,255,0.16), 0 10px 24px rgba(0,0,0,0.45)"
       : selected
-        ? "0 0 0 3px rgba(117,104,255,0.13), 0 0 18px rgba(108,93,255,0.18)"
+        ? "0 0 0 1px rgba(255,255,255,0.1), 0 8px 20px rgba(0,0,0,0.4)"
       : dragging
-        ? "0 14px 32px rgba(0,0,0,0.5)"
-        : "0 6px 18px rgba(0,0,0,0.28)",
+        ? "0 14px 32px rgba(0,0,0,0.55)"
+        : "0 6px 16px rgba(0,0,0,0.35)",
     opacity: dimmed ? 0.58 : 1,
     cursor: dragging ? "grabbing" : "grab",
     color: "#E8E7E4",
