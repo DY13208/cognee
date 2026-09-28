@@ -27,6 +27,7 @@ export default function EntityCard({
   onExpand,
   onPointerDown,
   language,
+  relationshipCount,
 }: {
   node: LaidOutNode;
   selected: boolean;
@@ -38,6 +39,7 @@ export default function EntityCard({
   onExpand?: () => void;
   onPointerDown?: (e: ReactPointerEvent) => void;
   language: "zh" | "en";
+  relationshipCount: number;
 }) {
   const stripe = KIND_STRIPE[node.kind] || KIND_STRIPE.Other;
   const style: CSSProperties = {
@@ -45,25 +47,27 @@ export default function EntityCard({
     left: node.x,
     top: node.y,
     width: CARD_W,
-    minHeight: CARD_H + 8,
+    height: CARD_H,
     boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
     gap: 6,
-    padding: "10px 12px 10px 14px",
+    padding: "11px 12px 10px 14px",
     borderRadius: 10,
-    background: isFocus ? "rgba(30,30,36,0.98)" : "rgba(20,20,24,0.96)",
+    background: isFocus ? "#1b2140" : "#151a2d",
     border: isFocus
-      ? "1px solid rgba(124,140,255,0.65)"
+      ? "1px solid #8478ff"
       : selected
-        ? "1px solid rgba(237,236,234,0.3)"
-        : "1px solid rgba(255,255,255,0.09)",
+        ? "1px solid #8478ff"
+        : "1px solid rgba(112,130,199,0.34)",
     boxShadow: isFocus
-      ? "0 0 0 4px rgba(124,140,255,0.14), 0 10px 28px rgba(0,0,0,0.4)"
+      ? "0 0 0 3px rgba(117,104,255,0.16), 0 0 22px rgba(108,93,255,0.24), 0 10px 28px rgba(0,0,0,0.35)"
+      : selected
+        ? "0 0 0 3px rgba(117,104,255,0.13), 0 0 18px rgba(108,93,255,0.18)"
       : dragging
         ? "0 14px 32px rgba(0,0,0,0.5)"
         : "0 6px 18px rgba(0,0,0,0.28)",
-    opacity: dimmed ? 0.32 : 1,
+    opacity: dimmed ? 0.58 : 1,
     cursor: dragging ? "grabbing" : "grab",
     color: "#E8E7E4",
     fontFamily: "inherit",
@@ -75,10 +79,7 @@ export default function EntityCard({
     touchAction: "none",
   };
 
-  const meta =
-    node.parentName ||
-    node.status ||
-    (node.description ? node.description.slice(0, 42) : "");
+  const meta = node.description ? node.description.slice(0, 48) : node.status || node.parentName || "";
 
   return (
     <div
@@ -99,19 +100,6 @@ export default function EntityCard({
         if (e.key === "Enter") onFocus();
       }}
     >
-      <span
-        aria-hidden
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 8,
-          bottom: 8,
-          width: 3,
-          borderRadius: 2,
-          background: stripe,
-        }}
-      />
-
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <span
           aria-hidden
@@ -197,19 +185,19 @@ export default function EntityCard({
         <div
           style={{
             fontSize: 10,
-            color: "rgba(232,231,228,0.4)",
+            color: "rgba(232,231,245,0.68)",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}
         >
-          {node.parentName
-            ? `${language === "zh" ? "来源 / 上级" : "Source"} · ${node.parentName}`
-            : node.status
-              ? `${language === "zh" ? "状态" : "Status"} · ${node.status}`
-              : meta}
+          {meta}
         </div>
       ) : null}
+      <div className="onto-card-counts">
+        <span>{language === "zh" ? "关系" : "Links"} {relationshipCount}</span>
+        <span>{language === "zh" ? "子目标" : "Children"} {node.childCount || 0}</span>
+      </div>
     </div>
   );
 }

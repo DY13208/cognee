@@ -11,11 +11,10 @@ import {
 } from "@/modules/teleology/teleologyApi";
 import { notifications } from "@mantine/notifications";
 import DetailPanel from "./DetailPanel";
-import NavPanel from "./NavPanel";
+import NavPanel, { type GoalTreeNode } from "./NavPanel";
 import OntologyCanvas from "./OntologyCanvas";
 import { classifyKind, displayName } from "./entityMeta";
-import { findPath } from "./layoutDag";
-import type { EntityKind, OntologyEdge, OntologyEntity, ViewMode } from "./types";
+import type { EntityKind, OntologyEdge, OntologyEntity } from "./types";
 import "./ontology.css";
 
 type DatasetOpt = { id: string; name: string };
@@ -81,6 +80,7 @@ export default function OntologyBrowser({
   language,
   busy,
   onBusy,
+  onHeaderCollapsedChange,
 }: {
   instance: CogneeInstance;
   datasets: DatasetOpt[];
@@ -89,6 +89,7 @@ export default function OntologyBrowser({
   language: "zh" | "en";
   busy: boolean;
   onBusy: (v: boolean) => void;
+  onHeaderCollapsedChange?: (collapsed: boolean) => void;
 }) {
   const t = (en: string, zh: string) => (language === "zh" ? zh : en);
   const datasetId = selectedDataset?.id || datasets[0]?.id || "";
@@ -101,8 +102,8 @@ export default function OntologyBrowser({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingFocus, setLoadingFocus] = useState(false);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("hierarchy");
-  const [hopDepth, setHopDepth] = useState(3);
+  const viewMode = "hierarchy" as const;
+  const hopDepth = 100;
   const [relatedOnly, setRelatedOnly] = useState(false);
   const [hiddenRels, setHiddenRels] = useState<Set<string>>(new Set());
   const [kindFilter, setKindFilter] = useState<Set<EntityKind>>(
@@ -115,15 +116,14 @@ export default function OntologyBrowser({
   const [searching, setSearching] = useState(false);
   const searchSeq = useRef(0);
 
-  const [browseHits, setBrowseHits] = useState<
-    { id: string; name: string; kind: string; childCount?: number }[]
-  >([]);
-  const [browseStack, setBrowseStack] = useState<{ id: string; name: string }[]>([]);
-  const [browseLoading, setBrowseLoading] = useState(false);
-  const browseSeq = useRef(0);
-
-  const [pathStart, setPathStart] = useState<string | null>(null);
-  const [pathEnd, setPathEnd] = useState<string | null>(null);
+  const [goalTree, setGoalTree] = useState<GoalTreeNode[]>([]);
+  const [topOpen, setTopOpen] = useState(true);
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const mainRef = useRef<HTMLDivElement>(null);
   const [datasetMenu, setDatasetMenu] = useState(false);
 
   const loadConnectedTree = useCallback(async () => {
@@ -166,8 +166,7 @@ export default function OntologyBrowser({
                   id: `${e.source}|${e.label}|${e.target}|${i}`,
                   sourceId: e.source,
                   targetId: e.target,
-                  relationship:
-                    e.label === "has_detail_reference" ? "has_detail_reference" : "has_subgoal",
+                  relationship: e.label || "has_subgoal",
                   sourceName: displayName(byId.get(e.source)!.name, e.source),
                   targetName: displayName(byId.get(e.target)!.name, e.target),
                   sourceType: "Goal",
@@ -184,6 +183,30 @@ export default function OntologyBrowser({
                 childCount: childN.get(e.id) || 0,
               }));
               rootId = tree.rootId;
+              const treeNodes = new Map(tree.nodes.map((n) => [n.id, { id: n.id, name: displayName(n.name, n.id), children: [] as GoalTreeNode[] }]));
+              const childIds = new Set<string>();
+              for (const edge of tree.edges || []) {
+                if (edge.label !== "has_subgoal" && edge.label !== "has_detail_reference") continue;
+                const parent = treeNodes.get(edge.source);
+                const child = treeNodes.get(edge.target);
+                if (parent && child && parent !== child) { parent.children.push(child); childIds.add(child.id); }
+              }
+              setGoalTree([...treeNodes.values()].filter((n) => !childIds.has(n.id)));
+              // The company tree only describes hierarchy. Load the focused goal's
+              // purpose and knowledge relations from the graph as a separate layer.
+              try {
+                const related = await getGraphAnnotations(instance, datasetId, { goalId: rootId, limit: 120, goalsLimit: 40 });
+                const entityMap = new Map(ents.map((entity) => [entity.id, entity]));
+                for (const entity of mergeEntitiesFromPayload(related.goals || [], related.nodes || [], related.annotations || [])) {
+                  if (!entityMap.has(entity.id)) entityMap.set(entity.id, entity);
+                }
+                ents = [...entityMap.values()];
+                const seen = new Set(eds.map((edge) => `${edge.sourceId}|${edge.relationship}|${edge.targetId}`));
+                for (const edge of edgesFromAnnotations(related.annotations || [])) {
+                  const key = `${edge.sourceId}|${edge.relationship}|${edge.targetId}`;
+                  if (!seen.has(key)) { eds.push(edge); seen.add(key); }
+                }
+              } catch { /* keep the company tree when annotations are unavailable */ }
             }
           }
         } catch {
@@ -198,6 +221,7 @@ export default function OntologyBrowser({
           ents = mergeEntitiesFromPayload(res.goals || [], res.nodes || [], res.annotations || []);
           eds = edgesFromAnnotations(res.annotations || []);
           rootId = res.goals?.[0]?.id || ents[0]?.id || null;
+          setGoalTree((res.goals || []).map((g) => ({ id: g.id, name: displayName(g.name, g.id), children: [] })));
         }
 
         setEntities(ents);
@@ -212,36 +236,6 @@ export default function OntologyBrowser({
         setLoadingFocus(false);
       }
     }, [instance, datasetId]);
-
-  const loadBrowse = useCallback(
-    async (parentId: string) => {
-      if (!instance || !datasetId) return;
-      const seq = ++browseSeq.current;
-      setBrowseLoading(true);
-      try {
-        const res = await getGraphAnnotations(instance, datasetId, {
-          parentId,
-          limit: 1,
-          goalsLimit: 60,
-        });
-        if (seq !== browseSeq.current) return;
-        setBrowseHits(
-          (res.goals || []).map((g) => ({
-            id: g.id,
-            name: displayName(g.name, g.id),
-            kind: classifyKind(g.type || "", g.cpd_kind),
-            childCount: g.child_count ?? 0,
-          })),
-        );
-      } catch {
-        if (seq !== browseSeq.current) return;
-        setBrowseHits([]);
-      } finally {
-        if (seq === browseSeq.current) setBrowseLoading(false);
-      }
-    },
-    [instance, datasetId],
-  );
 
   const loadFocus = useCallback(
     async (id: string, depth: number) => {
@@ -258,7 +252,7 @@ export default function OntologyBrowser({
           goalsLimit: 40,
         });
         let ents = mergeEntitiesFromPayload(res.goals || [], res.nodes || [], res.annotations || []);
-        let eds = edgesFromAnnotations(res.annotations || []);
+        const eds = edgesFromAnnotations(res.annotations || []);
 
         // Approximate hop 2/3 by expanding neighbors once more
         if (depth >= 2) {
@@ -349,13 +343,8 @@ export default function OntologyBrowser({
     setSelectedId(null);
     setEntities([]);
     setEdges([]);
-    setPathStart(null);
-    setPathEnd(null);
-    setBrowseStack([]);
-    setBrowseHits([]);
+    setGoalTree([]);
     if (datasetId) {
-      // Browse loads first (cheap parent_id Cypher); canvas tree in parallel.
-      void loadBrowse("_roots");
       void loadConnectedTree();
     }
   }, [datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -370,7 +359,6 @@ export default function OntologyBrowser({
     async (id: string) => {
       setFocusId(id);
       setSelectedId(id);
-      setViewMode((m) => (m === "path" ? "hierarchy" : m));
 
       // Prefer staying on the loaded company tree — just re-root.
       const children = (() => {
@@ -394,16 +382,17 @@ export default function OntologyBrowser({
         if (!instance || !datasetId) return;
         try {
           setLoadingFocus(true);
-          const res = await getGraphAnnotations(instance, datasetId, {
-            parentId: id,
-            limit: 1,
-            goalsLimit: 60,
-          });
-          const kids = (res.goals || []).map(toEntity);
-          if (kids.length) {
+          const [childrenResult, relationsResult] = await Promise.all([
+            getGraphAnnotations(instance, datasetId, { parentId: id, limit: 1, goalsLimit: 60 }),
+            getGraphAnnotations(instance, datasetId, { goalId: id, limit: 120, goalsLimit: 40 }),
+          ]);
+          const kids = (childrenResult.goals || []).map(toEntity);
+          const relatedEntities = mergeEntitiesFromPayload(relationsResult.goals || [], relationsResult.nodes || [], relationsResult.annotations || []);
+          const relatedEdges = edgesFromAnnotations(relationsResult.annotations || []);
+          if (kids.length || relatedEntities.length || relatedEdges.length) {
             setEntities((prev) => {
               const byId = new Map(prev.map((x) => [x.id, x]));
-              for (const k of kids) byId.set(k.id, k);
+              for (const k of [...kids, ...relatedEntities]) if (!byId.has(k.id)) byId.set(k.id, k);
               return [...byId.values()];
             });
             setEdges((prev) => {
@@ -423,6 +412,10 @@ export default function OntologyBrowser({
                   targetType: "Goal",
                 });
                 ek.add(key);
+              }
+              for (const edge of relatedEdges) {
+                const key = `${edge.sourceId}|${edge.relationship}|${edge.targetId}`;
+                if (!ek.has(key)) { next.push(edge); ek.add(key); }
               }
               return next;
             });
@@ -445,27 +438,9 @@ export default function OntologyBrowser({
         setSelectedId(null);
         return;
       }
-      if (viewMode === "path") {
-        if (!pathStart) {
-          setPathStart(id);
-          setSelectedId(id);
-          return;
-        }
-        if (!pathEnd && id !== pathStart) {
-          setPathEnd(id);
-          setSelectedId(id);
-          // ensure both neighbourhoods loaded — use pathStart as focus if needed
-          if (focusId !== pathStart) void loadFocus(pathStart, hopDepth);
-          return;
-        }
-        setPathStart(id);
-        setPathEnd(null);
-        setSelectedId(id);
-        return;
-      }
       setSelectedId(id);
     },
-    [viewMode, pathStart, pathEnd, focusId, hopDepth, loadFocus],
+    [],
   );
 
   const visible = useMemo(() => {
@@ -476,20 +451,6 @@ export default function OntologyBrowser({
       const okT = ents.some((x) => x.id === e.targetId) || e.targetId === focusId;
       return okS && okT;
     });
-
-    if (viewMode === "chain") {
-      eds = eds.filter((e) =>
-        ["advances", "has_subgoal", "serves"].includes(e.relationship),
-      );
-    }
-
-    if (viewMode === "path" && pathStart && pathEnd) {
-      const path = findPath(eds, pathStart, pathEnd);
-      if (path) {
-        ents = ents.filter((e) => path.nodeIds.has(e.id));
-        eds = eds.filter((e) => path.edgeIds.has(e.id));
-      }
-    }
 
     // Stamp +N for non-focus nodes with unused degree
     const deg = new Map<string, number>();
@@ -510,7 +471,7 @@ export default function OntologyBrowser({
     });
 
     return { entities: ents, edges: eds };
-  }, [entities, edges, kindFilter, hiddenRels, viewMode, pathStart, pathEnd, focusId]);
+  }, [entities, edges, kindFilter, hiddenRels, focusId]);
 
   const selectedEntity =
     visible.entities.find((e) => e.id === selectedId) ||
@@ -566,15 +527,10 @@ export default function OntologyBrowser({
 
   return (
     <div className="onto-root">
-      <header className="onto-top">
+      <header className={`onto-top${topOpen ? "" : " is-collapsed"}`}>
+        {topOpen ? <>
         <div className="onto-title-block">
           <div className="onto-title">{t("Teleology", "目的论")}</div>
-          <div className="onto-subtitle">
-            {t(
-              "CPD hierarchy and purpose edges — company tree on open, expand on demand.",
-              "打开即加载公司目标树（CPD 层级），再按需展开目的论关系。",
-            )}
-          </div>
         </div>
 
         <div style={{ position: "relative" }}>
@@ -669,86 +625,46 @@ export default function OntologyBrowser({
           ) : null}
         </div>
 
-        <button
-          type="button"
-          className="onto-btn onto-btn-primary"
-          disabled={!focusId}
-          onClick={() => focusId && notifications.show({
-            title: t("Recall", "召回"),
-            message: t("Use Search page with this purpose id in context.", "请在搜索页结合该目的上下文召回。"),
-            color: "blue",
-          })}
-        >
-          {t("Recall with this purpose", "用此目的召回")}
-        </button>
+        <button type="button" className="onto-btn onto-btn-primary" disabled={!datasetId || loadingFocus} onClick={() => void loadConnectedTree()}>{t("Generate graph", "生成图")}</button>
         <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={handleSyncTree}>
-          {t("From goal tree", "从目标树同步")}
+          {t("Sync goal tree", "同步目标树")}
         </button>
         <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={handleSyncYaml}>
           {t("Sync YAML", "同步 YAML")}
         </button>
+        <div className="onto-more-wrap"><button type="button" className="onto-btn" aria-label={t("More actions", "更多操作")} aria-expanded={moreOpen} onClick={() => setMoreOpen((value) => !value)}>···</button>
+          {moreOpen && <div className="onto-more-menu"><button type="button" disabled={!focusId} onClick={() => { setMoreOpen(false); notifications.show({ title: t("Recall", "召回"), message: t("Use Search page with this purpose id in context.", "请在搜索页结合该目的上下文召回。"), color: "blue" }); }}>{t("Recall with this purpose", "用此目的召回")}</button></div>}
+        </div>
+        </> : <span className="onto-collapsed-title">{t("Teleology ·", "目的论 ·")} {selectedDataset?.name || datasets[0]?.name || t("No dataset", "暂无数据集")}</span>}
+        <button type="button" className="onto-btn onto-collapse-btn" onClick={() => { setTopOpen(!topOpen); onHeaderCollapsedChange?.(topOpen); }} aria-expanded={topOpen} aria-label={topOpen ? t("Collapse header", "折叠顶部信息") : t("Expand header", "展开顶部信息")}>
+          {topOpen ? t("Collapse header ↑", "收起顶部 ↑") : t("Expand header ↓", "展开顶部 ↓")}
+        </button>
       </header>
 
       <div className="onto-body">
-        <NavPanel
-          language={language}
-          viewMode={viewMode}
-          onViewMode={setViewMode}
-          hopDepth={hopDepth}
-          onHopDepth={setHopDepth}
-          relatedOnly={relatedOnly}
-          onRelatedOnly={setRelatedOnly}
-          hiddenRels={hiddenRels}
-          onToggleRel={(rel) => {
-            setHiddenRels((prev) => {
-              const next = new Set(prev);
-              if (next.has(rel)) next.delete(rel);
-              else next.add(rel);
-              return next;
-            });
-          }}
-          kindFilter={kindFilter}
-          onToggleKind={(k) => {
-            setKindFilter((prev) => {
-              const next = new Set(prev);
-              if (next.has(k)) next.delete(k);
-              else next.add(k);
-              return next;
-            });
-          }}
-          browseHits={browseHits}
-          browseStack={browseStack}
-          browseLoading={browseLoading}
-          onPickBrowse={(id) => setFocus(id)}
-          onEnterBrowse={(hit) => {
-            setBrowseStack((prev) => {
-              const idx = prev.findIndex((p) => p.id === hit.id);
-              if (idx >= 0) return prev.slice(0, idx + 1);
-              return [...prev, { id: hit.id, name: hit.name }];
-            });
-            void loadBrowse(hit.id);
-          }}
-          onBrowseUp={() => {
-            setBrowseStack((prev) => {
-              const next = prev.slice(0, -1);
-              const parentId = next.length ? next[next.length - 1].id : "_roots";
-              void loadBrowse(parentId);
-              return next;
-            });
-          }}
-          onBrowseRoot={() => {
-            setBrowseStack([]);
-            void loadBrowse("_roots");
-          }}
-          pathStart={pathStart}
-          pathEnd={pathEnd}
-          onClearPath={() => {
-            setPathStart(null);
-            setPathEnd(null);
-          }}
-        />
+        <div className={`onto-side-container onto-side-left${leftOpen ? "" : " is-collapsed"}`}>
+          {leftOpen && <NavPanel language={language} tree={goalTree} selectedId={focusId} loading={loadingFocus} onPick={setFocus} />}
+          <button type="button" className="onto-side-handle" onClick={() => setLeftOpen((value) => !value)} aria-label={leftOpen ? t("Collapse goal tree", "收起目标目录") : t("Expand goal tree", "展开目标目录")} aria-expanded={leftOpen}>{leftOpen ? "‹" : "›"}</button>
+        </div>
 
-        <div className="onto-main">
+        <div className="onto-main" ref={mainRef}>
+          <div className="onto-canvas-toolbar">
+            <button type="button" className="onto-btn" onClick={() => setLeftOpen((v) => !v)} aria-expanded={leftOpen}>{leftOpen ? t("Collapse tree", "收起目录") : t("Expand tree", "展开目录")}</button>
+            <button type="button" className="onto-btn" onClick={() => setRightOpen((v) => !v)} aria-expanded={rightOpen}>{rightOpen ? t("Collapse details", "收起详情") : t("Expand details", "展开详情")}</button>
+            <div className="onto-toolbar-filters">
+              <button type="button" className="onto-btn" onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen}>{t("Display filters", "显示筛选")} ▾</button>
+              {filtersOpen && <div className="onto-filter-popover">
+                <label className="onto-check"><input type="checkbox" checked={relatedOnly} onChange={(e) => setRelatedOnly(e.target.checked)} />{t("Related nodes only", "仅显示相关节点")}</label>
+                <div className="onto-nav-sub">{t("Hide relations", "隐藏关系类型")}</div>
+                {["has_subgoal", "has_detail_reference", "serves", "advances", "blocks"].map((rel) => <label key={rel} className="onto-check"><input type="checkbox" checked={hiddenRels.has(rel)} onChange={() => setHiddenRels((prev) => { const next = new Set(prev); if (next.has(rel)) next.delete(rel); else next.add(rel); return next; })} />{rel}</label>)}
+                <div className="onto-nav-sub">{t("Entity types", "对象类型")}</div>
+                {(["Goal", "Project", "Metric", "Department", "Person", "Document", "Entity", "Other"] as EntityKind[]).map((kind) => <label key={kind} className="onto-check"><input type="checkbox" checked={kindFilter.has(kind)} onChange={() => setKindFilter((prev) => { const next = new Set(prev); if (next.has(kind)) next.delete(kind); else next.add(kind); return next; })} />{kind}</label>)}
+              </div>}
+            </div>
+            <div className="onto-toolbar-spacer" />
+            <div className="onto-zoom-group"><button type="button" onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))} aria-label={t("Zoom out", "缩小")}>−</button><button type="button" onClick={() => setZoom(1)} aria-label={t("Reset zoom", "重置缩放")}>{Math.round(zoom * 100)}%</button><button type="button" onClick={() => setZoom((value) => Math.min(1.6, Math.round((value + 0.1) * 10) / 10))} aria-label={t("Zoom in", "放大")}>＋</button></div>
+            <button type="button" className="onto-btn" onClick={() => { if (document.fullscreenElement === mainRef.current) void document.exitFullscreen(); else void mainRef.current?.requestFullscreen(); }} aria-label={t("Toggle fullscreen", "切换全屏")}>⛶</button>
+          </div>
           {loadError ? (
             <div style={{ padding: 12, color: "#F87171", fontSize: 12 }}>{loadError}</div>
           ) : null}
@@ -764,6 +680,7 @@ export default function OntologyBrowser({
             hoverId={hoverId}
             language={language}
             loading={loadingFocus}
+            zoom={zoom}
             onSelect={onSelectNode}
             onSetFocus={setFocus}
             onExpand={(id) => setFocus(id)}
@@ -772,7 +689,9 @@ export default function OntologyBrowser({
           />
         </div>
 
-        <DetailPanel
+        <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}>
+        <button type="button" className="onto-side-handle" onClick={() => setRightOpen((value) => !value)} aria-label={rightOpen ? t("Collapse details", "收起目标详情") : t("Expand details", "展开目标详情")} aria-expanded={rightOpen}>{rightOpen ? "›" : "‹"}</button>
+        {rightOpen && <DetailPanel
           entity={selectedEntity}
           edges={visible.edges.filter(
             (e) => selectedEntity && (e.sourceId === selectedEntity.id || e.targetId === selectedEntity.id),
@@ -783,7 +702,8 @@ export default function OntologyBrowser({
           onSelectNeighbor={(id) => {
             setSelectedId(id);
           }}
-        />
+        />}
+        </div>
       </div>
     </div>
   );

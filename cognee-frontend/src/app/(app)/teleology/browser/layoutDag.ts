@@ -1,12 +1,12 @@
 import type { LaidOutEdge, LaidOutNode, OntologyEdge, OntologyEntity, ViewMode } from "./types";
 
-const CARD_W = 200;
-const CARD_H = 80;
+const CARD_W = 216;
+const CARD_H = 112;
 const COL_GAP = 120;
 const ROW_GAP = 36;
-const LEVEL_GAP = 56;
-const PAD_X = 48;
-const PAD_Y = 48;
+const LEVEL_GAP = 28;
+const PAD_X = 24;
+const PAD_Y = 32;
 
 export { CARD_W, CARD_H };
 
@@ -67,6 +67,17 @@ function layoutCpdTree(opts: {
     );
   }
 
+  // Purpose and knowledge relations are shown next to the focused goal.
+  // They are not part of the CPD parent chain.
+  for (const edge of opts.edges) {
+    const rel = edge.relationship.toLowerCase();
+    if (rel === "has_subgoal" || rel === "has_detail_reference" || rel === "advances") continue;
+    const neighbor = edge.sourceId === opts.focusId ? edge.targetId : edge.targetId === opts.focusId ? edge.sourceId : null;
+    if (!neighbor || !byId.has(neighbor)) continue;
+    const siblings = childrenOf.get(opts.focusId) || [];
+    if (!siblings.includes(neighbor)) childrenOf.set(opts.focusId, [...siblings, neighbor]);
+  }
+
   // Walk up to a display root: prefer the highest ancestor within hopDepth,
   // else the focus itself (subtree).
   let rootId = opts.focusId;
@@ -101,19 +112,32 @@ function layoutCpdTree(opts: {
     frontier = next;
   }
 
-  // Horizontal spacing: equal slots per level, centered
+  // Give each leaf one compact slot, then center its ancestors above their children.
+  // Spreading every level across the viewport made small trees look disconnected.
+  const positions = new Map<string, number>();
+  const visiting = new Set<string>();
+  let leafIndex = 0;
+  const position = (id: string): number => {
+    if (positions.has(id)) return positions.get(id)!;
+    if (visiting.has(id)) return PAD_X + leafIndex++ * (CARD_W + 28);
+    visiting.add(id);
+    const children = (childrenOf.get(id) || []).filter((child) => placed.has(child));
+    const x = children.length
+      ? (position(children[0]) + position(children[children.length - 1])) / 2
+      : PAD_X + leafIndex++ * (CARD_W + 28);
+    visiting.delete(id);
+    positions.set(id, x);
+    return x;
+  };
+  position(rootId);
+  const contentWidth = Math.max(CARD_W + PAD_X * 2, leafIndex * (CARD_W + 28) - 28 + PAD_X * 2);
+  const shift = Math.max(0, (opts.canvasWidth - contentWidth) / 2);
   const nodes: LaidOutNode[] = [];
   let maxX = 0;
   levels.forEach((level, li) => {
-    const span = Math.max(opts.canvasWidth - 2 * PAD_X, level.length * (CARD_W + 24));
-    const step = level.length > 1 ? span / (level.length - 1) : 0;
-    const startX =
-      level.length === 1
-        ? Math.max(PAD_X, (opts.canvasWidth - CARD_W) / 2)
-        : PAD_X + Math.max(0, (opts.canvasWidth - 2 * PAD_X - span) / 2);
-    level.forEach((id, i) => {
+    level.forEach((id) => {
       const e = byId.get(id)!;
-      const x = level.length === 1 ? startX : startX + i * step;
+      const x = (positions.get(id) ?? PAD_X) + shift;
       const y = PAD_Y + li * (CARD_H + LEVEL_GAP);
       nodes.push({
         ...e,
@@ -124,6 +148,18 @@ function layoutCpdTree(opts: {
       maxX = Math.max(maxX, x + CARD_W);
     });
   });
+
+  // Shared references and mixed relation edges can give two cards the same
+  // centered position. Resolve collisions within each row after tree placement.
+  for (const level of levels) {
+    const row = level.map((id) => nodes.find((node) => node.id === id)).filter((node): node is LaidOutNode => !!node).sort((a, b) => a.x - b.x);
+    let rightEdge = -Infinity;
+    for (const node of row) {
+      node.x = Math.max(node.x, rightEdge + 24);
+      rightEdge = node.x + CARD_W;
+      maxX = Math.max(maxX, rightEdge);
+    }
+  }
 
   const nodePos = new Map(nodes.map((n) => [n.id, n]));
   const laidEdges: LaidOutEdge[] = [];

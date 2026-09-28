@@ -37,6 +37,9 @@ import PurposeLensGraph, {
 } from "./PurposeLensGraph";
 import { notifications } from "@mantine/notifications";
 import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
+import NavPanel, { type GoalTreeNode } from "./browser/NavPanel";
+import { buildGoalTree, type CompanyTreePayload } from "./browser/goalTree";
+import "./browser/ontology.css";
 
 const REL_ZH: Record<TeleologyRelationship, string> = {
   serves: "服务于",
@@ -121,6 +124,7 @@ export default function TeleologyClassicPage() {
   const [treeAdvances, setTreeAdvances] = useState<
     { childId: string; parentId: string; childName: string; parentName: string }[]
   >([]);
+  const [goalTree, setGoalTree] = useState<GoalTreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -156,12 +160,7 @@ export default function TeleologyClassicPage() {
   const [goalQuery, setGoalQuery] = useState("");
   const [goalHits, setGoalHits] = useState<GraphNodeSummary[]>([]);
   const [goalMenuOpen, setGoalMenuOpen] = useState(false);
-  const [goalSearching, setGoalSearching] = useState(false);
-  const [goalsTotal, setGoalsTotal] = useState<number | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<GraphNodeSummary | null>(null);
-  /** Tree-browse stack for the purpose picker (empty = roots). */
-  const [browseStack, setBrowseStack] = useState<GraphNodeSummary[]>([]);
-  const [pickerMode, setPickerMode] = useState<"browse" | "search">("browse");
   const goalSearchSeq = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -171,25 +170,53 @@ export default function TeleologyClassicPage() {
       setTreeAdvances([]);
       setGoalHits([]);
       setSelectedGoal(null);
-      setGoalsTotal(null);
       setLoading(false);
       return;
     }
     setLoadError(null);
     try {
       // Bounded preview (not full CPD tree): first N goals + edges among them.
-      const [yaml, sample] = await Promise.all([
+      const [yaml, sample, tree] = await Promise.all([
         getTeleology(cogniInstance, { limit: 40 }).catch(() => null),
         getGraphAnnotations(cogniInstance, datasetId, {
           limit: 40,
           goalsLimit: 24,
           goalId: lensGoalId || undefined,
         }),
+        cogniInstance.fetch(`/v1/datasets/${encodeURIComponent(datasetId)}/company-tree`).then(async (response) => response.ok ? await response.json() as CompanyTreePayload : null).catch(() => null),
       ]);
       if (yaml) setStatus(yaml);
       setBrainNodes([]);
-      setTreeAdvances([]);
-      setGoalsTotal(sample.goals_total ?? sample.goals?.length ?? null);
+      if (tree?.nodes?.length) {
+        setGoalTree(buildGoalTree(tree, displayName));
+        const byId = new Map(tree.nodes.map((node) => [node.id, node]));
+        const advances = (tree.edges || []).filter((edge) => edge.label === "has_subgoal" || edge.label === "has_detail_reference").flatMap((edge) => {
+          const child = byId.get(edge.target);
+          const parent = byId.get(edge.source);
+          return child && parent ? [{ childId: child.id, parentId: parent.id, childName: displayName(child.name, child.id), parentName: displayName(parent.name, parent.id) }] : [];
+        });
+        setTreeAdvances(advances);
+        if (!lensGoalId) {
+          const degree = new Map<string, number>();
+          for (const edge of advances) { degree.set(edge.childId, (degree.get(edge.childId) || 0) + 1); degree.set(edge.parentId, (degree.get(edge.parentId) || 0) + 1); }
+          const largest = [...byId.values()].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))[0];
+          if (largest) { setLensGoalId(largest.id); setSelectedGoal({ id: largest.id, name: displayName(largest.name, largest.id), type: "Goal", description: displayName(largest.note || "") }); }
+        }
+      } else {
+        setTreeAdvances([]);
+        const goals = sample.goals || [];
+        setGoalTree(goals.map((goal) => ({ id: goal.id, name: displayName(goal.name, goal.id), children: [] })));
+        if (!lensGoalId && goals.length) {
+          const degree = new Map<string, number>();
+          for (const edge of sample.annotations || []) {
+            degree.set(edge.source_id, (degree.get(edge.source_id) || 0) + 1);
+            degree.set(edge.target_id, (degree.get(edge.target_id) || 0) + 1);
+          }
+          const largest = [...goals].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))[0];
+          setLensGoalId(largest.id);
+          setSelectedGoal(largest);
+        }
+      }
       setGraph(sample);
       const cleaned = (sample.goals || []).map((g) => ({
         ...g,
@@ -217,8 +244,6 @@ export default function TeleologyClassicPage() {
       const seq = ++goalSearchSeq.current;
       const trimmed = query.trim();
       const mode = opts?.mode ?? (trimmed ? "search" : "browse");
-      setPickerMode(mode);
-      setGoalSearching(true);
       try {
         const res = await getGraphAnnotations(cogniInstance, datasetId, {
           q: mode === "search" && trimmed ? trimmed : undefined,
@@ -227,7 +252,6 @@ export default function TeleologyClassicPage() {
           parentId: mode === "browse" ? opts?.parentId ?? "_roots" : undefined,
         });
         if (seq !== goalSearchSeq.current) return;
-        setGoalsTotal(res.goals_total ?? res.goals.length);
         setGoalHits(
           (res.goals || []).map((g) => ({
             ...g,
@@ -239,9 +263,7 @@ export default function TeleologyClassicPage() {
       } catch {
         if (seq !== goalSearchSeq.current) return;
         setGoalHits([]);
-      } finally {
-        if (seq === goalSearchSeq.current) setGoalSearching(false);
-      }
+      } finally { /* completed */ }
     },
     [cogniInstance, datasetId],
   );
@@ -258,8 +280,6 @@ export default function TeleologyClassicPage() {
     setSelectedGoal(null);
     setGoalQuery("");
     setGoalHits([]);
-    setBrowseStack([]);
-    setPickerMode("browse");
     refresh();
   }, [cogniInstance, isInitializing, datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -293,12 +313,11 @@ export default function TeleologyClassicPage() {
       if (trimmed) {
         void searchGoals(trimmed, { mode: "search" });
       } else {
-        const parentId = browseStack.length ? browseStack[browseStack.length - 1].id : "_roots";
-        void searchGoals("", { mode: "browse", parentId });
+        void searchGoals("", { mode: "browse", parentId: "_roots" });
       }
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [goalQuery, goalMenuOpen, cogniInstance, datasetId, searchGoals, browseStack]);
+  }, [goalQuery, goalMenuOpen, cogniInstance, datasetId, searchGoals]);
 
   const loadVocabPage = useCallback(
     async (query: string, offset: number, append: boolean) => {
@@ -347,8 +366,6 @@ export default function TeleologyClassicPage() {
       setLensGoalId("");
       setSelectedGoal(null);
       setGoalQuery("");
-      setBrowseStack([]);
-      setPickerMode("browse");
       setGoalMenuOpen(false);
       return;
     }
@@ -361,34 +378,6 @@ export default function TeleologyClassicPage() {
     setLensGoalId(cleaned.id);
     setGoalQuery(cleaned.cpd_kind === "goal" ? `CPD · ${cleaned.name}` : cleaned.name);
     setGoalMenuOpen(false);
-  }
-
-  function drillIntoGoal(goal: GraphNodeSummary) {
-    const cleaned = {
-      ...goal,
-      name: displayName(goal.name, goal.id),
-      description: displayName(goal.description || ""),
-    };
-    setGoalQuery("");
-    setPickerMode("browse");
-    setBrowseStack((prev) => [...prev, cleaned]);
-    void searchGoals("", { mode: "browse", parentId: cleaned.id });
-  }
-
-  function browseUpTo(index: number) {
-    setGoalQuery("");
-    setPickerMode("browse");
-    if (index < 0) {
-      setBrowseStack([]);
-      void searchGoals("", { mode: "browse", parentId: "_roots" });
-      return;
-    }
-    setBrowseStack((prev) => {
-      const next = prev.slice(0, index + 1);
-      const parent = next[next.length - 1];
-      void searchGoals("", { mode: "browse", parentId: parent.id });
-      return next;
-    });
   }
 
   const annotations = useMemo(
@@ -902,267 +891,7 @@ export default function TeleologyClassicPage() {
 
           <span style={{ width: 1, height: 22, background: "rgba(255,255,255,0.1)" }} />
 
-          <label style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", fontWeight: 600 }}>
-            {t(language, "Current purpose", "当前目的")}
-          </label>
-          <div style={{ position: "relative", minWidth: 280, maxWidth: 480, flex: "1 1 280px" }}>
-            <input
-              style={{
-                ...inputStyle,
-                width: "100%",
-                paddingRight: goalQuery || lensGoalId ? 36 : inputStyle.padding,
-              }}
-              value={goalQuery}
-              placeholder={t(
-                language,
-                "Type to search, or open to browse the tree…",
-                "输入关键词搜索，或点开按目标树浏览…",
-              )}
-              onFocus={() => {
-                setGoalMenuOpen(true);
-                if (!goalQuery.trim()) {
-                  const parentId = browseStack.length
-                    ? browseStack[browseStack.length - 1].id
-                    : "_roots";
-                  void searchGoals("", { mode: "browse", parentId });
-                }
-              }}
-              onChange={(e) => {
-                setGoalQuery(e.target.value);
-                setGoalMenuOpen(true);
-                if (lensGoalId) {
-                  setLensGoalId("");
-                  setSelectedGoal(null);
-                }
-              }}
-              onBlur={() => {
-                window.setTimeout(() => setGoalMenuOpen(false), 180);
-              }}
-            />
-            {goalQuery || lensGoalId ? (
-              <button
-                type="button"
-                title={t(language, "Clear", "清除")}
-                aria-label={t(language, "Clear purpose", "清除当前目的")}
-                style={{
-                  position: "absolute",
-                  right: 8,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  width: 22,
-                  height: 22,
-                  borderRadius: 11,
-                  border: "none",
-                  background: "rgba(255,255,255,0.1)",
-                  color: "rgba(237,236,234,0.75)",
-                  cursor: "pointer",
-                  fontSize: 14,
-                  lineHeight: "22px",
-                  padding: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  pickGoal(null);
-                  setGoalMenuOpen(false);
-                }}
-              >
-                ×
-              </button>
-            ) : null}
-            {goalMenuOpen ? (
-              <div
-                style={{
-                  position: "absolute",
-                  zIndex: 40,
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  marginTop: 4,
-                  maxHeight: 340,
-                  overflowY: "auto",
-                  background: "#141416",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 8,
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
-                }}
-              >
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    fontSize: 11,
-                    color: "rgba(237,236,234,0.45)",
-                    borderBottom: "1px solid rgba(255,255,255,0.06)",
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 6,
-                    alignItems: "center",
-                  }}
-                >
-                  {pickerMode === "search" ? (
-                    <span>
-                      {t(language, "Search hits", "搜索结果")}
-                      {goalsTotal != null ? ` · ${goalsTotal}` : ""}
-                    </span>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: browseStack.length === 0 ? "#EDECEA" : "rgba(188,155,255,0.9)",
-                          cursor: "pointer",
-                          padding: 0,
-                          fontSize: 11,
-                          fontWeight: 650,
-                        }}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => browseUpTo(-1)}
-                      >
-                        {t(language, "Roots", "顶层")}
-                      </button>
-                      {browseStack.map((node, idx) => (
-                        <span key={node.id} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                          <span style={{ opacity: 0.35 }}>/</span>
-                          <button
-                            type="button"
-                            style={{
-                              background: "transparent",
-                              border: "none",
-                              color: idx === browseStack.length - 1 ? "#EDECEA" : "rgba(188,155,255,0.9)",
-                              cursor: "pointer",
-                              padding: 0,
-                              fontSize: 11,
-                              fontWeight: 650,
-                              maxWidth: 120,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => browseUpTo(idx)}
-                          >
-                            {node.name}
-                          </button>
-                        </span>
-                      ))}
-                    </>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "8px 12px",
-                    background: "transparent",
-                    border: "none",
-                    color: "rgba(237,236,234,0.55)",
-                    cursor: "pointer",
-                    fontSize: 13,
-                  }}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pickGoal(null)}
-                >
-                  {t(language, "Clear selection", "清除选择")}
-                </button>
-                {goalSearching && goalHits.length === 0 ? (
-                  <div style={{ padding: "10px 12px", fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
-                    {t(language, "Loading…", "加载中…")}
-                  </div>
-                ) : goalHits.length === 0 ? (
-                  <div style={{ padding: "10px 12px", fontSize: 12, color: "rgba(237,236,234,0.45)" }}>
-                    {pickerMode === "search"
-                      ? t(language, "No matching purposes", "没有匹配的目的")
-                      : t(language, "No child goals here", "这一层没有子目标")}
-                  </div>
-                ) : (
-                  goalHits.map((g) => (
-                    <div
-                      key={g.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "stretch",
-                        borderTop: "1px solid rgba(255,255,255,0.06)",
-                        background: g.id === lensGoalId ? "rgba(188,155,255,0.15)" : "transparent",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          textAlign: "left",
-                          padding: "8px 12px",
-                          background: "transparent",
-                          border: "none",
-                          color: "#EDECEA",
-                          cursor: "pointer",
-                          fontSize: 13,
-                        }}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => pickGoal(g)}
-                      >
-                        <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {g.name}
-                        </div>
-                        {g.parent_name ? (
-                          <div style={{ fontSize: 11, color: "rgba(237,236,234,0.4)", marginTop: 2 }}>
-                            {t(language, "under", "隶属于")} {g.parent_name}
-                          </div>
-                        ) : pickerMode === "browse" && browseStack.length === 0 ? (
-                          <div style={{ fontSize: 11, color: "rgba(237,236,234,0.4)", marginTop: 2 }}>
-                            {t(language, "Top-level goal", "顶层目标")}
-                          </div>
-                        ) : null}
-                      </button>
-                      {pickerMode === "browse" || !goalQuery.trim() ? (
-                        <button
-                          type="button"
-                          title={t(language, "Open children", "查看子目标")}
-                          style={{
-                            width: 36,
-                            border: "none",
-                            borderLeft: "1px solid rgba(255,255,255,0.06)",
-                            background: "transparent",
-                            color: "rgba(237,236,234,0.55)",
-                            cursor: "pointer",
-                            fontSize: 14,
-                          }}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => drillIntoGoal(g)}
-                        >
-                          ›
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          title={t(language, "Browse from here", "从这里浏览")}
-                          style={{
-                            width: 36,
-                            border: "none",
-                            borderLeft: "1px solid rgba(255,255,255,0.06)",
-                            background: "transparent",
-                            color: "rgba(237,236,234,0.55)",
-                            cursor: "pointer",
-                            fontSize: 14,
-                          }}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => drillIntoGoal(g)}
-                        >
-                          ›
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            ) : null}
-          </div>
+          <span style={{ fontSize: 12, color: "rgba(237,236,234,0.7)" }}>{t(language, "Current purpose", "当前目的")}: {selectedGoal?.name || t(language, "Select from the goal tree", "从左侧目标树选择")}</span>
 
           <button
             type="button"
@@ -1262,6 +991,16 @@ export default function TeleologyClassicPage() {
 
       {/* Graph + inspector */}
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+        <NavPanel language={language === "zh" ? "zh" : "en"} tree={goalTree} selectedId={lensGoalId || null} loading={loading} onPick={(id) => {
+          const find = (nodes: GoalTreeNode[]): GoalTreeNode | undefined => {
+            for (const node of nodes) { if (node.id === id) return node; const child = find(node.children); if (child) return child; }
+            return undefined;
+          };
+          const node = find(goalTree);
+          setSelectedGoal(node ? { id: node.id, name: node.name, type: "Goal", description: "" } : null);
+          setLensGoalId(id);
+          setSelectedNodeId(null);
+        }} />
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
           {graphNodes.length === 0 ? (
             <div

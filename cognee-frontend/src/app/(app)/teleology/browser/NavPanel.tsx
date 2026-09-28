@@ -1,261 +1,67 @@
 "use client";
 
-import type { EntityKind, ViewMode } from "./types";
-import { KIND_STRIPE, kindLabel, relLabel } from "./entityMeta";
+import { useMemo, useState } from "react";
 
-const ALL_KINDS: EntityKind[] = [
-  "Goal",
-  "Project",
-  "Metric",
-  "Department",
-  "Person",
-  "Document",
-  "Entity",
-  "Other",
-];
+export type GoalTreeNode = { id: string; name: string; children: GoalTreeNode[] };
 
-const REL_OPTIONS = ["has_subgoal", "serves", "advances", "blocks"];
-
-export type BrowseHit = {
-  id: string;
-  name: string;
-  kind: string;
-  childCount?: number;
-};
-
-export default function NavPanel({
-  language,
-  viewMode,
-  onViewMode,
-  hopDepth,
-  onHopDepth,
-  relatedOnly,
-  onRelatedOnly,
-  hiddenRels,
-  onToggleRel,
-  kindFilter,
-  onToggleKind,
-  browseHits,
-  browseStack,
-  browseLoading,
-  onPickBrowse,
-  onEnterBrowse,
-  onBrowseUp,
-  onBrowseRoot,
-  pathStart,
-  pathEnd,
-  onClearPath,
-}: {
+function TreeItem({ node, depth, selectedId, onPick, language, searching }: {
+  node: GoalTreeNode;
+  depth: number;
+  selectedId: string | null;
+  onPick: (id: string) => void;
   language: "zh" | "en";
-  viewMode: ViewMode;
-  onViewMode: (m: ViewMode) => void;
-  hopDepth: number;
-  onHopDepth: (n: number) => void;
-  relatedOnly: boolean;
-  onRelatedOnly: (v: boolean) => void;
-  hiddenRels: Set<string>;
-  onToggleRel: (rel: string) => void;
-  kindFilter: Set<EntityKind>;
-  onToggleKind: (k: EntityKind) => void;
-  browseHits: BrowseHit[];
-  browseStack: { id: string; name: string }[];
-  browseLoading: boolean;
-  onPickBrowse: (id: string) => void;
-  onEnterBrowse: (hit: BrowseHit) => void;
-  onBrowseUp: () => void;
-  onBrowseRoot: () => void;
-  pathStart: string | null;
-  pathEnd: string | null;
-  onClearPath: () => void;
+  searching: boolean;
 }) {
-  const t = (en: string, zh: string) => (language === "zh" ? zh : en);
-  const modes: { id: ViewMode; en: string; zh: string }[] = [
-    { id: "relation", en: "Relation", zh: "关系图" },
-    { id: "chain", en: "Business chain", zh: "业务链" },
-    { id: "hierarchy", en: "Hierarchy", zh: "层级图" },
-    { id: "path", en: "Path", zh: "路径" },
-  ];
+  const [isOpen, setIsOpen] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
+  const hasChildren = node.children.length > 0;
+  const expanded = isOpen || searching;
 
-  return (
-    <aside className="onto-nav">
-      <div className="onto-nav-block">
-        <div className="onto-nav-label">{t("View", "视图")}</div>
-        <div className="onto-mode-grid">
-          {modes.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              className={`onto-mode-btn${viewMode === m.id ? " is-active" : ""}`}
-              onClick={() => onViewMode(m.id)}
-            >
-              {language === "zh" ? m.zh : m.en}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {viewMode === "path" ? (
-        <div className="onto-nav-block">
-          <div className="onto-nav-label">{t("Path endpoints", "路径端点")}</div>
-          <div className="onto-muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
-            {t(
-              "Select start, then end on the canvas (or from search). Only the connecting path stays visible.",
-              "在画布或搜索中依次点选起点与终点，仅保留两实体间路径。",
-            )}
-          </div>
-          <div style={{ marginTop: 8, fontSize: 11, color: "rgba(232,231,228,0.5)" }}>
-            {t("Start", "起点")}: {pathStart ? short(pathStart) : "—"}
-            <br />
-            {t("End", "终点")}: {pathEnd ? short(pathEnd) : "—"}
-          </div>
-          {(pathStart || pathEnd) && (
-            <button type="button" className="onto-btn" style={{ marginTop: 8 }} onClick={onClearPath}>
-              {t("Clear path", "清除路径")}
-            </button>
-          )}
-        </div>
-      ) : null}
-
-      <div className="onto-nav-block">
-        <div className="onto-nav-label">{t("Filters", "过滤")}</div>
-        <label className="onto-check">
-          <input
-            type="checkbox"
-            checked={relatedOnly}
-            onChange={(e) => onRelatedOnly(e.target.checked)}
-          />
-          {t("Related nodes only", "仅显示相关节点")}
-        </label>
-        <div className="onto-nav-sub">{t("Hop depth", "上下游层级")}</div>
-        <div className="onto-seg">
-          {[1, 2, 3].map((n) => (
-            <button
-              key={n}
-              type="button"
-              className={hopDepth === n ? "is-active" : ""}
-              onClick={() => onHopDepth(n)}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-        <div className="onto-nav-sub">{t("Hide relations", "隐藏关系类型")}</div>
-        {REL_OPTIONS.map((rel) => (
-          <label key={rel} className="onto-check">
-            <input
-              type="checkbox"
-              checked={hiddenRels.has(rel)}
-              onChange={() => onToggleRel(rel)}
-            />
-            {relLabel(rel, language)}
-          </label>
-        ))}
-      </div>
-
-      <div className="onto-nav-block">
-        <div className="onto-nav-label">{t("Entity types", "对象类型")}</div>
-        {ALL_KINDS.map((k) => (
-          <label key={k} className="onto-check">
-            <input
-              type="checkbox"
-              checked={kindFilter.has(k)}
-              onChange={() => onToggleKind(k)}
-            />
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 2,
-                background: KIND_STRIPE[k],
-                display: "inline-block",
-                marginRight: 6,
-              }}
-            />
-            {kindLabel(k, language)}
-          </label>
-        ))}
-      </div>
-
-      <div className="onto-nav-block" style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <div className="onto-nav-label">{t("Browse goals", "浏览目标树")}</div>
-        <div className="onto-browse-crumb">
-          <button type="button" className="onto-browse-crumb-btn" onClick={onBrowseRoot}>
-            {t("Roots", "顶层")}
-          </button>
-          {browseStack.map((s) => (
-            <span key={s.id} className="onto-browse-crumb-seg">
-              <span aria-hidden>›</span>
-              <button
-                type="button"
-                className="onto-browse-crumb-btn"
-                title={s.name}
-                onClick={() => onEnterBrowse({ id: s.id, name: s.name, kind: "Goal" })}
-              >
-                {s.name}
-              </button>
-            </span>
-          ))}
-          {browseStack.length > 0 ? (
-            <button type="button" className="onto-browse-up" onClick={onBrowseUp}>
-              {t("Up", "返回上级")}
-            </button>
-          ) : null}
-        </div>
-        <div className="onto-browse-list">
-          {browseLoading ? (
-            <div className="onto-muted" style={{ fontSize: 12, padding: 8 }}>
-              {t("Loading…", "加载中…")}
-            </div>
-          ) : browseHits.length === 0 ? (
-            <div className="onto-muted" style={{ fontSize: 12, padding: 8 }}>
-              {browseStack.length
-                ? t("No child goals at this level.", "这一层没有子目标。")
-                : t("No top-level goals yet. Sync the company tree.", "暂无顶层目标，请先同步公司树。")}
-            </div>
-          ) : (
-            browseHits.map((h) => {
-              const kids = h.childCount;
-              const hasKids = typeof kids === "number" ? kids > 0 : true;
-              const label =
-                typeof kids === "number" && kids > 0
-                  ? `${kids} ›`
-                  : typeof kids === "number"
-                    ? "·"
-                    : "›";
-              return (
-                <div key={h.id} className="onto-browse-row">
-                  <button
-                    type="button"
-                    className="onto-browse-item"
-                    onClick={() => onPickBrowse(h.id)}
-                    title={t("Focus on canvas", "在画布设为中心")}
-                  >
-                    <span className="onto-browse-kind">{kindLabel(h.kind, language)}</span>
-                    <span className="onto-browse-name">{h.name}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`onto-browse-enter${hasKids ? "" : " is-empty"}`}
-                    disabled={!hasKids}
-                    title={
-                      hasKids
-                        ? t("Open child goals", "展开子目标")
-                        : t("No children", "无子目标")
-                    }
-                    onClick={() => hasKids && onEnterBrowse(h)}
-                  >
-                    {label}
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-    </aside>
-  );
+  return <div className="onto-file-item" role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={selectedId === node.id}>
+    <div className={`onto-file-row${isHovered ? " is-hovered" : ""}${selectedId === node.id ? " is-selected" : ""}`}
+      style={{ paddingLeft: depth * 16 + 8 }} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+      {depth > 0 && <div className="onto-file-guide" style={{ left: (depth - 1) * 16 + 16 }}><div /></div>}
+      <button type="button" className={`onto-file-chevron${hasChildren && expanded ? " is-open" : ""}`}
+        disabled={!hasChildren || searching} onClick={() => setIsOpen((value) => !value)}
+        aria-label={language === "zh" ? `${expanded ? "收起" : "展开"}${node.name}` : `${expanded ? "Collapse" : "Expand"} ${node.name}`}>
+        {hasChildren ? <svg width="6" height="8" viewBox="0 0 6 8" fill="none" aria-hidden><path d="M1 1L5 4L1 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> : <span className="onto-file-leaf-mark">◇</span>}
+      </button>
+      <span className={`onto-file-icon${hasChildren ? " is-folder" : ""}`} aria-hidden>
+        {hasChildren ? <svg width="16" height="14" viewBox="0 0 16 14" fill="currentColor"><path d="M1.5 1C0.671573 1 0 1.67157 0 2.5V11.5C0 12.3284 0.671573 13 1.5 13H14.5C15.3284 13 16 12.3284 16 11.5V4.5C16 3.67157 15.3284 3 14.5 3H8L6.5 1H1.5Z" /></svg> : <svg width="14" height="16" viewBox="0 0 14 16" fill="currentColor" opacity="0.8"><path d="M1.5 0C0.671573 0 0 0.671573 0 1.5V14.5C0 15.3284 0.671573 16 1.5 16H12.5C13.3284 16 14 15.3284 14 14.5V4.5L9.5 0H1.5Z" /><path d="M9 0V4.5H14" fill="currentColor" fillOpacity="0.5" /></svg>}
+      </span>
+      <button type="button" className={`onto-file-name${hasChildren ? " is-folder" : ""}`} title={node.name} onClick={() => onPick(node.id)}>{node.name}</button>
+      <span className="onto-file-hover-dot" aria-hidden />
+    </div>
+    {hasChildren && <div className={`onto-file-children${expanded ? " is-open" : ""}`} role="group">{expanded && node.children.map((child) => <TreeItem key={child.id} node={child} depth={depth + 1} selectedId={selectedId} onPick={onPick} language={language} searching={searching} />)}</div>}
+  </div>;
 }
 
-function short(id: string) {
-  return id.length > 10 ? `${id.slice(0, 8)}…` : id;
+export default function NavPanel({ language, tree, selectedId, loading, onPick }: {
+  language: "zh" | "en";
+  tree: GoalTreeNode[];
+  selectedId: string | null;
+  loading: boolean;
+  onPick: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const visibleTree = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase();
+    if (!term) return tree;
+    const filter = (node: GoalTreeNode): GoalTreeNode | null => {
+      if (node.name.toLocaleLowerCase().includes(term)) return node;
+      const children = node.children.map(filter).filter((child): child is GoalTreeNode => child !== null);
+      return children.length ? { ...node, children } : null;
+    };
+    return tree.map(filter).filter((node): node is GoalTreeNode => node !== null);
+  }, [tree, query]);
+
+  return <aside className="onto-nav">
+    <input className="onto-input" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === "zh" ? "搜索目标…" : "Search goals…"} aria-label={language === "zh" ? "搜索目标" : "Search goals"} />
+    <div className="onto-file-tree">
+      <div className="onto-file-header"><div className="onto-file-dots"><span /><span /><span /></div><span>explorer</span></div>
+      <div className="onto-file-list" role="tree">
+        {loading && !tree.length ? <div className="onto-muted">{language === "zh" ? "加载中…" : "Loading…"}</div> : visibleTree.length ? visibleTree.map((node) => <TreeItem key={node.id} node={node} depth={0} selectedId={selectedId} onPick={onPick} language={language} searching={!!query.trim()} />) : <div className="onto-muted">{query ? (language === "zh" ? "没有匹配的目标" : "No matching goals") : (language === "zh" ? "暂无目标，请先同步目标树。" : "No goals yet. Sync the goal tree first.")}</div>}
+      </div>
+    </div>
+  </aside>;
 }

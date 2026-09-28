@@ -17,10 +17,18 @@ import type { LaidOutEdge, LaidOutNode, OntologyEdge, OntologyEntity, ViewMode }
 type DragState = {
   id: string;
   pointerId: number;
-  originX: number;
-  originY: number;
+  origins: Record<string, { x: number; y: number }>;
   startClientX: number;
   startClientY: number;
+  moved: boolean;
+};
+
+type MarqueeState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
   moved: boolean;
 };
 
@@ -39,6 +47,16 @@ type LayoutResult = {
   height: number;
 };
 
+function nodesInMarquee(nodes: LaidOutNode[], area: MarqueeState): Set<string> {
+  const left = Math.min(area.startX, area.endX);
+  const right = Math.max(area.startX, area.endX);
+  const top = Math.min(area.startY, area.endY);
+  const bottom = Math.max(area.startY, area.endY);
+  return new Set(nodes.filter((node) =>
+    node.x < right && node.x + CARD_W > left && node.y < bottom && node.y + CARD_H > top,
+  ).map((node) => node.id));
+}
+
 export default function OntologyCanvas({
   focusId,
   entities,
@@ -51,6 +69,7 @@ export default function OntologyCanvas({
   hoverId,
   language,
   loading = false,
+  zoom = 1,
   onSelect,
   onSetFocus,
   onExpand,
@@ -68,6 +87,7 @@ export default function OntologyCanvas({
   hoverId: string | null;
   language: "zh" | "en";
   loading?: boolean;
+  zoom?: number;
   onSelect: (id: string | null) => void;
   onSetFocus: (id: string) => void;
   onExpand: (id: string) => void;
@@ -75,11 +95,15 @@ export default function OntologyCanvas({
   onHover: (id: string | null) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef({ w: 900, h: 560 });
   const [size, setSize] = useState({ w: 900, h: 560 });
   const [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({});
   const dragRef = useRef<DragState | null>(null);
   const panRef = useRef<PanState | null>(null);
+  const marqueeRef = useRef<MarqueeState | null>(null);
+  const [marquee, setMarquee] = useState<MarqueeState | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [panning, setPanning] = useState(false);
   const lastGoodLayout = useRef<LayoutResult | null>(null);
@@ -89,6 +113,9 @@ export default function OntologyCanvas({
   useEffect(() => {
     setOffsets({});
     dragRef.current = null;
+    marqueeRef.current = null;
+    setMarquee(null);
+    setSelectedNodeIds(new Set());
     setDraggingId(null);
   }, [focusId, viewMode, hopDepth]);
 
@@ -188,6 +215,15 @@ export default function OntologyCanvas({
     return map;
   }, [filteredEdges]);
 
+  const relationCountById = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const edge of filteredEdges) {
+      counts.set(edge.sourceId, (counts.get(edge.sourceId) || 0) + 1);
+      counts.set(edge.targetId, (counts.get(edge.targetId) || 0) + 1);
+    }
+    return counts;
+  }, [filteredEdges]);
+
   const onPointerMove = useCallback((e: PointerEvent) => {
     const pan = panRef.current;
     if (pan && e.pointerId === pan.pointerId) {
@@ -198,21 +234,39 @@ export default function OntologyCanvas({
       }
       return;
     }
+    const selection = marqueeRef.current;
+    if (selection && e.pointerId === selection.pointerId) {
+      const content = contentRef.current;
+      if (!content) return;
+      const rect = content.getBoundingClientRect();
+      const endX = (e.clientX - rect.left) / zoom;
+      const endY = (e.clientY - rect.top) / zoom;
+      const moved = selection.moved || Math.hypot(endX - selection.startX, endY - selection.startY) >= 4;
+      const next = { ...selection, endX, endY, moved };
+      marqueeRef.current = next;
+      if (moved) {
+        didDragRef.current = true;
+        setMarquee(next);
+        setSelectedNodeIds(nodesInMarquee(nodesWithOffsets, next));
+      }
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || e.pointerId !== drag.pointerId) return;
-    const dx = e.clientX - drag.startClientX;
-    const dy = e.clientY - drag.startClientY;
+    const dx = (e.clientX - drag.startClientX) / zoom;
+    const dy = (e.clientY - drag.startClientY) / zoom;
     if (!drag.moved && dx * dx + dy * dy < 25) return;
     if (!drag.moved) {
       drag.moved = true;
       didDragRef.current = true;
       setDraggingId(drag.id);
     }
-    setOffsets((prev) => ({
-      ...prev,
-      [drag.id]: { x: drag.originX + dx, y: drag.originY + dy },
-    }));
-  }, []);
+    setOffsets((prev) => {
+      const next = { ...prev };
+      for (const [id, origin] of Object.entries(drag.origins)) next[id] = { x: origin.x + dx, y: origin.y + dy };
+      return next;
+    });
+  }, [nodesWithOffsets, zoom]);
 
   const endPointer = useCallback(
     (e: PointerEvent) => {
@@ -223,6 +277,18 @@ export default function OntologyCanvas({
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", endPointer);
         window.removeEventListener("pointercancel", endPointer);
+        return;
+      }
+      const selection = marqueeRef.current;
+      if (selection && e.pointerId === selection.pointerId) {
+        marqueeRef.current = null;
+        setMarquee(null);
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", endPointer);
+        window.removeEventListener("pointercancel", endPointer);
+        if (selection.moved) {
+          window.setTimeout(() => { didDragRef.current = false; }, 0);
+        }
         return;
       }
       const drag = dragRef.current;
@@ -243,12 +309,27 @@ export default function OntologyCanvas({
     [onPointerMove],
   );
 
-  const startPan = useCallback(
+  const startCanvasPointerDown = useCallback(
     (e: ReactPointerEvent) => {
-      // Right button or middle button pans the canvas
-      if (e.button !== 2 && e.button !== 1) return;
+      if ((e.target as Element).closest(".onto-entity-card, button, input")) return;
       const el = wrapRef.current;
       if (!el) return;
+      if (e.button === 0) {
+        const content = contentRef.current;
+        if (!content) return;
+        e.preventDefault();
+        const rect = content.getBoundingClientRect();
+        const startX = (e.clientX - rect.left) / zoom;
+        const startY = (e.clientY - rect.top) / zoom;
+        didDragRef.current = false;
+        marqueeRef.current = { pointerId: e.pointerId, startX, startY, endX: startX, endY: startY, moved: false };
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", endPointer);
+        window.addEventListener("pointercancel", endPointer);
+        return;
+      }
+      // Middle or right button keeps canvas panning available.
+      if (e.button !== 2 && e.button !== 1) return;
       e.preventDefault();
       panRef.current = {
         pointerId: e.pointerId,
@@ -262,20 +343,30 @@ export default function OntologyCanvas({
       window.addEventListener("pointerup", endPointer);
       window.addEventListener("pointercancel", endPointer);
     },
-    [onPointerMove, endPointer],
+    [onPointerMove, endPointer, zoom],
   );
 
   const startDrag = useCallback(
     (id: string, node: LaidOutNode, e: ReactPointerEvent) => {
       if (e.button !== 0) return;
       e.stopPropagation();
-      const cur = offsets[id] || { x: node.x, y: node.y };
+      const group = selectedNodeIds.has(id) && selectedNodeIds.size > 1;
+      const ids = group ? [...selectedNodeIds] : [id];
+      if (!group) setSelectedNodeIds(new Set([id]));
+      const byId = new Map(nodesWithOffsets.map((n) => [n.id, n]));
+      const origins: Record<string, { x: number; y: number }> = {};
+      for (const nid of ids) {
+        const placed = byId.get(nid);
+        origins[nid] = offsets[nid] || {
+          x: placed?.x ?? (nid === id ? node.x : 0),
+          y: placed?.y ?? (nid === id ? node.y : 0),
+        };
+      }
       didDragRef.current = false;
       dragRef.current = {
         id,
         pointerId: e.pointerId,
-        originX: cur.x,
-        originY: cur.y,
+        origins,
         startClientX: e.clientX,
         startClientY: e.clientY,
         moved: false,
@@ -285,7 +376,7 @@ export default function OntologyCanvas({
       window.addEventListener("pointerup", endPointer);
       window.addEventListener("pointercancel", endPointer);
     },
-    [offsets, onSelect, onPointerMove, endPointer],
+    [offsets, onSelect, onPointerMove, endPointer, selectedNodeIds, nodesWithOffsets],
   );
 
   useEffect(() => {
@@ -369,16 +460,17 @@ export default function OntologyCanvas({
         ref={wrapRef}
         onClick={() => {
           if (didDragRef.current || panning) return;
+          setSelectedNodeIds(new Set());
           onCanvasClick();
         }}
-        onPointerDown={startPan}
+        onPointerDown={startCanvasPointerDown}
         onContextMenu={(e) => e.preventDefault()}
         style={{
           flex: 1,
           minHeight: 0,
           position: "relative",
           overflow: "auto",
-          cursor: panning ? "grabbing" : "default",
+          cursor: panning ? "grabbing" : marquee ? "crosshair" : "default",
         }}
       >
         {loading ? (
@@ -389,12 +481,14 @@ export default function OntologyCanvas({
           />
         ) : null}
         <div
+          ref={contentRef}
           style={{
             position: "relative",
             width: canvasW,
             height: canvasH,
             minWidth: "100%",
             minHeight: "100%",
+            zoom,
             opacity: loading ? 0.88 : 1,
             transition: "opacity 160ms ease",
           }}
@@ -462,9 +556,11 @@ export default function OntologyCanvas({
 
           {nodesWithOffsets.map((n) => {
             if (relatedIds && !relatedIds.has(n.id)) return null;
-            const dimmed = activeChain.size > 0 && !activeChain.has(n.id);
+            const dimmed = activeChain.size > 0 && !activeChain.has(n.id) && !selectedNodeIds.has(n.id);
             const childCount = childCountById.get(n.id) || n.childCount || 0;
             const canEnter = childCount > 0 && n.id !== focusId;
+            const inSelection = selectedNodeIds.has(n.id);
+            const movingGroup = draggingId !== null && selectedNodeIds.has(draggingId) && inSelection;
             return (
               <div
                 key={n.id}
@@ -477,11 +573,12 @@ export default function OntologyCanvas({
                     childCount,
                     hiddenDegree: n.hiddenDegree || (canEnter ? childCount : undefined),
                   }}
-                  selected={selectedId === n.id}
+                  selected={selectedId === n.id || inSelection}
                   isFocus={n.id === focusId}
                   dimmed={dimmed}
                   language={language}
-                  dragging={draggingId === n.id}
+                  dragging={draggingId === n.id || movingGroup}
+                  relationshipCount={relationCountById.get(n.id) || 0}
                   onSelect={() => {
                     if (didDragRef.current) return;
                     onSelect(n.id);
@@ -541,6 +638,18 @@ export default function OntologyCanvas({
               {language === "zh" ? "CPD 层级 · 上→下" : "CPD hierarchy · top→down"}
             </div>
           )}
+
+          {marquee?.moved ? (
+            <div
+              className="onto-marquee"
+              style={{
+                left: Math.min(marquee.startX, marquee.endX),
+                top: Math.min(marquee.startY, marquee.endY),
+                width: Math.abs(marquee.endX - marquee.startX),
+                height: Math.abs(marquee.endY - marquee.startY),
+              }}
+            />
+          ) : null}
 
           <div className="onto-minimap" aria-hidden>
             {nodesWithOffsets.map((n) => (
