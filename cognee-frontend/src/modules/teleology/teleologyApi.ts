@@ -50,6 +50,11 @@ export interface GraphNodeSummary {
   parent_id?: string | null;
   parent_name?: string | null;
   child_count?: number;
+  owner?: string | null;
+  created_at?: number | string | null;
+  progress?: number | null;
+  primary_purpose_id?: string | null;
+  primary_purpose_relation?: "serves" | "advances" | null;
 }
 
 export interface GraphAnnotation {
@@ -76,6 +81,61 @@ export interface GraphAnnotationsPayload {
   annotations_truncated?: boolean;
   yaml_goals: GraphNodeSummary[];
   yaml_goals_total?: number;
+}
+
+export interface GoalRelationsPayload {
+  items: GraphAnnotation[];
+  counts: { serves: number; advances: number; blocks: number };
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export async function getGoalPath(instance: CogneeInstance, datasetId: string, goalId: string): Promise<GraphNodeSummary[]> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}/path?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return (await resp.json()).path;
+}
+
+export async function getGoalDetail(instance: CogneeInstance, datasetId: string, goalId: string): Promise<GraphNodeSummary> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}/detail?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return (await resp.json()).goal;
+}
+
+export async function getGoalRelations(instance: CogneeInstance, datasetId: string, goalId: string, opts?: { relationship?: "serves" | "advances" | "blocks"; limit?: number; offset?: number }): Promise<GoalRelationsPayload> {
+  const params = new URLSearchParams({ dataset_id: datasetId, limit: String(opts?.limit ?? 30), offset: String(opts?.offset ?? 0) });
+  if (opts?.relationship) params.set("relationship", opts.relationship);
+  const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}/relations?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function createWorkspaceGoal(instance: CogneeInstance, datasetId: string, input: { parentId: string; name: string; description?: string; owner?: string }): Promise<GraphNodeSummary> {
+  const resp = await instance.fetch("/v1/teleology/annotations/goals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset_id: datasetId, parent_id: input.parentId, name: input.name, description: input.description || "", owner: input.owner || null }) });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return (await resp.json()).goal;
+}
+
+export async function updateWorkspaceGoal(instance: CogneeInstance, datasetId: string, goalId: string, input: { name?: string; description?: string; owner?: string | null; progress?: number | null; status?: string; primary_purpose_id?: string | null; primary_purpose_relation?: "serves" | "advances" | null }): Promise<GraphNodeSummary> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}?${params}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return (await resp.json()).goal;
+}
+
+export async function moveWorkspaceGoal(instance: CogneeInstance, datasetId: string, goalId: string, parentId: string): Promise<void> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}/move?${params}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parent_id: parentId }) });
+  if (!resp.ok) throw new Error(await readError(resp));
+}
+
+export async function deleteWorkspaceGoal(instance: CogneeInstance, datasetId: string, goalId: string): Promise<void> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}?${params}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error(await readError(resp));
 }
 
 async function readError(resp: Response): Promise<string> {

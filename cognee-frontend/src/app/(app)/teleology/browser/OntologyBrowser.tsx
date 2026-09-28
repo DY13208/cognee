@@ -2,602 +2,294 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CogneeInstance } from "@/modules/instances/types";
-import {
-  getGraphAnnotations,
-  syncTeleologyFromCompanyTree,
-  syncTeleologyGoals,
-  type GraphAnnotation,
-  type GraphNodeSummary,
-} from "@/modules/teleology/teleologyApi";
+import { createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalPath, getGoalRelations, getGraphAnnotations, moveWorkspaceGoal, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GraphAnnotation, type GraphNodeSummary } from "@/modules/teleology/teleologyApi";
 import { notifications } from "@mantine/notifications";
+import NavPanel, { type GoalPage } from "./NavPanel";
 import DetailPanel from "./DetailPanel";
-import NavPanel, { type GoalTreeNode } from "./NavPanel";
-import OntologyCanvas from "./OntologyCanvas";
-import { classifyKind, displayName } from "./entityMeta";
-import type { EntityKind, OntologyEdge, OntologyEntity } from "./types";
+import { displayName } from "./entityMeta";
+import type { OntologyEdge, OntologyEntity } from "./types";
 import "./ontology.css";
 
 type DatasetOpt = { id: string; name: string };
-
-function toEntity(g: GraphNodeSummary): OntologyEntity {
-  return {
-    id: g.id,
-    name: displayName(g.name, g.id),
-    type: g.type || "Entity",
-    kind: classifyKind(g.type || "", g.cpd_kind),
-    description: displayName(g.description || ""),
-    status: g.status,
-    parentName: g.parent_name ? displayName(g.parent_name) : null,
-  };
+const PAGE = 30;
+const CANVAS_PAGE = 17;
+function entity(goal: GraphNodeSummary): OntologyEntity {
+  return { id: goal.id, name: displayName(goal.name, goal.id), type: goal.type || "Goal", kind: "Goal", description: goal.description, status: goal.status, parentName: goal.parent_name, childCount: goal.child_count || 0, owner: goal.owner, createdAt: goal.created_at, progress: goal.progress, source: goal.source };
+}
+function edges(annotations: GraphAnnotation[]): OntologyEdge[] {
+  return annotations.map((annotation) => ({ id: `${annotation.source_id}|${annotation.relationship}|${annotation.target_id}`, sourceId: annotation.source_id, targetId: annotation.target_id, sourceName: annotation.source_name, targetName: annotation.target_name, sourceType: annotation.source_type, targetType: annotation.target_type, relationship: annotation.relationship }));
 }
 
-function edgesFromAnnotations(anns: GraphAnnotation[]): OntologyEdge[] {
-  return anns.map((a, i) => ({
-    id: `${a.source_id}|${a.relationship}|${a.target_id}|${i}`,
-    sourceId: a.source_id,
-    targetId: a.target_id,
-    relationship: String(a.relationship),
-    sourceName: displayName(a.source_name, a.source_id),
-    targetName: displayName(a.target_name, a.target_id),
-    sourceType: a.source_type,
-    targetType: a.target_type,
-  }));
-}
-
-function mergeEntitiesFromPayload(
-  goals: GraphNodeSummary[],
-  nodes: GraphNodeSummary[],
-  anns: GraphAnnotation[],
-): OntologyEntity[] {
-  const map = new Map<string, OntologyEntity>();
-  const put = (e: OntologyEntity) => {
-    if (!map.has(e.id)) map.set(e.id, e);
-  };
-  for (const g of goals) put(toEntity(g));
-  for (const n of nodes) put(toEntity(n));
-  for (const a of anns) {
-    put({
-      id: a.source_id,
-      name: displayName(a.source_name, a.source_id),
-      type: a.source_type,
-      kind: classifyKind(a.source_type),
-    });
-    put({
-      id: a.target_id,
-      name: displayName(a.target_name, a.target_id),
-      type: a.target_type,
-      kind: classifyKind(a.target_type),
-    });
-  }
-  return [...map.values()];
-}
-
-export default function OntologyBrowser({
-  instance,
-  datasets,
-  selectedDataset,
-  onSelectDataset,
-  language,
-  busy,
-  onBusy,
-  onHeaderCollapsedChange,
-}: {
-  instance: CogneeInstance;
-  datasets: DatasetOpt[];
-  selectedDataset: DatasetOpt | null;
-  onSelectDataset: (d: DatasetOpt) => void;
-  language: "zh" | "en";
-  busy: boolean;
-  onBusy: (v: boolean) => void;
-  onHeaderCollapsedChange?: (collapsed: boolean) => void;
+export default function OntologyBrowser({ instance, datasets, selectedDataset, onSelectDataset, language, busy, onBusy, onHeaderCollapsedChange }: {
+  instance: CogneeInstance; datasets: DatasetOpt[]; selectedDataset: DatasetOpt | null; onSelectDataset: (dataset: DatasetOpt) => void;
+  language: "zh" | "en"; busy: boolean; onBusy: (value: boolean) => void; onHeaderCollapsedChange?: (collapsed: boolean) => void;
 }) {
-  const t = (en: string, zh: string) => (language === "zh" ? zh : en);
+  const t = (en: string, zh: string) => language === "zh" ? zh : en;
   const datasetId = selectedDataset?.id || datasets[0]?.id || "";
-
+  const [roots, setRoots] = useState<GraphNodeSummary[]>([]);
+  const [rootTotal, setRootTotal] = useState(0);
+  const [pages, setPages] = useState<Record<string, GoalPage>>({});
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
   const [focusId, setFocusId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoverId, setHoverId] = useState<string | null>(null);
-  const [entities, setEntities] = useState<OntologyEntity[]>([]);
-  const [edges, setEdges] = useState<OntologyEdge[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loadingFocus, setLoadingFocus] = useState(false);
-
-  const viewMode = "hierarchy" as const;
-  const hopDepth = 100;
-  const [relatedOnly, setRelatedOnly] = useState(false);
-  const [hiddenRels, setHiddenRels] = useState<Set<string>>(new Set());
-  const [kindFilter, setKindFilter] = useState<Set<EntityKind>>(
-    () => new Set(["Goal", "Project", "Metric", "Department", "Person", "Document", "Entity", "Other"]),
-  );
-
-  const [goalTree, setGoalTree] = useState<GoalTreeNode[]>([]);
-  const [topOpen, setTopOpen] = useState(false);
+  const [focus, setFocusGoal] = useState<GraphNodeSummary | null>(null);
+  const [parent, setParent] = useState<GraphNodeSummary | null>(null);
+  const [path, setPath] = useState<GraphNodeSummary[]>([]);
+  const [children, setChildren] = useState<GraphNodeSummary[]>([]);
+  const [childTotal, setChildTotal] = useState(0);
+  const [relations, setRelations] = useState<OntologyEdge[]>([]);
+  const [relationCounts, setRelationCounts] = useState({ serves: 0, advances: 0, blocks: 0 });
+  const [relationTotal, setRelationTotal] = useState(0);
+  const [relationOffset, setRelationOffset] = useState(0);
+  const [relationType, setRelationType] = useState<"serves" | "advances" | "blocks" | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState<"children" | "path" | "relations" | null>(null);
+  const [drawerPath, setDrawerPath] = useState<GraphNodeSummary[]>([]);
+  const [drawerQuery, setDrawerQuery] = useState("");
+  const [drawerPage, setDrawerPage] = useState<GraphNodeSummary[]>([]);
+  const [drawerTotal, setDrawerTotal] = useState(0);
+  const [drawerOffset, setDrawerOffset] = useState(0);
+  const [drawerLoading, setDrawerLoading] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const mainRef = useRef<HTMLDivElement>(null);
+  const [topOpen, setTopOpen] = useState(true);
   const [datasetMenu, setDatasetMenu] = useState(false);
+  const [view, setView] = useState<"focus" | "tree">("focus");
+  const requestId = useRef(0);
 
-  const loadConnectedTree = useCallback(async () => {
-      if (!instance || !datasetId) return;
-      setLoadingFocus(true);
-      setLoadError(null);
-      try {
-        // Prefer the full company-tree (CPD C→P→D). Fall back to annotations preview.
-        let ents: OntologyEntity[] = [];
-        let eds: OntologyEdge[] = [];
-        let rootId: string | null = null;
+  const loadPath = useCallback((goal: GraphNodeSummary) => getGoalPath(instance, datasetId, goal.id), [instance, datasetId]);
 
-        try {
-          const treeResp = await instance.fetch(
-            `/v1/datasets/${encodeURIComponent(datasetId)}/company-tree`,
-          );
-          if (treeResp.ok) {
-            const tree = (await treeResp.json()) as {
-              nodes?: {
-                id: string;
-                name: string;
-                kind?: string;
-                note?: string;
-              }[];
-              edges?: { source: string; target: string; label: string }[];
-              rootId?: string | null;
-            };
-            if (tree.nodes?.length && tree.rootId) {
-              const byId = new Map(tree.nodes.map((n) => [n.id, n]));
-              ents = tree.nodes.map((n) => ({
-                id: n.id,
-                name: displayName(n.name, n.id),
-                type: "Goal",
-                kind: "Goal" as EntityKind,
-                description: displayName(n.note || ""),
-              }));
-              eds = (tree.edges || [])
-                .filter((e) => byId.has(e.source) && byId.has(e.target))
-                .map((e, i) => ({
-                  id: `${e.source}|${e.label}|${e.target}|${i}`,
-                  sourceId: e.source,
-                  targetId: e.target,
-                  relationship: e.label || "has_subgoal",
-                  sourceName: displayName(byId.get(e.source)!.name, e.source),
-                  targetName: displayName(byId.get(e.target)!.name, e.target),
-                  sourceType: "Goal",
-                  targetType: "Goal",
-                }));
-              const childN = new Map<string, number>();
-              for (const e of eds) {
-                if (e.relationship === "has_subgoal" || e.relationship === "has_detail_reference") {
-                  childN.set(e.sourceId, (childN.get(e.sourceId) || 0) + 1);
-                }
-              }
-              ents = ents.map((e) => ({
-                ...e,
-                childCount: childN.get(e.id) || 0,
-              }));
-              rootId = tree.rootId;
-              const treeNodes = new Map(tree.nodes.map((n) => [n.id, { id: n.id, name: displayName(n.name, n.id), children: [] as GoalTreeNode[] }]));
-              const childIds = new Set<string>();
-              for (const edge of tree.edges || []) {
-                if (edge.label !== "has_subgoal" && edge.label !== "has_detail_reference") continue;
-                const parent = treeNodes.get(edge.source);
-                const child = treeNodes.get(edge.target);
-                if (parent && child && parent !== child) { parent.children.push(child); childIds.add(child.id); }
-              }
-              setGoalTree([...treeNodes.values()].filter((n) => !childIds.has(n.id)));
-              // The company tree only describes hierarchy. Load the focused goal's
-              // purpose and knowledge relations from the graph as a separate layer.
-              try {
-                const related = await getGraphAnnotations(instance, datasetId, { goalId: rootId, limit: 120, goalsLimit: 40 });
-                const entityMap = new Map(ents.map((entity) => [entity.id, entity]));
-                for (const entity of mergeEntitiesFromPayload(related.goals || [], related.nodes || [], related.annotations || [])) {
-                  if (!entityMap.has(entity.id)) entityMap.set(entity.id, entity);
-                }
-                ents = [...entityMap.values()];
-                const seen = new Set(eds.map((edge) => `${edge.sourceId}|${edge.relationship}|${edge.targetId}`));
-                for (const edge of edgesFromAnnotations(related.annotations || [])) {
-                  const key = `${edge.sourceId}|${edge.relationship}|${edge.targetId}`;
-                  if (!seen.has(key)) { eds.push(edge); seen.add(key); }
-                }
-              } catch { /* keep the company tree when annotations are unavailable */ }
-            }
-          }
-        } catch {
-          /* fall through to annotations preview */
-        }
-
-        if (!ents.length) {
-          const res = await getGraphAnnotations(instance, datasetId, {
-            limit: 120,
-            goalsLimit: 48,
-          });
-          ents = mergeEntitiesFromPayload(res.goals || [], res.nodes || [], res.annotations || []);
-          eds = edgesFromAnnotations(res.annotations || []);
-          rootId = res.goals?.[0]?.id || ents[0]?.id || null;
-          setGoalTree((res.goals || []).map((g) => ({ id: g.id, name: displayName(g.name, g.id), children: [] })));
-        }
-
-        setEntities(ents);
-        setEdges(eds);
-        if (rootId) {
-          setFocusId(rootId);
-          setSelectedId(rootId);
-        }
-      } catch (err) {
-        setLoadError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoadingFocus(false);
-      }
-    }, [instance, datasetId]);
-
-  const loadFocus = useCallback(
-    async (id: string, depth: number) => {
-      if (!instance || !datasetId) return;
-      // Set focus immediately so the canvas doesn't blank / reflow while fetching.
-      setFocusId(id);
-      setSelectedId(id);
-      setLoadingFocus(true);
-      setLoadError(null);
-      try {
-        const res = await getGraphAnnotations(instance, datasetId, {
-          goalId: id,
-          limit: 120,
-          goalsLimit: 40,
+  const enter = useCallback(async (id: string) => {
+    if (!datasetId) return;
+    const serial = ++requestId.current;
+    setLoading(true); setError(null);
+    try {
+      const [current, childPage, relationPage, chain] = await Promise.all([
+        getGoalDetail(instance, datasetId, id),
+        getGraphAnnotations(instance, datasetId, { parentId: id, goalsLimit: CANVAS_PAGE }),
+        getGoalRelations(instance, datasetId, id, { limit: 30 }),
+        getGoalPath(instance, datasetId, id),
+      ]);
+      if (serial !== requestId.current) return;
+      const parentGoal = chain.length > 1 ? chain[chain.length - 2] : null;
+      const visibleChildren = childPage.goals.slice(0, (childPage.goals_total || 0) > 16 ? 12 : 16);
+      if (chain[0]) setRoots((old) => old.some((root) => root.id === chain[0].id) ? old : [...old, chain[0]]);
+      setFocusId(id); setSelectedId(id); setFocusGoal(current); setParent(parentGoal); setPath(chain);
+      setChildren(visibleChildren); setChildTotal(childPage.goals_total ?? childPage.goals.length);
+      setRelations(edges(relationPage.items)); setRelationCounts(relationPage.counts);
+      setPages((old) => {
+        const next = { ...old };
+        chain.slice(0, -1).forEach((ancestor, index) => {
+          const child = chain[index + 1];
+          const page = next[ancestor.id];
+          if (!page) next[ancestor.id] = { items: [child], total: ancestor.child_count || 1, loading: false, loaded: false, nextOffset: 0 };
+          else if (!page.items.some((item) => item.id === child.id)) next[ancestor.id] = { ...page, items: [...page.items, child] };
         });
-        let ents = mergeEntitiesFromPayload(res.goals || [], res.nodes || [], res.annotations || []);
-        const eds = edgesFromAnnotations(res.annotations || []);
+        if (!next[id]?.loaded) next[id] = { items: childPage.goals, total: childPage.goals_total ?? childPage.goals.length, loading: false, loaded: true, nextOffset: childPage.goals.length };
+        return next;
+      });
+    } catch (cause) { if (serial === requestId.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { if (serial === requestId.current) setLoading(false); }
+  }, [instance, datasetId]);
 
-        // Approximate hop 2/3 by expanding neighbors once more
-        if (depth >= 2) {
-          const neighborIds = new Set<string>();
-          for (const e of eds) {
-            if (e.sourceId === id) neighborIds.add(e.targetId);
-            if (e.targetId === id) neighborIds.add(e.sourceId);
-          }
-          const extras = [...neighborIds].slice(0, depth >= 3 ? 8 : 4);
-          for (const nid of extras) {
-            try {
-              const extra = await getGraphAnnotations(instance, datasetId, {
-                goalId: nid,
-                limit: 60,
-                goalsLimit: 20,
-              });
-              const moreE = mergeEntitiesFromPayload(
-                extra.goals || [],
-                extra.nodes || [],
-                extra.annotations || [],
-              );
-              const moreEdges = edgesFromAnnotations(extra.annotations || []);
-              const byId = new Map(ents.map((x) => [x.id, x]));
-              for (const m of moreE) byId.set(m.id, m);
-              ents = [...byId.values()];
-              const ek = new Set(eds.map((x) => x.id));
-              for (const m of moreEdges) {
-                if (!ek.has(m.id)) {
-                  eds.push(m);
-                  ek.add(m.id);
-                }
-              }
-            } catch {
-              /* ignore partial expand failures */
-            }
-          }
-        }
-
-        // hiddenDegree: crude estimate from annotations_total
-        const degreeHint = Math.max(
-          0,
-          (res.annotations_total ?? eds.length) - eds.filter((e) => e.sourceId === id || e.targetId === id).length,
-        );
-        ents = ents.map((e) =>
-          e.id === id ? { ...e, hiddenDegree: degreeHint > 0 ? Math.min(degreeHint, 99) : undefined } : e,
-        );
-
-        setEntities(ents);
-        setEdges(eds);
-      } catch (err) {
-        setLoadError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoadingFocus(false);
-      }
-    },
-    [instance, datasetId],
-  );
+  const loadRoots = useCallback(async () => {
+    if (!datasetId) return;
+    setLoading(true); setError(null);
+    try {
+      const result = await getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE });
+      setRoots(result.goals); setRootTotal(result.goals_total ?? result.goals.length);
+      if (result.goals.length) await enter(result.goals[0].id);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setLoading(false); }
+  }, [instance, datasetId, enter]);
 
   useEffect(() => {
-    setFocusId(null);
-    setSelectedId(null);
-    setEntities([]);
-    setEdges([]);
-    setGoalTree([]);
-    if (datasetId) {
-      void loadConnectedTree();
-    }
-  }, [datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
+    requestId.current += 1; setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]);
+    if (datasetId) void loadRoots();
+  }, [datasetId, loadRoots]);
 
-  const setFocus = useCallback(
-    async (id: string) => {
-      setFocusId(id);
-      setSelectedId(id);
-
-      // Prefer staying on the loaded company tree — just re-root.
-      const children = (() => {
-        const map = new Map<string, string[]>();
-        for (const e of edges) {
-          const rel = e.relationship.toLowerCase();
-          if (rel === "has_subgoal" || rel === "has_detail_reference") {
-            if (!map.has(e.sourceId)) map.set(e.sourceId, []);
-            map.get(e.sourceId)!.push(e.targetId);
-          } else if (rel === "advances") {
-            if (!map.has(e.targetId)) map.set(e.targetId, []);
-            map.get(e.targetId)!.push(e.sourceId);
-          }
-        }
-        return map.get(id) || [];
-      })();
-
-      if (entities.some((e) => e.id === id) && (children.length > 0 || edges.length > 0)) {
-        // Fetch direct children via parent_id and merge — covers nodes whose
-        // CPD subtree wasn't in the initial preview slice.
-        if (!instance || !datasetId) return;
-        try {
-          setLoadingFocus(true);
-          const [childrenResult, relationsResult] = await Promise.all([
-            getGraphAnnotations(instance, datasetId, { parentId: id, limit: 1, goalsLimit: 60 }),
-            getGraphAnnotations(instance, datasetId, { goalId: id, limit: 120, goalsLimit: 40 }),
-          ]);
-          const kids = (childrenResult.goals || []).map(toEntity);
-          const relatedEntities = mergeEntitiesFromPayload(relationsResult.goals || [], relationsResult.nodes || [], relationsResult.annotations || []);
-          const relatedEdges = edgesFromAnnotations(relationsResult.annotations || []);
-          if (kids.length || relatedEntities.length || relatedEdges.length) {
-            setEntities((prev) => {
-              const byId = new Map(prev.map((x) => [x.id, x]));
-              for (const k of [...kids, ...relatedEntities]) if (!byId.has(k.id)) byId.set(k.id, k);
-              return [...byId.values()];
-            });
-            setEdges((prev) => {
-              const ek = new Set(prev.map((x) => `${x.sourceId}|${x.relationship}|${x.targetId}`));
-              const next = [...prev];
-              for (const k of kids) {
-                const key = `${id}|has_subgoal|${k.id}`;
-                if (ek.has(key)) continue;
-                next.push({
-                  id: key,
-                  sourceId: id,
-                  targetId: k.id,
-                  relationship: "has_subgoal",
-                  sourceName: entities.find((e) => e.id === id)?.name || id,
-                  targetName: k.name,
-                  sourceType: "Goal",
-                  targetType: "Goal",
-                });
-                ek.add(key);
-              }
-              for (const edge of relatedEdges) {
-                const key = `${edge.sourceId}|${edge.relationship}|${edge.targetId}`;
-                if (!ek.has(key)) { next.push(edge); ek.add(key); }
-              }
-              return next;
-            });
-          }
-        } catch {
-          /* keep current tree */
-        } finally {
-          setLoadingFocus(false);
-        }
-        return;
-      }
-      void loadFocus(id, hopDepth);
-    },
-    [entities, edges, loadFocus, hopDepth, instance, datasetId],
-  );
-
-  const onSelectNode = useCallback(
-    (id: string | null) => {
-      if (!id) {
-        setSelectedId(null);
-        return;
-      }
-      setSelectedId(id);
-    },
-    [],
-  );
-
-  const visible = useMemo(() => {
-    let ents = entities.filter((e) => kindFilter.has(e.kind));
-    let eds = edges.filter((e) => !hiddenRels.has(e.relationship));
-    eds = eds.filter((e) => {
-      const okS = ents.some((x) => x.id === e.sourceId) || e.sourceId === focusId;
-      const okT = ents.some((x) => x.id === e.targetId) || e.targetId === focusId;
-      return okS && okT;
-    });
-
-    // Stamp +N for non-focus nodes with unused degree
-    const deg = new Map<string, number>();
-    for (const e of edges) {
-      deg.set(e.sourceId, (deg.get(e.sourceId) || 0) + 1);
-      deg.set(e.targetId, (deg.get(e.targetId) || 0) + 1);
-    }
-    const shown = new Map<string, number>();
-    for (const e of eds) {
-      shown.set(e.sourceId, (shown.get(e.sourceId) || 0) + 1);
-      shown.set(e.targetId, (shown.get(e.targetId) || 0) + 1);
-    }
-    ents = ents.map((e) => {
-      const d = deg.get(e.id) || 0;
-      const s = shown.get(e.id) || 0;
-      const hidden = Math.max(0, d - s);
-      return { ...e, hiddenDegree: hidden > 0 ? hidden : e.hiddenDegree };
-    });
-
-    return { entities: ents, edges: eds };
-  }, [entities, edges, kindFilter, hiddenRels, focusId]);
-
-  const selectedEntity =
-    visible.entities.find((e) => e.id === selectedId) ||
-    entities.find((e) => e.id === selectedId) ||
-    null;
-
-  async function handleSyncTree() {
-    if (!instance || !datasetId) return;
-    onBusy(true);
+  const expand = useCallback(async (id: string, more = false) => {
+    const prior = pagesRef.current[id];
+    if (prior?.loading || (!more && prior?.loaded)) return;
+    const offset = more ? prior?.nextOffset || 0 : 0;
+    setPages((old) => ({ ...old, [id]: { items: old[id]?.items || [], total: old[id]?.total || 0, loaded: old[id]?.loaded, nextOffset: old[id]?.nextOffset || 0, loading: true } }));
     try {
-      const result = await syncTeleologyFromCompanyTree(instance, datasetId);
-      notifications.show({
-        title: t("Synced", "已同步"),
-        message: t(
-          `${result.advances_created} advances · ${result.tree_goals} goals`,
-          `${result.advances_created} 条 advances · ${result.tree_goals} 个目标`,
-        ),
-        color: "green",
+      const result = await getGraphAnnotations(instance, datasetId, { parentId: id, goalsLimit: PAGE, goalsOffset: offset });
+      setPages((old) => {
+        const items = [...(old[id]?.items || []), ...result.goals];
+        return { ...old, [id]: { items: items.filter((item, index) => items.findIndex((candidate) => candidate.id === item.id) === index), total: result.goals_total ?? offset + result.goals.length, loading: false, loaded: true, nextOffset: offset + result.goals.length } };
       });
-      if (focusId) void loadFocus(focusId, hopDepth);
-      else void loadConnectedTree();
-    } catch (err) {
-      notifications.show({
-        title: t("Sync failed", "同步失败"),
-        message: err instanceof Error ? err.message : String(err),
-        color: "red",
-      });
-    } finally {
-      onBusy(false);
-    }
+    } catch (cause) { setPages((old) => ({ ...old, [id]: { ...old[id], loading: false } })); setError(cause instanceof Error ? cause.message : String(cause)); }
+  }, [instance, datasetId]);
+
+  const search = useCallback(async (query: string) => {
+    const result = await getGraphAnnotations(instance, datasetId, { q: query, goalsLimit: PAGE, limit: 1 });
+    return result.goals;
+  }, [instance, datasetId]);
+
+  useEffect(() => {
+    if (drawer !== "children" || !focusId) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setDrawerLoading(true);
+      void getGraphAnnotations(instance, datasetId, { parentId: focusId, q: drawerQuery || undefined, goalsLimit: PAGE, goalsOffset: drawerOffset }).then((result) => {
+        if (!active) return;
+        setDrawerPage(result.goals); setDrawerTotal(result.goals_total ?? result.goals.length);
+      }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); }).finally(() => { if (active) setDrawerLoading(false); });
+    }, drawerQuery ? 250 : 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [drawer, drawerQuery, drawerOffset, focusId, instance, datasetId]);
+
+  useEffect(() => {
+    if (drawer !== "relations" || !focusId) return;
+    let active = true;
+    setDrawerLoading(true);
+    void getGoalRelations(instance, datasetId, focusId, { relationship: relationType, offset: relationOffset, limit: PAGE }).then((result) => {
+      if (!active) return;
+      setRelations(edges(result.items)); setRelationCounts(result.counts); setRelationTotal(result.total);
+    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); }).finally(() => { if (active) setDrawerLoading(false); });
+    return () => { active = false; };
+  }, [drawer, focusId, relationOffset, relationType, instance, datasetId]);
+
+  const selectedEntity = useMemo(() => {
+    const found = [focus, parent, ...children, ...path, ...roots].find((goal) => goal?.id === selectedId);
+    if (found) return entity(found);
+    const relation = relations.find((edge) => edge.sourceId === selectedId || edge.targetId === selectedId);
+    if (!relation || !selectedId) return null;
+    return { id: selectedId, name: relation.sourceId === selectedId ? relation.sourceName : relation.targetName, type: "Goal", kind: "Goal" as const };
+  }, [focus, parent, children, path, roots, selectedId, relations]);
+
+  async function viewSelectedPath() {
+    try {
+      let goal = [focus, parent, ...children, ...path, ...roots].find((item) => item?.id === selectedId);
+      if (!goal && selectedId) {
+        goal = await getGoalDetail(instance, datasetId, selectedId);
+      }
+      if (!goal) return;
+      setDrawerPath(await loadPath(goal));
+      setDrawer("path");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
 
-  async function handleSyncYaml() {
-    if (!instance || !datasetId) return;
-    onBusy(true);
+  async function runGoalAction(action: () => Promise<string | void>, nextId?: string) {
     try {
-      await syncTeleologyGoals(instance, datasetId);
-      notifications.show({
-        title: t("YAML synced", "YAML 已同步"),
-        message: t("Vocabulary written to graph.", "词汇表已写入图谱。"),
-        color: "green",
-      });
-    } catch (err) {
-      notifications.show({
-        title: t("Sync failed", "同步失败"),
-        message: err instanceof Error ? err.message : String(err),
-        color: "red",
-      });
-    } finally {
-      onBusy(false);
-    }
+      const resultId = await action();
+      setPages({});
+      if (resultId || nextId) await enter(resultId || nextId!);
+      else if (focusId) await enter(focusId);
+      notifications.show({ title: t("Goal updated", "目标已更新"), message: "", color: "green" });
+    } catch (cause) { notifications.show({ title: t("Operation failed", "操作失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" }); }
   }
 
-  return (
-    <div className="onto-root">
-      <header className={`onto-top${topOpen ? "" : " is-collapsed"}`}>
-        {topOpen ? <>
-        <div style={{ position: "relative" }}>
-          <button
-            type="button"
-            className="onto-select"
-            style={{ minWidth: 140, cursor: "pointer", textAlign: "left" }}
-            onClick={() => setDatasetMenu((v) => !v)}
-            onBlur={() => window.setTimeout(() => setDatasetMenu(false), 150)}
-          >
-            {selectedDataset?.name || datasets[0]?.name || t("No dataset", "暂无数据集")} ▾
-          </button>
-          {datasetMenu ? (
-            <div className="onto-search-menu" style={{ minWidth: 160 }}>
-              {datasets.map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  className="onto-search-item"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    onSelectDataset(d);
-                    setDatasetMenu(false);
-                  }}
-                >
-                  {d.name}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+  function createChild(id: string) {
+    const name = window.prompt(t("New subgoal name", "新子目标名称"))?.trim();
+    if (!name) return;
+    void runGoalAction(async () => {
+      const created = await createWorkspaceGoal(instance, datasetId, { parentId: id, name });
+      return created.id;
+    });
+  }
 
-        <button type="button" className="onto-btn onto-btn-primary" disabled={!datasetId || loadingFocus} onClick={() => void loadConnectedTree()}>{t("Generate graph", "生成图")}</button>
-        <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={handleSyncTree}>
-          {t("Sync goal tree", "同步目标树")}
-        </button>
-        <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={handleSyncYaml}>
-          {t("Sync YAML", "同步 YAML")}
-        </button>
-        <div className="onto-more-wrap"><button type="button" className="onto-btn" aria-label={t("More actions", "更多操作")} aria-expanded={moreOpen} onClick={() => setMoreOpen((value) => !value)}>···</button>
-          {moreOpen && <div className="onto-more-menu"><button type="button" disabled={!focusId} onClick={() => { setMoreOpen(false); notifications.show({ title: t("Recall", "召回"), message: t("Use Search page with this purpose id in context.", "请在搜索页结合该目的上下文召回。"), color: "blue" }); }}>{t("Recall with this purpose", "用此目的召回")}</button></div>}
-        </div>
-        </> : <span className="onto-collapsed-title">{t("Teleology ·", "目的论 ·")} {selectedDataset?.name || datasets[0]?.name || t("No dataset", "暂无数据集")}</span>}
-        <button type="button" className="onto-btn onto-collapse-btn" onClick={() => { setTopOpen(!topOpen); onHeaderCollapsedChange?.(topOpen); }} aria-expanded={topOpen} aria-label={topOpen ? t("Collapse header", "折叠顶部信息") : t("Expand header", "展开顶部信息")}>
-          {topOpen ? t("Collapse header ↑", "收起顶部 ↑") : t("Expand header ↓", "展开顶部 ↓")}
-        </button>
-      </header>
+  function relateGoal(id: string) {
+    const targetId = window.prompt(t("Related goal ID", "关联目标 ID"))?.trim();
+    if (!targetId) return;
+    const relationship = window.prompt(t("Relationship: serves / advances / blocks", "关系类型：serves / advances / blocks"), "serves")?.trim();
+    if (relationship !== "serves" && relationship !== "advances" && relationship !== "blocks") return;
+    void runGoalAction(async () => { await createGraphAnnotation(instance, { datasetId, sourceId: id, targetId, relationship }); });
+  }
 
-      <div className="onto-body">
-        <div className={`onto-side-container onto-side-left${leftOpen ? "" : " is-collapsed"}`}>
-          {leftOpen && <NavPanel language={language} tree={goalTree} selectedId={focusId} loading={loadingFocus} onPick={setFocus} />}
-          <button type="button" className="onto-seam-tab onto-seam-tab-left" onClick={() => setLeftOpen((value) => !value)} aria-label={leftOpen ? t("Collapse goal tree", "收起目标目录") : t("Expand goal tree", "展开目标目录")} aria-expanded={leftOpen}>{leftOpen ? "‹" : "›"}</button>
-        </div>
+  function copyGoal(id: string) {
+    void runGoalAction(async () => {
+      const [goal, chain] = await Promise.all([getGoalDetail(instance, datasetId, id), getGoalPath(instance, datasetId, id)]);
+      const parentId = chain.length > 1 ? chain[chain.length - 2].id : focusId;
+      if (!parentId || parentId === id) throw new Error(t("Choose a parent goal first", "请先选择上级目标"));
+      const copy = await createWorkspaceGoal(instance, datasetId, { parentId, name: `${goal.name} ${t("copy", "副本")}`, description: goal.description });
+      return copy.id;
+    });
+  }
 
-        <div className="onto-main" ref={mainRef}>
-          {loadError ? (
-            <div style={{ padding: 12, color: "#F87171", fontSize: 12 }}>{loadError}</div>
-          ) : null}
-          <OntologyCanvas
-            focusId={focusId}
-            entities={visible.entities}
-            edges={visible.edges}
-            selectedId={selectedId}
-            viewMode={viewMode}
-            hopDepth={hopDepth}
-            relatedOnly={relatedOnly}
-            hiddenRels={hiddenRels}
-            hoverId={hoverId}
-            language={language}
-            loading={loadingFocus}
-            zoom={zoom}
-            onSelect={onSelectNode}
-            onSetFocus={setFocus}
-            onExpand={(id) => setFocus(id)}
-            onCanvasClick={() => setSelectedId(null)}
-            onHover={setHoverId}
-          />
-          <div className="onto-canvas-toolbar">
-            <div className="onto-toolbar-spacer" />
-            <div className="onto-zoom-group"><button type="button" onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))} aria-label={t("Zoom out", "缩小")}>−</button><button type="button" onClick={() => setZoom(1)} aria-label={t("Reset zoom", "重置缩放")}>{Math.round(zoom * 100)}%</button><button type="button" onClick={() => setZoom((value) => Math.min(1.6, Math.round((value + 0.1) * 10) / 10))} aria-label={t("Zoom in", "放大")}>＋</button></div>
-            <button type="button" className="onto-btn" onClick={() => { if (document.fullscreenElement === mainRef.current) void document.exitFullscreen(); else void mainRef.current?.requestFullscreen(); }} aria-label={t("Toggle fullscreen", "切换全屏")}>⛶</button>
-            <div className="onto-toolbar-filters">
-              <button type="button" className="onto-btn" onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen}>{t("Display filters", "显示筛选")} ▾</button>
-              {filtersOpen && <div className="onto-filter-popover">
-                <label className="onto-check"><input type="checkbox" checked={relatedOnly} onChange={(e) => setRelatedOnly(e.target.checked)} />{t("Related nodes only", "仅显示相关节点")}</label>
-                <div className="onto-nav-sub">{t("Hide relations", "隐藏关系类型")}</div>
-                {["has_subgoal", "has_detail_reference", "serves", "advances", "blocks"].map((rel) => <label key={rel} className="onto-check"><input type="checkbox" checked={hiddenRels.has(rel)} onChange={() => setHiddenRels((prev) => { const next = new Set(prev); if (next.has(rel)) next.delete(rel); else next.add(rel); return next; })} />{rel}</label>)}
-                <div className="onto-nav-sub">{t("Entity types", "对象类型")}</div>
-                {(["Goal", "Project", "Metric", "Department", "Person", "Document", "Entity", "Other"] as EntityKind[]).map((kind) => <label key={kind} className="onto-check"><input type="checkbox" checked={kindFilter.has(kind)} onChange={() => setKindFilter((prev) => { const next = new Set(prev); if (next.has(kind)) next.delete(kind); else next.add(kind); return next; })} />{kind}</label>)}
-              </div>}
-            </div>
-          </div>
-        </div>
+  function editGoal(id: string) {
+    const name = window.prompt(t("Goal name", "目标名称"), selectedEntity?.name)?.trim();
+    if (!name) return;
+    void runGoalAction(async () => { await updateWorkspaceGoal(instance, datasetId, id, { name }); });
+  }
 
-        <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}>
-        <button type="button" className="onto-seam-tab onto-seam-tab-right" onClick={() => setRightOpen((value) => !value)} aria-label={rightOpen ? t("Collapse details", "收起目标详情") : t("Expand details", "展开目标详情")} aria-expanded={rightOpen}>{rightOpen ? "›" : "‹"}</button>
-        {rightOpen && <DetailPanel
-          entity={selectedEntity}
-          edges={visible.edges.filter(
-            (e) => selectedEntity && (e.sourceId === selectedEntity.id || e.targetId === selectedEntity.id),
-          )}
-          focusId={focusId}
-          language={language}
-          onSetFocus={setFocus}
-          onSelectNeighbor={(id) => {
-            setSelectedId(id);
-          }}
-        />}
+  function moveGoal(id: string) {
+    const parentId = window.prompt(t("New parent goal ID", "新上级目标 ID"))?.trim();
+    if (!parentId) return;
+    void runGoalAction(async () => { await moveWorkspaceGoal(instance, datasetId, id, parentId); }, id);
+  }
+
+  function removeGoal(id: string) {
+    if (!window.confirm(t("Delete this goal?", "确定删除此目标？"))) return;
+    const nextId = id === focusId ? parent?.id : focusId || undefined;
+    void runGoalAction(async () => { await deleteWorkspaceGoal(instance, datasetId, id); }, nextId);
+  }
+
+  function exportGoal(id: string) {
+    void Promise.all([getGoalDetail(instance, datasetId, id), getGoalRelations(instance, datasetId, id, { limit: 100 })]).then(([goal, purpose]) => {
+      const blob = new Blob([JSON.stringify({ goal, purpose, relations_truncated: purpose.total > purpose.items.length }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a"); link.href = url; link.download = `goal-${id}.json`; link.click();
+      URL.revokeObjectURL(url);
+    }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }
+
+  async function syncTree() {
+    onBusy(true);
+    try { const result = await syncTeleologyFromCompanyTree(instance, datasetId); notifications.show({ title: t("Synced", "已同步"), message: `${result.tree_goals} ${t("goals", "个目标")}`, color: "green" }); setPages({}); await loadRoots(); }
+    catch (cause) { notifications.show({ title: t("Sync failed", "同步失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" }); }
+    finally { onBusy(false); }
+  }
+  async function syncYaml() {
+    onBusy(true);
+    try { await syncTeleologyGoals(instance, datasetId); notifications.show({ title: t("YAML synced", "YAML 已同步"), message: t("Vocabulary written to graph.", "词汇表已写入图谱。"), color: "green" }); }
+    catch (cause) { notifications.show({ title: t("Sync failed", "同步失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" }); }
+    finally { onBusy(false); }
+  }
+
+  return <div className="onto-root">
+    <header className={`onto-top${topOpen ? "" : " is-collapsed"}`}>
+      {topOpen ? <>
+        <div style={{ position: "relative" }}><button type="button" className="onto-select" onClick={() => setDatasetMenu(!datasetMenu)}>{selectedDataset?.name || datasets[0]?.name || t("No dataset", "暂无数据集")} ▾</button>
+          {datasetMenu && <div className="onto-search-menu">{datasets.map((dataset) => <button type="button" className="onto-search-item" key={dataset.id} onClick={() => { onSelectDataset(dataset); setDatasetMenu(false); }}>{dataset.name}</button>)}</div>}
         </div>
+        <button type="button" className="onto-btn onto-btn-primary" title={t("Refresh this goal's purpose relationships", "刷新当前目标的目的关系")} disabled={!focusId || loading} onClick={() => { if (focusId) void enter(focusId); }}>{t("Generate purpose relations", "生成目的关系")}</button>
+        <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncTree()}>{t("Sync goal tree", "同步目标树")}</button>
+        <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncYaml()}>{t("Sync YAML", "同步 YAML")}</button>
+        <div className="onto-view-switch"><button type="button" className={view === "focus" ? "is-active" : ""} onClick={() => setView("focus")}>{t("Focus view", "聚焦视图")}</button><button type="button" className={view === "tree" ? "is-active" : ""} onClick={() => setView("tree")}>{t("Tree overview", "树图概览")}</button></div>
+      </> : <span className="onto-collapsed-title">{t("Teleology", "目的论")} · {selectedDataset?.name || datasets[0]?.name}</span>}
+      <button type="button" className="onto-btn onto-collapse-btn" onClick={() => { setTopOpen(!topOpen); onHeaderCollapsedChange?.(topOpen); }}>{topOpen ? t("Collapse ↑", "收起 ↑") : t("Expand ↓", "展开 ↓")}</button>
+    </header>
+    <div className="onto-body">
+      <div className={`onto-side-container onto-side-left${leftOpen ? "" : " is-collapsed"}`}>
+        {leftOpen && <NavPanel language={language} roots={roots} pages={pages} focusId={focusId} pathIds={path.map((goal) => goal.id)} loading={loading} onPick={(id) => void enter(id)} onExpand={expand} onSearch={search} />}
+        <button type="button" className="onto-seam-tab onto-seam-tab-left" onClick={() => setLeftOpen(!leftOpen)}>{leftOpen ? "‹" : "›"}</button>
       </div>
+      <main className="onto-main onto-focus-main">
+        {error && <div className="onto-focus-error" role="alert">{error}</div>}
+        <div className="onto-breadcrumb">{path.map((goal, index) => <span key={goal.id}><button type="button" onClick={() => void enter(goal.id)}>{goal.name}</button>{index < path.length - 1 && <b>›</b>}</span>)}</div>
+        {view === "focus" ? <div className="onto-focus-scroll">
+          {focus && <>
+            {parent && <div className="onto-focus-parent-wrap"><div className="onto-lane-caption">{t("Parent purpose", "上级目的")}</div><button type="button" className="onto-focus-parent" onClick={() => setSelectedId(parent.id)} onDoubleClick={() => void enter(parent.id)}><span className="onto-file-icon" aria-hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></span>{parent.name}<small>{t("Enter", "进入")} ↗</small></button><div className="onto-hierarchy-line">↓</div></div>}
+            <div className="onto-focus-row">
+              <div className="onto-focus-side is-left"><button type="button" className="onto-purpose-pill is-serves" onClick={() => { setRelationType("serves"); setRelationOffset(0); setDrawer("relations"); }}>{t("Serves", "服务于")} <b>{relationCounts.serves}</b></button></div>
+              <div className={`onto-focus-card${loading ? " is-loading" : ""}`}><span className="onto-focus-icon" aria-hidden><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></span><div><strong>{focus.name}</strong><small>{t("Current goal", "当前目标")}</small></div><p>{focus.description || t("No description yet", "暂无描述")}</p><footer><span>{t("Subgoals", "子目标")} {childTotal}</span><span>{t("Relations", "关系")} {relationCounts.serves + relationCounts.advances + relationCounts.blocks}</span>{focus.progress != null && <span>{t("Progress", "进度")} {focus.progress}%</span>}</footer></div>
+              <div className="onto-focus-side is-right"><button type="button" className="onto-purpose-pill is-advances" onClick={() => { setRelationType("advances"); setRelationOffset(0); setDrawer("relations"); }}>{t("Advances", "推进")} <b>{relationCounts.advances}</b></button><button type="button" className="onto-purpose-pill is-blocks" onClick={() => { setRelationType("blocks"); setRelationOffset(0); setDrawer("relations"); }}>{t("Blocks", "阻碍")} <b>{relationCounts.blocks}</b></button></div>
+            </div>
+            <div className="onto-hierarchy-line">↓</div><div className="onto-lane-caption">{t("Direct subgoals", "实现 / 直接下级目标")}</div>
+            <div className="onto-child-grid">{children.map((goal) => <div key={goal.id} className={`onto-child-card${selectedId === goal.id ? " is-selected" : ""}`} onClick={() => setSelectedId(goal.id)} onDoubleClick={() => void enter(goal.id)}><strong><span className="onto-file-icon" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></span>{goal.name}</strong><p>{goal.description || ""}</p><footer>{t("Subgoals", "子目标")} {goal.child_count || 0}<button type="button" onClick={(event) => { event.stopPropagation(); void enter(goal.id); }}>{t("Enter", "进入")} ↗</button></footer></div>)}</div>
+            {childTotal > children.length && <button type="button" className="onto-view-all" onClick={() => { setDrawerOffset(0); setDrawerQuery(""); setDrawer("children"); }}>＋ {t(`${childTotal - children.length} more subgoals · View all`, `还有 ${childTotal - children.length} 个子目标 · 查看全部`)}</button>}
+          </>}
+        </div> : <div className="onto-tree-overview"><div className="onto-lane-caption">{t("Current branch · expand goals on demand", "当前分支 · 按需展开目标")}</div>{roots.map((goal) => <button type="button" key={goal.id} onClick={() => void enter(goal.id)}>◎ {goal.name} <small>{goal.child_count || 0} {t("direct goals", "个直接目标")}</small></button>)}{rootTotal > roots.length && <button type="button" onClick={async () => { const result = await getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }); setRoots((old) => [...old, ...result.goals]); }}>{t("More roots", "加载更多根目标")}</button>}</div>}
+      </main>
+      <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}><button type="button" className="onto-seam-tab onto-seam-tab-right" onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? "›" : "‹"}</button>{rightOpen && <DetailPanel entity={selectedEntity} edges={relations.filter((edge) => edge.sourceId === selectedId || edge.targetId === selectedId)} focusId={focusId} language={language} path={selectedId === focusId ? path : undefined} onViewPath={() => void viewSelectedPath()} onSetFocus={(id) => void enter(id)} onSelectNeighbor={(id) => setSelectedId(id)} onCreateChild={createChild} onRelate={relateGoal} onCopy={copyGoal} onMove={moveGoal} onDelete={removeGoal} onEdit={editGoal} onExport={exportGoal} />}</div>
     </div>
-  );
+    {drawer && <div className="onto-drawer-backdrop" onMouseDown={() => setDrawer(null)}><aside className="onto-drawer" onMouseDown={(event) => event.stopPropagation()}><header><strong>{drawer === "children" ? t("Browse subgoals", "浏览子目标") : drawer === "path" ? t("Goal path", "目标路径") : t("Purpose relations", "目的关系")}</strong><button type="button" onClick={() => setDrawer(null)}>×</button></header>
+      {drawer === "children" && <><input value={drawerQuery} onChange={(event) => { setDrawerQuery(event.target.value); setDrawerOffset(0); }} placeholder={t("Search subgoals", "搜索子目标")} /><div className="onto-drawer-list">{drawerLoading ? t("Loading…", "加载中…") : drawerPage.map((goal) => <button type="button" key={goal.id} onClick={() => { setDrawer(null); void enter(goal.id); }}>◎ {goal.name}<small>{goal.child_count || 0} {t("subgoals", "个子目标")}</small></button>)}</div><footer><button type="button" disabled={drawerOffset === 0} onClick={() => setDrawerOffset(Math.max(0, drawerOffset - PAGE))}>{t("Previous", "上一页")}</button><span>{drawerOffset + 1}–{Math.min(drawerOffset + PAGE, drawerTotal)} / {drawerTotal}</span><button type="button" disabled={drawerOffset + PAGE >= drawerTotal} onClick={() => setDrawerOffset(drawerOffset + PAGE)}>{t("Next", "下一页")}</button></footer></>}
+      {drawer === "path" && <div className="onto-drawer-list">{drawerPath.map((goal) => <button type="button" key={goal.id} onClick={() => { setDrawer(null); void enter(goal.id); }}>◎ {goal.name}</button>)}</div>}
+      {drawer === "relations" && <><div className="onto-drawer-list">{drawerLoading ? t("Loading…", "加载中…") : relations.map((edge) => <button type="button" key={edge.id} onClick={() => { setSelectedId(edge.sourceId === focusId ? edge.targetId : edge.sourceId); setDrawer(null); }}>{edge.relationship} · {edge.sourceId === focusId ? edge.targetName : edge.sourceName}</button>)}</div><footer><button type="button" disabled={relationOffset === 0} onClick={() => setRelationOffset(Math.max(0, relationOffset - PAGE))}>{t("Previous", "上一页")}</button><span>{relationOffset + 1}–{Math.min(relationOffset + PAGE, relationTotal)} / {relationTotal}</span><button type="button" disabled={relationOffset + PAGE >= relationTotal} onClick={() => setRelationOffset(relationOffset + PAGE)}>{t("Next", "下一页")}</button></footer></>}
+    </aside></div>}
+  </div>;
 }

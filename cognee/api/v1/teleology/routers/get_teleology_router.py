@@ -17,6 +17,15 @@ from cognee.modules.teleology.graph_annotations import (
     sync_from_company_tree,
     sync_goals_to_graph,
 )
+from cognee.modules.teleology.goal_workspace import (
+    create_goal as create_workspace_goal,
+    delete_goal as delete_workspace_goal,
+    goal_detail,
+    goal_path,
+    goal_relations,
+    move_goal as move_workspace_goal,
+    update_goal as update_workspace_goal,
+)
 from cognee.modules.users.methods import get_authenticated_user
 from cognee.modules.users.models import User
 from cognee.shared.logging_utils import get_logger
@@ -26,9 +35,7 @@ from ..teleology import TeleologyService
 logger = get_logger(__name__)
 
 # Bundled with the teleology package (present in Docker images; examples/ is not).
-_SAMPLE_PATH = (
-    Path(__file__).resolve().parents[4] / "modules" / "teleology" / "sample_goals.yaml"
-)
+_SAMPLE_PATH = Path(__file__).resolve().parents[4] / "modules" / "teleology" / "sample_goals.yaml"
 
 NodeType = Literal["goal", "purpose", "constraint"]
 GoalStatusLiteral = Literal["proposed", "active", "achieved", "abandoned"]
@@ -53,12 +60,36 @@ class TeleologyNodeUpdate(InDTO):
 
 class GraphAnnotationCreate(InDTO):
     dataset_id: UUID = Field(..., description="Dataset whose graph receives the purpose edge.")
-    source_id: str = Field(..., min_length=1, description="Knowledge node id (serves/advances/blocks from).")
+    source_id: str = Field(
+        ..., min_length=1, description="Knowledge node id (serves/advances/blocks from)."
+    )
     target_id: str = Field(..., min_length=1, description="Goal / Purpose / Constraint node id.")
     relationship: TeleologyRelLiteral = Field(
         ...,
         description="Purpose edge: serves, advances, or blocks.",
     )
+
+
+class WorkspaceGoalCreate(InDTO):
+    dataset_id: UUID
+    parent_id: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    owner: Optional[str] = None
+
+
+class WorkspaceGoalUpdate(InDTO):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    owner: Optional[str] = None
+    progress: Optional[int] = Field(default=None, ge=0, le=100)
+    status: Optional[GoalStatusLiteral] = None
+    primary_purpose_id: Optional[str] = None
+    primary_purpose_relation: Optional[Literal["serves", "advances"]] = None
+
+
+class WorkspaceGoalMove(InDTO):
+    parent_id: str = Field(min_length=1)
 
 
 def get_teleology_router() -> APIRouter:
@@ -74,9 +105,7 @@ def get_teleology_router() -> APIRouter:
     ):
         """Return the active teleology YAML status (paginated — never dumps 10k rows)."""
         _ = user
-        return await asyncio.to_thread(
-            lambda: service.get_status(q=q, limit=limit, offset=offset)
-        )
+        return await asyncio.to_thread(lambda: service.get_status(q=q, limit=limit, offset=offset))
 
     @router.post("/nodes", response_model=dict)
     async def create_teleology_node(
@@ -98,7 +127,9 @@ def get_teleology_router() -> APIRouter:
             return JSONResponse(status_code=400, content={"error": str(exc)})
         except Exception as exc:  # noqa: BLE001
             logger.warning("Teleology node create failed: %s", exc)
-            return JSONResponse(status_code=400, content={"error": f"Invalid teleology node: {exc}"})
+            return JSONResponse(
+                status_code=400, content={"error": f"Invalid teleology node: {exc}"}
+            )
 
     @router.put("/nodes/{node_id}", response_model=dict)
     async def update_teleology_node(
@@ -124,7 +155,9 @@ def get_teleology_router() -> APIRouter:
             return JSONResponse(status_code=400, content={"error": str(exc)})
         except Exception as exc:  # noqa: BLE001
             logger.warning("Teleology node update failed: %s", exc)
-            return JSONResponse(status_code=400, content={"error": f"Invalid teleology node: {exc}"})
+            return JSONResponse(
+                status_code=400, content={"error": f"Invalid teleology node: {exc}"}
+            )
 
     @router.delete("/nodes/{node_id}", response_model=dict)
     async def delete_teleology_node(
@@ -237,6 +270,107 @@ def get_teleology_router() -> APIRouter:
         except Exception as exc:  # noqa: BLE001
             logger.warning("List teleology annotations failed: %s", exc, exc_info=True)
             return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.get("/annotations/goals/{goal_id}/path", response_model=dict)
+    async def read_goal_path(
+        goal_id: str,
+        dataset_id: UUID = Query(...),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Return one bounded root-to-goal chain without loading siblings."""
+        try:
+            return await goal_path(dataset_id, user, goal_id)
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=409, content={"error": str(exc)})
+
+    @router.get("/annotations/goals/{goal_id}/detail", response_model=dict)
+    async def read_goal_detail(
+        goal_id: str,
+        dataset_id: UUID = Query(...),
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            return await goal_detail(dataset_id, user, goal_id)
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+
+    @router.get("/annotations/goals/{goal_id}/relations", response_model=dict)
+    async def read_goal_relations(
+        goal_id: str,
+        dataset_id: UUID = Query(...),
+        relationship: Optional[TeleologyRelLiteral] = Query(default=None),
+        limit: int = Query(default=30, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            return await goal_relations(
+                dataset_id, user, goal_id, relationship=relationship, limit=limit, offset=offset
+            )
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+
+    @router.post("/annotations/goals", response_model=dict)
+    async def create_goal_in_workspace(
+        payload: WorkspaceGoalCreate,
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            return await create_workspace_goal(
+                payload.dataset_id,
+                user,
+                parent_id=payload.parent_id,
+                name=payload.name,
+                description=payload.description,
+                owner=payload.owner,
+            )
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+
+    @router.patch("/annotations/goals/{goal_id}", response_model=dict)
+    async def edit_goal_in_workspace(
+        goal_id: str,
+        payload: WorkspaceGoalUpdate,
+        dataset_id: UUID = Query(...),
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            return await update_workspace_goal(
+                dataset_id, user, goal_id, **payload.model_dump(exclude_unset=True)
+            )
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=409, content={"error": str(exc)})
+
+    @router.post("/annotations/goals/{goal_id}/move", response_model=dict)
+    async def move_goal_in_workspace(
+        goal_id: str,
+        payload: WorkspaceGoalMove,
+        dataset_id: UUID = Query(...),
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            return await move_workspace_goal(dataset_id, user, goal_id, payload.parent_id)
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=409, content={"error": str(exc)})
+
+    @router.delete("/annotations/goals/{goal_id}", response_model=dict)
+    async def delete_goal_in_workspace(
+        goal_id: str,
+        dataset_id: UUID = Query(...),
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            return await delete_workspace_goal(dataset_id, user, goal_id)
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=409, content={"error": str(exc)})
 
     @router.post("/annotations/sync-goals", response_model=dict)
     async def sync_teleology_goals(

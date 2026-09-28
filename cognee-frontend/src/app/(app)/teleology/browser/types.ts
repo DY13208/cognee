@@ -22,6 +22,10 @@ export interface OntologyEntity {
   hiddenDegree?: number;
   /** Direct CPD children count (has_subgoal / advances). */
   childCount?: number;
+  owner?: string | null;
+  createdAt?: number | string | null;
+  progress?: number | null;
+  source?: string | null;
 }
 
 export interface OntologyEdge {

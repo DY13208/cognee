@@ -38,7 +38,7 @@ import PurposeLensGraph, {
 } from "./PurposeLensGraph";
 import { notifications } from "@mantine/notifications";
 import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
-import NavPanel, { type GoalTreeNode } from "./browser/NavPanel";
+import NavPanel, { type GoalTreeNode } from "./browser/ClassicNavPanel";
 import { buildGoalTree, type CompanyTreePayload } from "./browser/goalTree";
 import "./browser/ontology.css";
 

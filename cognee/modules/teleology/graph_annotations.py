@@ -8,6 +8,7 @@ scope by ``goal_id``.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID
 
@@ -79,7 +80,12 @@ def _node_row(node_id: str, props: dict[str, Any] | None) -> dict[str, Any]:
         "description": str(props.get("description") or props.get("source_note") or "").strip(),
         "status": str(props.get("status") or "").strip() or None,
         "cpd_kind": cpd_kind,
-        "source": "company_tree" if cpd_kind else None,
+        "source": "company_tree" if cpd_kind else props.get("source"),
+        "owner": props.get("owner") or None,
+        "created_at": props.get("created_at"),
+        "progress": props.get("progress"),
+        "primary_purpose_id": props.get("primary_purpose_id") or None,
+        "primary_purpose_relation": props.get("primary_purpose_relation") or None,
     }
 
 
@@ -288,7 +294,7 @@ async def _fetch_goals_page(
     return goals[skip : skip + limit]
 
 
-async def _list_goal_roots(graph: Any, *, limit: int = 40) -> list[dict[str, Any]]:
+async def _list_goal_roots(graph: Any, *, limit: int = 40, offset: int = 0) -> list[dict[str, Any]]:
     """Top-level CPD goals (no incoming has_subgoal)."""
     if limit <= 0:
         return []
@@ -302,12 +308,14 @@ async def _list_goal_roots(graph: Any, *, limit: int = 40) -> list[dict[str, Any
             WITH n, count(p) AS parents
             WHERE parents = 0
             RETURN n.id, n.name, n.type, n.properties
+            ORDER BY n.name, n.id
+            SKIP $offset
             LIMIT $limit
             """,
-            {"limit": limit},
+            {"limit": limit, "offset": offset},
         )
     except Exception:
-        return await _fetch_goals_page(graph, needle="", limit=limit)
+        return await _fetch_goals_page(graph, needle="", limit=limit, offset=offset)
     goals: list[dict[str, Any]] = []
     for row in rows or []:
         if not row:
@@ -324,6 +332,8 @@ async def _list_goal_children(
     parent_id: str,
     *,
     limit: int = 80,
+    offset: int = 0,
+    needle: str = "",
 ) -> list[dict[str, Any]]:
     """Direct has_subgoal children of a goal — for tree drill-down in the picker."""
     if limit <= 0 or not parent_id:
@@ -333,10 +343,13 @@ async def _list_goal_children(
             """
             MATCH (p:Node)-[r:EDGE]->(c:Node)
             WHERE p.id = $pid AND r.relationship_name = 'has_subgoal'
+              AND ($needle = '' OR toLower(c.name) CONTAINS $needle)
             RETURN c.id, c.name, c.type, c.properties
+            ORDER BY c.name, c.id
+            SKIP $offset
             LIMIT $limit
             """,
-            {"pid": parent_id, "limit": limit},
+            {"pid": parent_id, "limit": limit, "offset": offset, "needle": needle},
         )
     except Exception:
         return []
@@ -416,6 +429,103 @@ async def _attach_parent_paths(
             row["parent_name"] = None
         out.append(row)
     return out
+
+
+def _epoch_ms(value: Any) -> int | None:
+    """Normalize a graph timestamp into epoch milliseconds."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = int(value)
+        return number if number > 10_000_000_000 else number * 1000
+    if hasattr(value, "timestamp"):
+        try:
+            return int(value.timestamp() * 1000)
+        except (OSError, OverflowError, ValueError):
+            return None
+    text = str(value).strip()
+    if not text or text.lower() == "none":
+        return None
+    try:
+        number = int(text)
+    except ValueError:
+        number = None
+    if number is not None:
+        return number if number > 10_000_000_000 else number * 1000
+    try:
+        parsed = datetime.fromisoformat(text[:26])
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
+async def _attach_known_fields(
+    graph: Any,
+    goals: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fill fields the graph already knows but node properties do not store.
+
+    ``created_at`` lives on the node timestamp column. A structural parent is
+    the primary purpose: an explicit ``serves`` edge wins, otherwise a subgoal
+    advances its parent. Owner and progress stay empty unless a node stored them.
+    """
+    if not goals:
+        return goals
+    ids = [g["id"] for g in goals]
+    created: dict[str, int] = {}
+    try:
+        rows = await graph.query(
+            "MATCH (n:Node) WHERE n.id IN $ids RETURN n.id, n.created_at",
+            {"ids": ids},
+        )
+        for row in rows or []:
+            if not row:
+                continue
+            stamp = _epoch_ms(row[1])
+            if stamp is not None:
+                created[str(row[0])] = stamp
+    except Exception:
+        created = {}
+
+    serves: set[tuple[str, str]] = set()
+    child_ids = [g["id"] for g in goals if not g.get("primary_purpose_id") and g.get("parent_id")]
+    parent_ids = [g["parent_id"] for g in goals if not g.get("primary_purpose_id") and g.get("parent_id")]
+    if child_ids:
+        try:
+            rows = await graph.query(
+                """
+                MATCH (c:Node)-[r:EDGE]->(p:Node)
+                WHERE c.id IN $ids AND p.id IN $parents AND r.relationship_name = 'serves'
+                RETURN c.id, p.id
+                """,
+                {"ids": child_ids, "parents": parent_ids},
+            )
+            for row in rows or []:
+                if row:
+                    serves.add((str(row[0]), str(row[1])))
+        except Exception:
+            serves = set()
+
+    for goal in goals:
+        if goal.get("created_at") in (None, "") and goal["id"] in created:
+            goal["created_at"] = created[goal["id"]]
+        if goal.get("primary_purpose_id") or not goal.get("parent_id"):
+            continue
+        goal["primary_purpose_id"] = goal["parent_id"]
+        goal["primary_purpose_relation"] = (
+            "serves" if (goal["id"], goal["parent_id"]) in serves else "advances"
+        )
+    return goals
+
+
+async def _enrich_goals(graph: Any, goals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    goals = await _attach_parent_paths(graph, goals)
+    goals = await _attach_child_counts(graph, goals)
+    return await _attach_known_fields(graph, goals)
 
 
 async def _find_cpd_root(graph: Any) -> str | None:
@@ -654,7 +764,7 @@ async def list_graph_annotations(
     async with set_database_global_context_variables(dataset_id, dataset.owner_id):
         graph = await get_graph_engine()
 
-        goals_total = await _count_teleology_goals(graph)
+        goals_total = -1 if browse_parent is not None else await _count_teleology_goals(graph)
         annotations: list[dict[str, Any]] = []
         goals: list[dict[str, Any]] = []
         candidates: list[dict[str, Any]] = []
@@ -662,14 +772,33 @@ async def list_graph_annotations(
 
         if focus:
             try:
-                nodes, edges = await graph.get_neighborhood(
-                    [focus],
-                    depth=1,
-                    edge_types=["serves", "advances", "blocks", "has_subgoal"],
+                focus_node = await graph.get_node(focus)
+                by_id = {focus: focus_node} if focus_node else {}
+                rows = await graph.query(
+                    """MATCH (s:Node)-[r:EDGE]->(t:Node)
+                    WHERE (s.id = $focus OR t.id = $focus)
+                      AND r.relationship_name IN ['serves', 'advances', 'blocks']
+                    RETURN s.id, s.name, s.type, s.properties,
+                           t.id, t.name, t.type, t.properties, r.relationship_name
+                    ORDER BY r.relationship_name, s.id, t.id
+                    LIMIT $limit""",
+                    {"focus": focus, "limit": cap},
                 )
+                edges = []
+                for row in rows or []:
+                    sid, tid = str(row[0]), str(row[4])
+                    for nid, name, kind, properties in (
+                        (sid, row[1], row[2], row[3]),
+                        (tid, row[5], row[6], row[7]),
+                    ):
+                        props = _parse_node_props(properties)
+                        props.setdefault("name", str(name or ""))
+                        props.setdefault("type", str(kind or ""))
+                        by_id[nid] = props
+                    edges.append((sid, tid, row[8], {}))
             except Exception:
-                nodes, edges = [], []
-            by_id = {str(nid): (props or {}) for nid, props in nodes}
+                edges = []
+                by_id = {}
             if focus not in by_id:
                 try:
                     focus_node = await graph.get_node(focus)
@@ -713,6 +842,7 @@ async def list_graph_annotations(
             ]
             if focus not in {g["id"] for g in goals} and focus in by_id:
                 goals.insert(0, _node_row(focus, by_id.get(focus)))
+            goals = await _enrich_goals(graph, goals)
             candidates = [
                 _node_row(nid, props)
                 for nid, props in by_id.items()
@@ -720,65 +850,47 @@ async def list_graph_annotations(
             ][:cap]
             # Persist advances for this neighbourhood so recall(goal_id) works.
             await _materialize_advances(graph, annotations)
-        elif browse_parent is not None and not needle and not focus:
+        elif browse_parent is not None and not focus:
             # Purpose-picker tree drill-down (never dumps 12k flat goals).
             fetch_n = goals_cap if goals_cap > 0 else 40
             if browse_parent in ("_roots", "roots", ""):
-                goals = await _list_goal_roots(graph, limit=fetch_n)
+                goals = await _list_goal_roots(graph, limit=fetch_n, offset=goals_skip)
+                try:
+                    count_rows = await graph.query(
+                        """MATCH (n:Node) WHERE n.type = 'Goal'
+                        OPTIONAL MATCH (p:Node)-[r:EDGE]->(n)
+                        WHERE r.relationship_name = 'has_subgoal'
+                        WITH n, count(p) AS parents WHERE parents = 0
+                        RETURN count(n)"""
+                    )
+                    goals_total = int(count_rows[0][0]) if count_rows else 0
+                except Exception:
+                    goals_total = goals_skip + len(goals)
             else:
                 goals = await _list_goal_children(
-                    graph, browse_parent, limit=fetch_n
+                    graph, browse_parent, limit=fetch_n, offset=goals_skip, needle=needle
                 )
-            goals = await _attach_parent_paths(graph, goals)
-            goals = await _attach_child_counts(graph, goals)
+                try:
+                    count_rows = await graph.query(
+                        """MATCH (p:Node)-[r:EDGE]->(c:Node)
+                        WHERE p.id = $pid AND r.relationship_name = 'has_subgoal'
+                          AND ($needle = '' OR toLower(c.name) CONTAINS $needle)
+                        RETURN count(c)""",
+                        {"pid": browse_parent, "needle": needle},
+                    )
+                    goals_total = int(count_rows[0][0]) if count_rows else 0
+                except Exception:
+                    goals_total = goals_skip + len(goals)
+            goals = await _enrich_goals(graph, goals)
+        else:
             fetch_n = goals_cap if goals_cap > 0 else 24
             if needle or goals_skip > 0:
-                # Search / load-more: page of goals only (no full-tree canvas rebuild).
-                goals = await _fetch_goals_page(
-                    graph, needle=needle, limit=fetch_n, offset=goals_skip
-                )
-                goals = await _attach_parent_paths(graph, goals)
-                goal_ids = [g["id"] for g in goals]
-                edge_rows = await _edges_among_ids(
-                    graph,
-                    goal_ids,
-                    relationship_names=TELEOLOGY_RELATIONSHIPS | frozenset({"has_subgoal"}),
-                )
-                name_by_id = {g["id"]: g["name"] for g in goals}
-                type_by_id = {g["id"]: g["type"] for g in goals}
-                for sid, tid, rel, _props in edge_rows:
-                    if rel == "has_subgoal":
-                        child_id, parent_goal_id = tid, sid
-                        annotations.append(
-                            {
-                                "source_id": child_id,
-                                "source_name": name_by_id.get(child_id, child_id),
-                                "source_type": type_by_id.get(child_id, "Goal"),
-                                "target_id": parent_goal_id,
-                                "target_name": name_by_id.get(parent_goal_id, parent_goal_id),
-                                "target_type": type_by_id.get(parent_goal_id, "Goal"),
-                                "relationship": "advances",
-                            }
-                        )
-                    else:
-                        annotations.append(
-                            {
-                                "source_id": sid,
-                                "source_name": name_by_id.get(sid, sid),
-                                "source_type": type_by_id.get(sid, "Entity"),
-                                "target_id": tid,
-                                "target_name": name_by_id.get(tid, tid),
-                                "target_type": type_by_id.get(tid, "Goal"),
-                                "relationship": rel,
-                            }
-                        )
+                goals = await _fetch_goals_page(graph, needle=needle, limit=fetch_n, offset=goals_skip)
+                goals = await _enrich_goals(graph, goals)
             else:
-                # Default open: connected CPD root slice so the canvas has real lines.
-                goals, annotations, candidates = await _connected_preview(
-                    graph, limit=fetch_n
-                )
+                goals, annotations, candidates = await _connected_preview(graph, limit=fetch_n)
                 await _materialize_advances(graph, annotations)
-                goals = await _attach_parent_paths(graph, goals)
+                goals = await _enrich_goals(graph, goals)
 
         if goals_total < 0:
             goals_total = len(goals) + goals_skip

@@ -24,6 +24,12 @@ class _TeleologyNode(DataPoint):
 class Goal(_TeleologyNode):
     """An outcome that knowledge can serve, advance, or block."""
 
+    owner: str | None = None
+    progress: int | None = Field(default=None, ge=0, le=100)
+    primary_purpose_id: str | None = None
+    primary_purpose_relation: Literal["serves", "advances"] | None = None
+    source: str | None = None
+
 
 class Purpose(_TeleologyNode):
     """A statement of why a goal or body of work exists."""
