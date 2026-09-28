@@ -64,6 +64,25 @@ async def coverage_run(run_id: str) -> dict[str, Any]:
     return engine.present(run) or run
 
 
+async def coverage_items(
+    run_id: str, user: Any, *, status: str | None = None, limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    from cognee.modules.teleology.graph_annotations import _authorized_dataset
+
+    try:
+        UUID(str(run_id))
+    except ValueError as exc:
+        raise CoverageServiceError(404, "Coverage run not found.") from exc
+    run = await get_coverage_engine().store.get_run(run_id)
+    if not run:
+        raise CoverageServiceError(404, "Coverage run not found.")
+    await _authorized_dataset(UUID(str(run["dataset_id"])), user, "read")
+    return await get_coverage_engine().store.list_items_page(
+        run_id, status=status, limit=limit, offset=offset
+    )
+
+
 async def pause_coverage(run_id: str) -> dict[str, Any]:
     try:
         return await get_coverage_engine().pause(run_id)

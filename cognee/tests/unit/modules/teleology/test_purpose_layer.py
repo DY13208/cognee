@@ -106,6 +106,16 @@ def storage(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_coverage_run_id_is_saved_on_proposal(storage):
+    run_id = str(uuid4())
+    proposal = await purpose_layer.propose_teleology(
+        uuid4(), SimpleNamespace(), source_goal_id="korea",
+        proposal={"items": []}, generated_by="purpose-agent", run_id=run_id,
+    )
+    assert proposal["run_id"] == run_id
+
+
+@pytest.mark.asyncio
 async def test_propose_stays_out_of_the_graph(storage):
     dataset_id = uuid4()
     proposal = await purpose_layer.propose_teleology(

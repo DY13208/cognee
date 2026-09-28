@@ -35,7 +35,9 @@ class CoverageSources(Protocol):
 
     async def context(self, dataset_id: Any, user: Any, goal_id: str) -> dict[str, Any]: ...
 
-    async def analyze(self, dataset_id: Any, user: Any, goal_id: str) -> dict[str, Any]: ...
+    async def analyze(
+        self, dataset_id: Any, user: Any, goal_id: str, run_id: str
+    ) -> dict[str, Any]: ...
 
     async def open_proposal(self, dataset_id: Any, goal_id: str) -> dict[str, Any] | None: ...
 
@@ -598,7 +600,7 @@ class CoverageEngine:
             await self._write_state(
                 dataset_id, goal_id, state, status="analyzing", last_run_id=run_id
             )
-            result = await self.sources.analyze(dataset_id, user, goal_id)
+            result = await self.sources.analyze(dataset_id, user, goal_id, run_id)
             if not await self._still_claimed(item):
                 return
             await self._record_usage(run_id, item, result)

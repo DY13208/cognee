@@ -569,6 +569,7 @@ async def propose_teleology(
     source_goal_id: str,
     proposal: dict[str, Any],
     generated_by: str = "purpose-agent",
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Store a candidate layer. The company tree and formal graph stay unchanged."""
     source_goal_id = str(source_goal_id).strip()
@@ -617,7 +618,7 @@ async def propose_teleology(
         "dataset_id": str(dataset_id),
         "source_goal_id": source_goal_id,
         "status": "open",
-        "run_id": str(proposal.get("run_id") or uuid4()),
+        "run_id": str(run_id or proposal.get("run_id") or uuid4()),
         "created_at": int(time.time() * 1000),
         "generated_by": generated_by,
         "source_revision": str(proposal.get("source_revision") or context.get("revision") or ""),

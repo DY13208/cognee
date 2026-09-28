@@ -39,6 +39,22 @@ class FakeClient:
 
 
 @pytest.mark.asyncio
+async def test_proposal_review_tools_only_issue_get_requests():
+    registry = FakeRegistry()
+    client = FakeClient()
+    register_teleology_tools(registry, lambda: client)
+
+    await registry.tools["list_teleology_proposals"]("dataset-1", run_id="run-1")
+    await registry.tools["get_teleology_proposal"]("dataset-1", "proposal-1")
+    await registry.tools["get_teleology_coverage_items"]("run-1", status="done")
+
+    assert [call[0] for call in client.calls] == ["GET", "GET", "GET"]
+    assert client.calls[0][3]["run_id"] == "run-1"
+    assert client.calls[1][3] == {"dataset_id": "dataset-1"}
+    assert client.calls[2][3]["status"] == "done"
+
+
+@pytest.mark.asyncio
 async def test_teleology_tools_route_to_api():
     registry = FakeRegistry()
     client = FakeClient()

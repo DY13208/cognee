@@ -417,7 +417,9 @@ async def _complete(context: dict[str, Any], open_items: list[dict[str, Any]]) -
     return result.model_dump()
 
 
-async def analyze_goal(dataset_id: UUID, user: User, goal_id: str) -> dict[str, Any]:
+async def analyze_goal(
+    dataset_id: UUID, user: User, goal_id: str, *, run_id: str | None = None
+) -> dict[str, Any]:
     """Read one goal, ask the configured model, and store a proposal. The graph stays unchanged."""
     from cognee.modules.teleology.proposal_store import open_items as load_open_items
 
@@ -431,4 +433,5 @@ async def analyze_goal(dataset_id: UUID, user: User, goal_id: str) -> dict[str, 
         source_goal_id=goal_id,
         proposal=proposal,
         generated_by="purpose-agent",
+        **({"run_id": run_id} if run_id is not None else {}),
     )

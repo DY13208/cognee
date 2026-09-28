@@ -78,7 +78,7 @@ class _Sources:
     async def context(self, _dataset_id, _user, goal_id):
         return _context(goal_id)
 
-    async def analyze(self, _dataset_id, _user, goal_id):
+    async def analyze(self, _dataset_id, _user, goal_id, run_id):
         return {"id": "prop-" + goal_id, "items": [{"kind": "purpose", "name": "做成"}]}
 
     async def open_proposal(self, _dataset_id, _goal_id):

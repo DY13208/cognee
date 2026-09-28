@@ -11,6 +11,17 @@ from pydantic import Field
 from cognee.api.DTO import InDTO
 from cognee.exceptions import CogneeApiError
 from cognee.modules.data.exceptions.exceptions import DatasetNotFoundError
+from cognee.modules.teleology.coverage_service import (
+    CoverageServiceError,
+    cancel_coverage,
+    coverage_items,
+    coverage_run,
+    coverage_state,
+    pause_coverage,
+    resume_coverage,
+    retry_coverage_failures,
+    start_coverage,
+)
 from cognee.modules.teleology.goal_workspace import (
     create_goal as create_workspace_goal,
 )
@@ -29,22 +40,14 @@ from cognee.modules.teleology.goal_workspace import (
     update_goal as update_workspace_goal,
 )
 from cognee.modules.teleology.graph_annotations import (
+    _authorized_dataset,
     add_graph_annotation,
     list_graph_annotations,
     remove_graph_annotation,
     sync_from_company_tree,
     sync_goals_to_graph,
 )
-from cognee.modules.teleology.coverage_service import (
-    CoverageServiceError,
-    cancel_coverage,
-    coverage_run,
-    coverage_state,
-    pause_coverage,
-    resume_coverage,
-    retry_coverage_failures,
-    start_coverage,
-)
+from cognee.modules.teleology.proposal_review import get_proposal, list_proposals
 from cognee.modules.teleology.purpose_analyze import analyze_goal
 from cognee.modules.teleology.purpose_layer import (
     ProposalCommitIncomplete,
@@ -616,6 +619,48 @@ def get_teleology_router() -> APIRouter:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Purpose analysis failed: %s", exc, exc_info=True)
             return JSONResponse(status_code=502, content={"error": str(exc)})
+
+    @router.get("/proposals", response_model=dict)
+    async def list_teleology_proposals(
+        dataset_id: UUID,
+        run_id: Optional[str] = None,
+        source_goal_id: Optional[str] = None,
+        status: Optional[str] = None,
+        generated_by: Optional[str] = None,
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+        user: User = Depends(get_authenticated_user),
+    ):
+        await _authorized_dataset(dataset_id, user, "read")
+        return await list_proposals(
+            dataset_id, run_id=run_id, source_goal_id=source_goal_id,
+            status=status, generated_by=generated_by, limit=limit, offset=offset,
+        )
+
+    @router.get("/proposals/{proposal_id}", response_model=dict)
+    async def get_teleology_proposal(
+        proposal_id: str,
+        dataset_id: UUID,
+        user: User = Depends(get_authenticated_user),
+    ):
+        await _authorized_dataset(dataset_id, user, "read")
+        proposal = await get_proposal(dataset_id, proposal_id)
+        if proposal is None:
+            return JSONResponse(status_code=404, content={"error": "Proposal not found."})
+        return proposal
+
+    @router.get("/coverage/runs/{run_id}/items", response_model=dict)
+    async def get_coverage_run_items(
+        run_id: str,
+        status: Optional[str] = None,
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            return await coverage_items(run_id, user, status=status, limit=limit, offset=offset)
+        except CoverageServiceError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
 
     @router.post("/coverage/runs", response_model=dict)
     async def start_coverage_run(

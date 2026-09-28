@@ -51,8 +51,10 @@ class ProductionSources:
     async def context(self, dataset_id: Any, user: Any, goal_id: str) -> dict[str, Any]:
         return await get_purpose_context(UUID(str(dataset_id)), user, goal_id)
 
-    async def analyze(self, dataset_id: Any, user: Any, goal_id: str) -> dict[str, Any]:
-        return await analyze_goal(UUID(str(dataset_id)), user, goal_id)
+    async def analyze(
+        self, dataset_id: Any, user: Any, goal_id: str, run_id: str
+    ) -> dict[str, Any]:
+        return await analyze_goal(UUID(str(dataset_id)), user, goal_id, run_id=run_id)
 
     async def open_proposal(self, dataset_id: Any, goal_id: str) -> dict[str, Any] | None:
         await self._load_open(dataset_id)

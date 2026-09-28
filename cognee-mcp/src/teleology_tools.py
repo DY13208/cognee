@@ -12,13 +12,16 @@ logger = logging.getLogger(__name__)
 
 
 def register_teleology_tools(registry, get_client) -> None:
-    async def request(method: str, path: str, *, body=None, params=None):
+    async def request(
+        method: str, path: str, *, body=None, params=None, safe_error=False
+    ):
         try:
             result = await get_client().api_request(method, path, json_body=body, params=params)
             return [types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False, default=str))]
         except Exception as exc:
             logger.exception("Teleology MCP %s %s failed", method, path)
-            return [types.TextContent(type="text", text=f"Error: {type(exc).__name__}: {exc}")]
+            message = "Teleology request failed." if safe_error else f"{type(exc).__name__}: {exc}"
+            return [types.TextContent(type="text", text=f"Error: {message}")]
 
     @registry.tool(tags={"teleology"})
     async def get_teleology(q: str = None, limit: int = 80, offset: int = 0) -> list:
@@ -166,6 +169,35 @@ def register_teleology_tools(registry, get_client) -> None:
             "POST",
             f"/api/v1/teleology/annotations/purpose-proposals/{quote(proposal_id, safe='')}/commit",
             body={"dataset_id": dataset_id, "accepted_item_ids": accepted_item_ids or []},
+        )
+
+    @registry.tool(tags={"teleology"})
+    async def list_teleology_proposals(
+        dataset_id: str, run_id: str = None, source_goal_id: str = None,
+        status: str = None, limit: int = 50, offset: int = 0,
+    ) -> list:
+        """Read paginated proposal summaries within a dataset, optionally for one coverage run."""
+        return await request("GET", "/api/v1/teleology/proposals", params={
+            "dataset_id": dataset_id, "run_id": run_id, "source_goal_id": source_goal_id,
+            "status": status, "limit": limit, "offset": offset,
+        }, safe_error=True)
+
+    @registry.tool(tags={"teleology"})
+    async def get_teleology_proposal(dataset_id: str, proposal_id: str) -> list:
+        """Read all review items and evidence for one dataset-scoped proposal."""
+        return await request(
+            "GET", f"/api/v1/teleology/proposals/{quote(proposal_id, safe='')}",
+            params={"dataset_id": dataset_id}, safe_error=True,
+        )
+
+    @registry.tool(tags={"teleology"})
+    async def get_teleology_coverage_items(
+        run_id: str, status: str = None, limit: int = 50, offset: int = 0,
+    ) -> list:
+        """Read persisted queue items for one coverage run without changing their status."""
+        return await request(
+            "GET", f"/api/v1/teleology/coverage/runs/{quote(run_id, safe='')}/items",
+            params={"status": status, "limit": limit, "offset": offset}, safe_error=True,
         )
 
     @registry.tool(tags={"teleology"})

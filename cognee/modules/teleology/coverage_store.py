@@ -204,6 +204,13 @@ class MemoryCoverageStore:
         rows.sort(key=lambda item: (_priority(item), item["goal_id"]))
         return rows
 
+    async def list_items_page(
+        self, run_id: str, *, status: str | None = None, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        rows = await self.list_items(run_id, status)
+        return {"items": rows[offset:offset + limit], "total": len(rows),
+                "limit": limit, "offset": offset}
+
     async def release_expired_leases(self, run_id: str) -> int:
         released = 0
         for item in self.items.values():
@@ -574,6 +581,29 @@ class SqlCoverageStore:
                 .all()
             )
         return [_item_dict(row) for row in rows]
+
+    async def list_items_page(
+        self, run_id: str, *, status: str | None = None, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        from sqlalchemy import func, select
+
+        from cognee.modules.teleology.coverage_models import TeleologyAnalysisRunItemRecord
+
+        filters = [TeleologyAnalysisRunItemRecord.run_id == _uuid(run_id)]
+        if status is not None:
+            filters.append(TeleologyAnalysisRunItemRecord.status == status)
+        async with await self._session() as session:
+            total = (await session.execute(
+                select(func.count()).select_from(TeleologyAnalysisRunItemRecord).where(*filters)
+            )).scalar_one()
+            rows = (await session.execute(
+                select(TeleologyAnalysisRunItemRecord).where(*filters)
+                .order_by(TeleologyAnalysisRunItemRecord.priority,
+                          TeleologyAnalysisRunItemRecord.goal_id)
+                .limit(limit).offset(offset)
+            )).scalars().all()
+        return {"items": [_item_dict(row) for row in rows], "total": total,
+                "limit": limit, "offset": offset}
 
     async def release_expired_leases(self, run_id: str) -> int:
         from sqlalchemy import or_, select

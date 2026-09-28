@@ -51,7 +51,7 @@ class FakeSources:
     async def context(self, _dataset_id, _user, goal_id):
         return self.contexts[goal_id]
 
-    async def analyze(self, _dataset_id, _user, goal_id):
+    async def analyze(self, _dataset_id, _user, goal_id, run_id):
         self.calls.append(goal_id)
         return await self._analyze(goal_id)
 
@@ -509,7 +509,7 @@ class _StreamSources:
             return _context(goal_id, goal={"id": goal_id, "name": "空", "description": ""}, note="")
         return _context(goal_id)
 
-    async def analyze(self, _dataset_id, _user, goal_id):
+    async def analyze(self, _dataset_id, _user, goal_id, run_id):
         self.calls += 1
         return _proposal(goal_id)
 
