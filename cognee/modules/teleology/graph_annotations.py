@@ -119,19 +119,75 @@ def _yaml_teleology_nodes() -> list[Goal | Purpose | Constraint]:
     ]
 
 
+def _annotations_from_edges(
+    edges: list[tuple[str, str, str, dict[str, Any]]],
+    by_id: dict[str, dict[str, Any]],
+    select_purpose_relations: Any,
+) -> list[dict[str, Any]]:
+    """Keep real purpose edges. has_subgoal stays in the tree and is not copied."""
+    tree_pairs = {
+        (source_id, target_id)
+        for source_id, target_id, relationship, _props in edges
+        if relationship == "has_subgoal"
+    }
+    selected = select_purpose_relations(
+        [
+            {
+                "source_id": source_id,
+                "target_id": target_id,
+                "relationship": relationship,
+                "properties": props,
+            }
+            for source_id, target_id, relationship, props in edges
+        ],
+        tree_pairs,
+    )
+    annotations = []
+    for edge in selected:
+        source_id = str(edge["source_id"])
+        target_id = str(edge["target_id"])
+        source_props = by_id.get(source_id, {})
+        target_props = by_id.get(target_id, {})
+        properties = edge.get("properties") or {}
+        annotations.append(
+            {
+                "source_id": source_id,
+                "source_name": _props_name(source_props) or source_id,
+                "source_type": _props_type(source_props),
+                "target_id": target_id,
+                "target_name": _props_name(target_props) or target_id,
+                "target_type": _props_type(target_props),
+                "relationship": edge["relationship"],
+                "origin": properties.get("origin"),
+                "reason": properties.get("reason") or "",
+                "evidence_node_ids": properties.get("evidence_node_ids") or [],
+            }
+        )
+    annotations.sort(key=lambda row: (row["relationship"], row["source_name"], row["target_name"]))
+    return annotations
+
+
 def _index_graph(
     nodes: list, edges: list
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    from cognee.modules.teleology.purpose_relations import edge_properties, select_purpose_relations
+
     by_id: dict[str, dict[str, Any]] = {}
     for raw_id, props in nodes:
         node_id = str(raw_id)
         by_id[node_id] = props or {}
 
-    annotations: list[dict[str, Any]] = []
+    parsed: list[tuple[str, str, str, dict[str, Any]]] = []
     for edge in edges:
+        props: dict[str, Any] = {}
         if isinstance(edge, (tuple, list)) and len(edge) >= 3:
-            if len(edge) >= 4 and isinstance(edge[0], (str, int)) and isinstance(edge[1], (str, int)):
+            if (
+                len(edge) >= 4
+                and isinstance(edge[0], (str, int))
+                and isinstance(edge[1], (str, int))
+            ):
                 source_id, target_id, relationship = str(edge[0]), str(edge[1]), str(edge[2])
+                props = edge_properties(edge[3])
             else:
                 unpacked = _unpack_edge(edge)
                 if unpacked is None:
@@ -141,22 +197,8 @@ def _index_graph(
                     continue
         else:
             continue
-        if relationship.lower() not in TELEOLOGY_RELATIONSHIPS:
-            continue
-        source_props = by_id.get(source_id, {})
-        target_props = by_id.get(target_id, {})
-        annotations.append(
-            {
-                "source_id": source_id,
-                "source_name": _props_name(source_props) or source_id,
-                "source_type": _props_type(source_props),
-                "target_id": target_id,
-                "target_name": _props_name(target_props) or target_id,
-                "target_type": _props_type(target_props),
-                "relationship": relationship.lower(),
-            }
-        )
-    annotations.sort(key=lambda row: (row["relationship"], row["source_name"], row["target_name"]))
+        parsed.append((source_id, target_id, relationship.lower(), props))
+    annotations = _annotations_from_edges(parsed, by_id, select_purpose_relations)
     return by_id, annotations
 
 
@@ -307,6 +349,7 @@ async def _list_goal_roots(graph: Any, *, limit: int = 40, offset: int = 0) -> l
             WHERE r.relationship_name = 'has_subgoal'
             WITH n, count(p) AS parents
             WHERE parents = 0
+              AND (n.properties IS NULL OR NOT n.properties CONTAINS '"source": "ai_inferred"')
             RETURN n.id, n.name, n.type, n.properties
             ORDER BY n.name, n.id
             SKIP $offset
@@ -469,9 +512,9 @@ async def _attach_known_fields(
 ) -> list[dict[str, Any]]:
     """Fill fields the graph already knows but node properties do not store.
 
-    ``created_at`` lives on the node timestamp column. A structural parent is
-    the primary purpose: an explicit ``serves`` edge wins, otherwise a subgoal
-    advances its parent. Owner and progress stay empty unless a node stored them.
+    ``created_at`` lives on the node timestamp column. A parent goal is not a
+    purpose. Only an explicit non-structural ``serves`` edge can point at it.
+    Owner and progress stay empty unless a node stored them.
     """
     if not goals:
         return goals
@@ -493,20 +536,28 @@ async def _attach_known_fields(
 
     serves: set[tuple[str, str]] = set()
     child_ids = [g["id"] for g in goals if not g.get("primary_purpose_id") and g.get("parent_id")]
-    parent_ids = [g["parent_id"] for g in goals if not g.get("primary_purpose_id") and g.get("parent_id")]
+    parent_ids = [
+        g["parent_id"] for g in goals if not g.get("primary_purpose_id") and g.get("parent_id")
+    ]
     if child_ids:
+        from cognee.modules.teleology.purpose_relations import edge_properties
+
         try:
             rows = await graph.query(
                 """
                 MATCH (c:Node)-[r:EDGE]->(p:Node)
                 WHERE c.id IN $ids AND p.id IN $parents AND r.relationship_name = 'serves'
-                RETURN c.id, p.id
+                RETURN c.id, p.id, r.properties
                 """,
                 {"ids": child_ids, "parents": parent_ids},
             )
             for row in rows or []:
-                if row:
-                    serves.add((str(row[0]), str(row[1])))
+                if not row:
+                    continue
+                props = edge_properties(row[2] if len(row) > 2 else None)
+                if str(props.get("origin") or "") == "system_derived":
+                    continue
+                serves.add((str(row[0]), str(row[1])))
         except Exception:
             serves = set()
 
@@ -515,10 +566,10 @@ async def _attach_known_fields(
             goal["created_at"] = created[goal["id"]]
         if goal.get("primary_purpose_id") or not goal.get("parent_id"):
             continue
+        if (goal["id"], goal["parent_id"]) not in serves:
+            continue
         goal["primary_purpose_id"] = goal["parent_id"]
-        goal["primary_purpose_relation"] = (
-            "serves" if (goal["id"], goal["parent_id"]) in serves else "advances"
-        )
+        goal["primary_purpose_relation"] = "serves"
     return goals
 
 
@@ -629,37 +680,14 @@ async def _connected_preview(
         goals = goals[: max(1, limit)]
         keep = {g["id"] for g in goals}
 
-    annotations: list[dict[str, Any]] = []
-    for source_id, target_id, relationship, _props in edges:
-        sid, tid = str(source_id), str(target_id)
-        if sid not in keep or tid not in keep:
-            continue
-        rel = str(relationship or "").lower()
-        if rel == "has_subgoal":
-            child_id, parent_id = tid, sid
-            annotations.append(
-                {
-                    "source_id": child_id,
-                    "source_name": _props_name(by_id.get(child_id)) or child_id,
-                    "source_type": _props_type(by_id.get(child_id)) or "Goal",
-                    "target_id": parent_id,
-                    "target_name": _props_name(by_id.get(parent_id)) or parent_id,
-                    "target_type": _props_type(by_id.get(parent_id)) or "Goal",
-                    "relationship": "advances",
-                }
-            )
-        elif rel in TELEOLOGY_RELATIONSHIPS:
-            annotations.append(
-                {
-                    "source_id": sid,
-                    "source_name": _props_name(by_id.get(sid)) or sid,
-                    "source_type": _props_type(by_id.get(sid)),
-                    "target_id": tid,
-                    "target_name": _props_name(by_id.get(tid)) or tid,
-                    "target_type": _props_type(by_id.get(tid)),
-                    "relationship": rel,
-                }
-            )
+    scoped = [
+        (str(source_id), str(target_id), str(relationship or "").lower(), props or {})
+        for source_id, target_id, relationship, props in edges
+        if str(source_id) in keep and str(target_id) in keep
+    ]
+    from cognee.modules.teleology.purpose_relations import select_purpose_relations
+
+    annotations = _annotations_from_edges(scoped, by_id, select_purpose_relations)
 
     candidates = [
         _node_row(nid, props)
@@ -669,34 +697,14 @@ async def _connected_preview(
     return goals, annotations, candidates
 
 
-async def _materialize_advances(
-    graph: Any,
-    annotations: list[dict[str, Any]],
-) -> int:
-    """Persist synthetic advances so recall(goal_id=...) works without a full-tree sync."""
-    created = 0
-    for row in annotations:
-        if str(row.get("relationship") or "").lower() != "advances":
-            continue
-        child_id = str(row["source_id"])
-        parent_id = str(row["target_id"])
-        try:
-            if await graph.has_edge(child_id, parent_id, "advances"):
-                continue
-            await graph.add_edges(
-                [
-                    (
-                        child_id,
-                        parent_id,
-                        "advances",
-                        {"edge_text": "advances", "relationship_name": "advances"},
-                    )
-                ]
-            )
-            created += 1
-        except Exception:
-            continue
-    return created
+def _system_edge(relationship: str) -> dict[str, str]:
+    """Structural copy of the company tree. Not an AI-inferred purpose edge."""
+    return {
+        "edge_text": relationship,
+        "relationship_name": relationship,
+        "origin": "system_derived",
+        "generated_by": "company-tree-sync",
+    }
 
 
 async def _edges_among_ids(
@@ -764,13 +772,21 @@ async def list_graph_annotations(
     async with set_database_global_context_variables(dataset_id, dataset.owner_id):
         graph = await get_graph_engine()
 
-        goals_total = -1 if browse_parent is not None else await _count_teleology_goals(graph)
+        # A focused goal or a paged tree browse must not count every Goal node.
+        goals_total = (
+            -1 if browse_parent is not None or focus else await _count_teleology_goals(graph)
+        )
         annotations: list[dict[str, Any]] = []
         goals: list[dict[str, Any]] = []
         candidates: list[dict[str, Any]] = []
         by_id: dict[str, dict[str, Any]] = {}
 
         if focus:
+            from cognee.modules.teleology.purpose_relations import (
+                edge_properties,
+                select_purpose_relations,
+            )
+
             try:
                 focus_node = await graph.get_node(focus)
                 by_id = {focus: focus_node} if focus_node else {}
@@ -779,10 +795,18 @@ async def list_graph_annotations(
                     WHERE (s.id = $focus OR t.id = $focus)
                       AND r.relationship_name IN ['serves', 'advances', 'blocks']
                     RETURN s.id, s.name, s.type, s.properties,
-                           t.id, t.name, t.type, t.properties, r.relationship_name
+                           t.id, t.name, t.type, t.properties,
+                           r.relationship_name, r.properties
                     ORDER BY r.relationship_name, s.id, t.id
                     LIMIT $limit""",
-                    {"focus": focus, "limit": cap},
+                    {"focus": focus, "limit": min(cap * 8, 2000)},
+                )
+                pair_rows = await graph.query(
+                    """MATCH (p:Node)-[h:EDGE]->(c:Node)
+                    WHERE h.relationship_name = 'has_subgoal'
+                      AND (p.id = $focus OR c.id = $focus)
+                    RETURN p.id, c.id""",
+                    {"focus": focus},
                 )
                 edges = []
                 for row in rows or []:
@@ -795,7 +819,11 @@ async def list_graph_annotations(
                         props.setdefault("name", str(name or ""))
                         props.setdefault("type", str(kind or ""))
                         by_id[nid] = props
-                    edges.append((sid, tid, row[8], {}))
+                    edge_props = edge_properties(row[9] if len(row) > 9 else None)
+                    edges.append((sid, tid, str(row[8]), edge_props))
+                for row in pair_rows or []:
+                    if row and len(row) >= 2:
+                        edges.append((str(row[0]), str(row[1]), "has_subgoal", {}))
             except Exception:
                 edges = []
                 by_id = {}
@@ -806,35 +834,7 @@ async def list_graph_annotations(
                         by_id[focus] = focus_node
                 except Exception:
                     pass
-            for source_id, target_id, relationship, props in edges:
-                sid, tid = str(source_id), str(target_id)
-                rel = str(relationship or "").lower()
-                if rel == "has_subgoal":
-                    # Tree parent→child becomes teleology advances child→parent.
-                    child_id, parent_id = tid, sid
-                    annotations.append(
-                        {
-                            "source_id": child_id,
-                            "source_name": _props_name(by_id.get(child_id)) or child_id,
-                            "source_type": _props_type(by_id.get(child_id)) or "Goal",
-                            "target_id": parent_id,
-                            "target_name": _props_name(by_id.get(parent_id)) or parent_id,
-                            "target_type": _props_type(by_id.get(parent_id)) or "Goal",
-                            "relationship": "advances",
-                        }
-                    )
-                elif rel in TELEOLOGY_RELATIONSHIPS:
-                    annotations.append(
-                        {
-                            "source_id": sid,
-                            "source_name": _props_name(by_id.get(sid)) or sid,
-                            "source_type": _props_type(by_id.get(sid)),
-                            "target_id": tid,
-                            "target_name": _props_name(by_id.get(tid)) or tid,
-                            "target_type": _props_type(by_id.get(tid)),
-                            "relationship": rel,
-                        }
-                    )
+            annotations = _annotations_from_edges(edges, by_id, select_purpose_relations)
             goals = [
                 _node_row(nid, props)
                 for nid, props in by_id.items()
@@ -844,12 +844,8 @@ async def list_graph_annotations(
                 goals.insert(0, _node_row(focus, by_id.get(focus)))
             goals = await _enrich_goals(graph, goals)
             candidates = [
-                _node_row(nid, props)
-                for nid, props in by_id.items()
-                if _is_annotatable(props)
+                _node_row(nid, props) for nid, props in by_id.items() if _is_annotatable(props)
             ][:cap]
-            # Persist advances for this neighbourhood so recall(goal_id) works.
-            await _materialize_advances(graph, annotations)
         elif browse_parent is not None and not focus:
             # Purpose-picker tree drill-down (never dumps 12k flat goals).
             fetch_n = goals_cap if goals_cap > 0 else 40
@@ -861,6 +857,7 @@ async def list_graph_annotations(
                         OPTIONAL MATCH (p:Node)-[r:EDGE]->(n)
                         WHERE r.relationship_name = 'has_subgoal'
                         WITH n, count(p) AS parents WHERE parents = 0
+                          AND (n.properties IS NULL OR NOT n.properties CONTAINS '"source": "ai_inferred"')
                         RETURN count(n)"""
                     )
                     goals_total = int(count_rows[0][0]) if count_rows else 0
@@ -885,11 +882,12 @@ async def list_graph_annotations(
         else:
             fetch_n = goals_cap if goals_cap > 0 else 24
             if needle or goals_skip > 0:
-                goals = await _fetch_goals_page(graph, needle=needle, limit=fetch_n, offset=goals_skip)
+                goals = await _fetch_goals_page(
+                    graph, needle=needle, limit=fetch_n, offset=goals_skip
+                )
                 goals = await _enrich_goals(graph, goals)
             else:
                 goals, annotations, candidates = await _connected_preview(graph, limit=fetch_n)
-                await _materialize_advances(graph, annotations)
                 goals = await _enrich_goals(graph, goals)
 
         if goals_total < 0:
@@ -964,9 +962,7 @@ def _token_overlap(a: str, b: str) -> bool:
 
     stop = {"a", "an", "and", "for", "of", "or", "the", "to", "with", "的", "和", "与"}
     tok = lambda s: {
-        t.lower()
-        for t in re.findall(r"[\w\u4e00-\u9fff-]{2,}", s or "")
-        if t.lower() not in stop
+        t.lower() for t in re.findall(r"[\w\u4e00-\u9fff-]{2,}", s or "") if t.lower() not in stop
     }
     left, right = tok(a), tok(b)
     if not left or not right:
@@ -985,17 +981,14 @@ async def sync_from_company_tree(
     link_entities: bool = True,
     source_room: str | None = None,
 ) -> dict[str, Any]:
-    """CPD goals *are* teleology Goals — reuse the same node ids.
+    """Read the company tree and stamp structural edges for recall.
 
-    Company-tree members already persist as graph ``type=Goal`` with
-    ``cpd_kind=goal``. This pass only materializes purpose edges:
-
-    - each ``has_subgoal`` parent→child becomes teleology ``advances`` child→parent
-    - optionally, knowledge entities whose names overlap a goal get ``serves``
-
-    Does **not** mirror the tree into the teleology YAML — that previously
-    wrote 10k+ rows into ``goals.yaml`` and made Manage Goals / get_status
-    unusable. Graph nodes are the source of truth for the purpose lens.
+    This does not generate teleology. Company-tree nodes stay as they are.
+    Each ``has_subgoal`` parent→child may be copied to ``advances`` child→parent
+    with ``origin=system_derived`` so retrieval can walk the tree. Those copies
+    are hidden from purpose analysis and the purpose UI. Optional name-overlap
+    ``serves`` edges, when requested, get the same origin. Nothing here is an
+    AI-inferred purpose, and the company tree itself is not rewritten.
     """
     from cognee.context_global_variables import set_database_global_context_variables
     from cognee.infrastructure.databases.graph import get_graph_engine
@@ -1028,16 +1021,7 @@ async def sync_from_company_tree(
             child_id, parent_id = edge.target, edge.source
             if await graph.has_edge(child_id, parent_id, "advances"):
                 continue
-            await graph.add_edges(
-                [
-                    (
-                        child_id,
-                        parent_id,
-                        "advances",
-                        {"edge_text": "advances", "relationship_name": "advances"},
-                    )
-                ]
-            )
+            await graph.add_edges([(child_id, parent_id, "advances", _system_edge("advances"))])
             advances_created += 1
 
         if link_entities:
@@ -1079,7 +1063,7 @@ async def sync_from_company_tree(
                                 nid,
                                 gid,
                                 "serves",
-                                {"edge_text": "serves", "relationship_name": "serves"},
+                                _system_edge("serves"),
                             )
                         ]
                     )

@@ -15,6 +15,7 @@ from cognee.modules.teleology.graph_annotations import (
     _props_type,
 )
 from cognee.modules.teleology.models import Goal
+from cognee.modules.teleology.purpose_relations import edge_properties, select_purpose_relations
 from cognee.modules.users.models import User
 
 _UNSET = object()
@@ -63,13 +64,15 @@ async def goal_detail(dataset_id: UUID, user: User, goal_id: str) -> dict[str, A
         return {"dataset_id": str(dataset_id), "goal": row}
 
 
-_REL_BASE = """MATCH (s:Node)-[r:EDGE]->(t:Node)
+_PURPOSE_EDGES = """MATCH (s:Node)-[r:EDGE]->(t:Node)
 WHERE (s.id = $goal OR t.id = $goal)
   AND r.relationship_name IN ['serves', 'advances', 'blocks']
-OPTIONAL MATCH (t)-[h:EDGE]->(s)
-WHERE r.relationship_name = 'advances' AND h.relationship_name = 'has_subgoal'
-WITH s, t, r, count(h) AS structural
-WHERE r.relationship_name <> 'advances' OR structural = 0"""
+RETURN s.id, s.name, s.type, t.id, t.name, t.type, r.relationship_name, r.properties"""
+
+_TREE_PAIRS = """MATCH (p:Node)-[h:EDGE]->(c:Node)
+WHERE h.relationship_name = 'has_subgoal'
+  AND (p.id = $goal OR c.id = $goal)
+RETURN p.id, c.id"""
 
 
 async def goal_relations(
@@ -87,39 +90,56 @@ async def goal_relations(
         goal = await graph.get_node(goal_id)
         if not goal or _props_type(goal) != "Goal":
             raise KeyError("Goal not found in dataset graph")
-        params = {
-            "goal": goal_id,
-            "relationship": relationship or "",
-            "limit": limit,
-            "offset": offset,
+        rows = await graph.query(_PURPOSE_EDGES, {"goal": goal_id})
+        pair_rows = await graph.query(_TREE_PAIRS, {"goal": goal_id})
+        tree_pairs = {
+            (str(row[0]), str(row[1])) for row in pair_rows or [] if row and len(row) >= 2
         }
-        counts = await graph.query(
-            _REL_BASE + " RETURN r.relationship_name, count(*)",
-            {"goal": goal_id},
+        selected = select_purpose_relations(
+            [
+                {
+                    "source_id": str(row[0]),
+                    "source_name": str(row[1] or row[0]),
+                    "source_type": str(row[2] or ""),
+                    "target_id": str(row[3]),
+                    "target_name": str(row[4] or row[3]),
+                    "target_type": str(row[5] or ""),
+                    "relationship": str(row[6]),
+                    "properties": edge_properties(row[7] if len(row) > 7 else None),
+                }
+                for row in rows or []
+                if row and len(row) >= 7
+            ],
+            tree_pairs,
+        )
+        selected.sort(
+            key=lambda edge: (
+                edge["relationship"],
+                str(edge.get("source_name") or ""),
+                str(edge["source_id"]),
+                str(edge["target_id"]),
+            )
         )
         by_type = {key: 0 for key in ("serves", "advances", "blocks")}
-        for kind, count in counts or []:
-            by_type[str(kind)] = int(count or 0)
-        rows = await graph.query(
-            _REL_BASE
-            + """
-            WITH s, t, r WHERE $relationship = '' OR r.relationship_name = $relationship
-            RETURN s.id, s.name, s.type, t.id, t.name, t.type, r.relationship_name
-            ORDER BY r.relationship_name, s.name, s.id, t.id
-            SKIP $offset LIMIT $limit""",
-            params,
-        )
+        for edge in selected:
+            by_type[edge["relationship"]] += 1
+        wanted = relationship or ""
+        visible = [edge for edge in selected if not wanted or edge["relationship"] == wanted]
+        page = visible[offset : offset + limit]
         items = [
             {
-                "source_id": str(row[0]),
-                "source_name": str(row[1] or row[0]),
-                "source_type": str(row[2] or ""),
-                "target_id": str(row[3]),
-                "target_name": str(row[4] or row[3]),
-                "target_type": str(row[5] or ""),
-                "relationship": str(row[6]),
+                "source_id": edge["source_id"],
+                "source_name": edge.get("source_name") or edge["source_id"],
+                "source_type": edge.get("source_type") or "",
+                "target_id": edge["target_id"],
+                "target_name": edge.get("target_name") or edge["target_id"],
+                "target_type": edge.get("target_type") or "",
+                "relationship": edge["relationship"],
+                "origin": (edge.get("properties") or {}).get("origin"),
+                "reason": (edge.get("properties") or {}).get("reason") or "",
+                "evidence_node_ids": (edge.get("properties") or {}).get("evidence_node_ids") or [],
             }
-            for row in rows or []
+            for edge in page
         ]
         total = by_type.get(relationship, 0) if relationship else sum(by_type.values())
         return {

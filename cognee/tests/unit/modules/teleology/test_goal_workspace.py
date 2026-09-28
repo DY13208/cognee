@@ -32,10 +32,42 @@ class FakeGraph:
         if "ORDER BY p.id" in query:
             parent = self.parents.get(params["id"])
             return [(parent,)] if parent else []
-        if "RETURN r.relationship_name, count(*)" in query:
-            return [("serves", 23), ("advances", 2), ("blocks", 1)]
-        if "RETURN s.id, s.name" in query:
-            return [("child", "Finance", "Goal", "root", "Company", "Goal", "serves")]
+        if "RETURN p.id, c.id" in query:
+            return [("root", "child")]
+        if "r.properties" in query:
+            return [
+                (
+                    "child",
+                    "Finance",
+                    "Goal",
+                    "root",
+                    "Company",
+                    "Goal",
+                    "advances",
+                    '{"origin": "system_derived"}',
+                ),
+                ("child", "Finance", "Goal", "root", "Company", "Goal", "advances", None),
+                (
+                    "child",
+                    "Finance",
+                    "Goal",
+                    "stable",
+                    "稳定经营",
+                    "Purpose",
+                    "serves",
+                    '{"origin": "manual", "reason": "财务目标服务于稳定经营"}',
+                ),
+                (
+                    "child",
+                    "Finance",
+                    "Goal",
+                    "stable",
+                    "稳定经营",
+                    "Purpose",
+                    "serves",
+                    '{"origin": "manual", "reason": "财务目标服务于稳定经营"}',
+                ),
+            ]
         return []
 
     async def add_nodes(self, nodes):
@@ -72,14 +104,14 @@ async def test_path_reads_only_ancestor_chain(graph):
 
 
 @pytest.mark.asyncio
-async def test_relation_counts_and_page_query_are_separate(graph):
+async def test_relation_counts_drop_structural_and_duplicate_edges(graph):
     result = await goal_workspace.goal_relations(
-        uuid4(), SimpleNamespace(), "child", relationship="serves", limit=30, offset=30
+        uuid4(), SimpleNamespace(), "child", relationship="serves", limit=30, offset=0
     )
-    assert result["counts"] == {"serves": 23, "advances": 2, "blocks": 1}
-    assert result["total"] == 23
-    assert result["items"][0]["target_name"] == "Company"
-    assert graph.queries[-1][1]["offset"] == 30
+    assert result["counts"] == {"serves": 1, "advances": 0, "blocks": 0}
+    assert result["total"] == 1
+    assert result["items"][0]["target_name"] == "稳定经营"
+    assert result["items"][0]["origin"] == "manual"
 
 
 @pytest.mark.asyncio

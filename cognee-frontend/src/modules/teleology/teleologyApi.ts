@@ -65,6 +65,7 @@ export interface GraphAnnotation {
   target_name: string;
   target_type: string;
   relationship: TeleologyRelationship | string;
+  origin?: string | null;
 }
 
 export interface GraphAnnotationsPayload {
@@ -326,6 +327,100 @@ export async function deleteGraphAnnotation(
   });
   const resp = await instance.fetch(`/v1/teleology/annotations?${params}`, {
     method: "DELETE",
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export interface PurposeContext {
+  dataset_id: string;
+  goal: GraphNodeSummary;
+  ancestors: GraphNodeSummary[];
+  children: GraphNodeSummary[];
+  children_total: number;
+  note: string;
+  purposes: GraphNodeSummary[];
+  constraints: GraphNodeSummary[];
+  relations: GraphAnnotation[];
+  entities: GraphNodeSummary[];
+  documents: { id: string; name: string; summary: string }[];
+  source: string | null;
+  revision: string | null;
+  missing_purpose: boolean;
+}
+
+export interface ProposalItem {
+  id: string;
+  kind: "purpose" | "goal" | "constraint" | "relation" | "gap";
+  name: string;
+  description: string;
+  confidence: number | null;
+  reason: string;
+  evidence_node_ids?: string[];
+  evidence?: { id: string; name: string }[];
+  source_goal_ids: string[];
+  relationship?: "serves" | "advances" | "blocks" | null;
+  source?: string | null;
+  target?: string | null;
+  status: "proposed" | "accepted" | "ignored";
+}
+
+export interface TeleologyProposal {
+  id: string;
+  dataset_id: string;
+  source_goal_id: string;
+  status: "open" | "committed";
+  run_id: string;
+  created_at: number;
+  generated_by: string;
+  analysis_summary?: string;
+  summary: {
+    purposes: number;
+    goals: number;
+    constraints: number;
+    serves: number;
+    advances: number;
+    blocks: number;
+    missing_purpose: number;
+  };
+  items: ProposalItem[];
+}
+
+export async function getPurposeContext(instance: CogneeInstance, datasetId: string, goalId: string): Promise<PurposeContext> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}/purpose-context?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function analyzePurpose(instance: CogneeInstance, datasetId: string, goalId: string): Promise<TeleologyProposal> {
+  const resp = await instance.fetch("/v1/teleology/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, goal_id: goalId }),
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function startPurposeReview(instance: CogneeInstance, datasetId: string, goalId: string): Promise<TeleologyProposal> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}/purpose-review?${params}`, { method: "POST" });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function commitPurposeProposal(
+  instance: CogneeInstance,
+  datasetId: string,
+  proposalId: string,
+  acceptedItemIds: string[],
+  edits?: Record<string, { name?: string; description?: string; reason?: string }>,
+): Promise<{ committed_nodes: { id: string; name: string }[]; skipped_item_ids: string[] }> {
+  const resp = await instance.fetch(`/v1/teleology/annotations/purpose-proposals/${encodeURIComponent(proposalId)}/commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, accepted_item_ids: acceptedItemIds, edits: edits || null }),
   });
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();

@@ -14,6 +14,7 @@ import {
   loadSampleTeleology,
   clearTeleology,
   getGraphAnnotations,
+  getGoalPath,
   syncTeleologyGoals,
   syncTeleologyFromCompanyTree,
   createGraphAnnotation,
@@ -38,8 +39,7 @@ import PurposeLensGraph, {
 } from "./PurposeLensGraph";
 import { notifications } from "@mantine/notifications";
 import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
-import NavPanel, { type GoalTreeNode } from "./browser/ClassicNavPanel";
-import { buildGoalTree, type CompanyTreePayload } from "./browser/goalTree";
+import GoalNav, { type GoalPage } from "./browser/NavPanel";
 import "./browser/ontology.css";
 
 const REL_ZH: Record<TeleologyRelationship, string> = {
@@ -126,11 +126,11 @@ export default function TeleologyClassicPage() {
   const [status, setStatus] = useState<TeleologyStatus | null>(null);
   const [graph, setGraph] = useState<GraphAnnotationsPayload | null>(null);
   const [brainNodes, setBrainNodes] = useState<{ id: string; name: string; type: string }[]>([]);
-  /** Company-tree has_subgoal edges — drawn as advances when teleology sync hasn't run yet. */
-  const [treeAdvances, setTreeAdvances] = useState<
-    { childId: string; parentId: string; childName: string; parentName: string }[]
-  >([]);
-  const [goalTree, setGoalTree] = useState<GoalTreeNode[]>([]);
+  const [navRoots, setNavRoots] = useState<GraphNodeSummary[]>([]);
+  const [navPages, setNavPages] = useState<Record<string, GoalPage>>({});
+  const [navPath, setNavPath] = useState<string[]>([]);
+  const navPagesRef = useRef(navPages);
+  navPagesRef.current = navPages;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -173,7 +173,6 @@ export default function TeleologyClassicPage() {
     if (!cogniInstance || !datasetId) {
       setGraph(null);
       setBrainNodes([]);
-      setTreeAdvances([]);
       setGoalHits([]);
       setSelectedGoal(null);
       setLoading(false);
@@ -181,59 +180,40 @@ export default function TeleologyClassicPage() {
     }
     setLoadError(null);
     try {
-      // Bounded preview (not full CPD tree): first N goals + edges among them.
-      const [yaml, sample, tree] = await Promise.all([
+      // Roots only. Expanding a row loads its direct children; the canvas loads the focused goal.
+      const [yaml, roots] = await Promise.all([
         getTeleology(cogniInstance, { limit: 40 }).catch(() => null),
         getGraphAnnotations(cogniInstance, datasetId, {
-          limit: 40,
-          goalsLimit: 24,
-          goalId: lensGoalId || undefined,
+          parentId: "_roots",
+          goalsLimit: 30,
+          limit: 1,
         }),
-        cogniInstance.fetch(`/v1/datasets/${encodeURIComponent(datasetId)}/company-tree`).then(async (response) => response.ok ? await response.json() as CompanyTreePayload : null).catch(() => null),
       ]);
       if (yaml) setStatus(yaml);
       setBrainNodes([]);
-      if (tree?.nodes?.length) {
-        setGoalTree(buildGoalTree(tree, displayName));
-        const byId = new Map(tree.nodes.map((node) => [node.id, node]));
-        const advances = (tree.edges || []).filter((edge) => edge.label === "has_subgoal" || edge.label === "has_detail_reference").flatMap((edge) => {
-          const child = byId.get(edge.target);
-          const parent = byId.get(edge.source);
-          return child && parent ? [{ childId: child.id, parentId: parent.id, childName: displayName(child.name, child.id), parentName: displayName(parent.name, parent.id) }] : [];
+      setNavPages({});
+      setNavRoots(roots.goals || []);
+      if (!lensGoalId && roots.goals?.length) {
+        const first = roots.goals[0];
+        setLensGoalId(first.id);
+        setSelectedGoal({
+          ...first,
+          name: displayName(first.name, first.id),
+          description: displayName(first.description || ""),
         });
-        setTreeAdvances(advances);
-        if (!lensGoalId) {
-          const degree = new Map<string, number>();
-          for (const edge of advances) { degree.set(edge.childId, (degree.get(edge.childId) || 0) + 1); degree.set(edge.parentId, (degree.get(edge.parentId) || 0) + 1); }
-          const largest = [...byId.values()].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))[0];
-          if (largest) { setLensGoalId(largest.id); setSelectedGoal({ id: largest.id, name: displayName(largest.name, largest.id), type: "Goal", description: displayName(largest.note || "") }); }
-        }
-      } else {
-        setTreeAdvances([]);
-        const goals = sample.goals || [];
-        setGoalTree(goals.map((goal) => ({ id: goal.id, name: displayName(goal.name, goal.id), children: [] })));
-        if (!lensGoalId && goals.length) {
-          const degree = new Map<string, number>();
-          for (const edge of sample.annotations || []) {
-            degree.set(edge.source_id, (degree.get(edge.source_id) || 0) + 1);
-            degree.set(edge.target_id, (degree.get(edge.target_id) || 0) + 1);
-          }
-          const largest = [...goals].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))[0];
-          setLensGoalId(largest.id);
-          setSelectedGoal(largest);
-        }
+        setNavPath([first.id]);
+        setGoalHits([]);
       }
-      setGraph(sample);
-      const cleaned = (sample.goals || []).map((g) => ({
-        ...g,
-        name: displayName(g.name, g.id),
-        description: displayName(g.description || ""),
-      }));
-      if (!lensGoalId) {
-        setGoalHits(cleaned);
+      const focus = lensGoalId || roots.goals?.[0]?.id;
+      if (focus) {
+        const neighbourhood = await getGraphAnnotations(cogniInstance, datasetId, {
+          goalId: focus,
+          limit: 80,
+          goalsLimit: 40,
+        });
+        setGraph(neighbourhood);
       } else {
-        const hit = cleaned.find((g) => g.id === lensGoalId);
-        if (hit) setSelectedGoal(hit);
+        setGraph(null);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -273,6 +253,84 @@ export default function TeleologyClassicPage() {
     },
     [cogniInstance, datasetId],
   );
+
+  const expandNav = useCallback(async (id: string, more = false) => {
+    if (!cogniInstance || !datasetId) return;
+    const prior = navPagesRef.current[id];
+    if (prior?.loading || (!more && prior?.loaded)) return;
+    const offset = more ? prior?.nextOffset || 0 : 0;
+    setNavPages((old) => ({
+      ...old,
+      [id]: {
+        items: old[id]?.items || [],
+        total: old[id]?.total || 0,
+        loaded: old[id]?.loaded,
+        nextOffset: old[id]?.nextOffset || 0,
+        loading: true,
+      },
+    }));
+    try {
+      const result = await getGraphAnnotations(cogniInstance, datasetId, {
+        parentId: id,
+        goalsLimit: 30,
+        goalsOffset: offset,
+        limit: 1,
+      });
+      setNavPages((old) => {
+        const items = [...(old[id]?.items || []), ...(result.goals || [])];
+        return {
+          ...old,
+          [id]: {
+            items: items.filter((item, index) => items.findIndex((candidate) => candidate.id === item.id) === index),
+            total: result.goals_total ?? offset + (result.goals?.length || 0),
+            loading: false,
+            loaded: true,
+            nextOffset: offset + (result.goals?.length || 0),
+          },
+        };
+      });
+    } catch (cause) {
+      setNavPages((old) => ({ ...old, [id]: { ...old[id], items: old[id]?.items || [], total: old[id]?.total || 0, loading: false } }));
+      setLoadError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [cogniInstance, datasetId]);
+
+  const searchNav = useCallback(async (query: string) => {
+    if (!cogniInstance || !datasetId) return [];
+    const result = await getGraphAnnotations(cogniInstance, datasetId, { q: query, goalsLimit: 30, limit: 1 });
+    return (result.goals || []).map((goal) => ({
+      ...goal,
+      name: displayName(goal.name, goal.id),
+    }));
+  }, [cogniInstance, datasetId]);
+
+  const pickNavGoal = useCallback(async (id: string) => {
+    setLensGoalId(id);
+    setSelectedNodeId(null);
+    const known = [navRoots, ...Object.values(navPages).map((page) => page.items)].flat().find((goal) => goal.id === id);
+    if (known) {
+      setSelectedGoal({
+        ...known,
+        name: displayName(known.name, known.id),
+        description: displayName(known.description || ""),
+      });
+    }
+    if (!cogniInstance || !datasetId) return;
+    try {
+      const chain = await getGoalPath(cogniInstance, datasetId, id);
+      setNavPath(chain.map((goal) => goal.id));
+      const current = chain[chain.length - 1];
+      if (current) {
+        setSelectedGoal({
+          ...current,
+          name: displayName(current.name, current.id),
+          description: displayName(current.description || ""),
+        });
+      }
+    } catch {
+      setNavPath([id]);
+    }
+  }, [cogniInstance, datasetId, navPages, navRoots]);
 
   useEffect(() => {
     if (!cogniInstance || isInitializing || datasetsLoading) return;
@@ -399,33 +457,19 @@ export default function TeleologyClassicPage() {
     [graph],
   );
 
-  // Merge synced purpose edges with CPD tree structure (child→parent as advances).
   const purposeEdges = useMemo(() => {
     const key = (s: string, t: string, r: string) => `${s}|${t}|${r}`;
     const seen = new Set<string>();
     const out: GraphAnnotation[] = [];
     for (const edge of annotations) {
+      if (edge.origin === "system_derived") continue;
       const k = key(edge.source_id, edge.target_id, String(edge.relationship));
       if (seen.has(k)) continue;
       seen.add(k);
       out.push(edge);
     }
-    for (const edge of treeAdvances) {
-      const k = key(edge.childId, edge.parentId, "advances");
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push({
-        source_id: edge.childId,
-        source_name: edge.childName,
-        source_type: "Goal",
-        target_id: edge.parentId,
-        target_name: edge.parentName,
-        target_type: "Goal",
-        relationship: "advances",
-      });
-    }
     return out;
-  }, [annotations, treeAdvances]);
+  }, [annotations]);
 
   const linkedIdsForLens = useMemo(() => {
     if (!lensGoalId) return null;
@@ -606,7 +650,7 @@ export default function TeleologyClassicPage() {
         return;
       }
       notifications.show({
-        title: t(language, "Teleology built from goal tree", "已从目标树生成目的论"),
+        title: t(language, "Company tree synced", "公司树已同步"),
         message: t(
           language,
           `${result.tree_goals} goals · ${result.advances_created} advances · ${result.serves_created} serves`,
@@ -781,11 +825,11 @@ export default function TeleologyClassicPage() {
                   onClick={handleSyncFromCompanyTree}
                   title={t(
                     language,
-                    "Derive purpose edges from the company goal tree / mindmap on this dataset.",
-                    "从本数据集的公司目标树/脑图自动生成目的边。",
+                    "Read the company tree. This does not generate purpose relations.",
+                    "只同步公司树，不会生成目的关系。",
                   )}
                 >
-                  {t(language, "From goal tree", "从目标树同步")}
+                  {t(language, "Sync company tree", "同步公司树")}
                 </button>
                 <button type="button" style={btn(false)} disabled={busy || !datasetId} onClick={handleSync}>
                   {t(language, "Sync YAML goals", "同步 YAML 目标")}
@@ -996,16 +1040,17 @@ export default function TeleologyClassicPage() {
 
       {/* Graph + inspector */}
       <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        <NavPanel language={language === "zh" ? "zh" : "en"} tree={goalTree} selectedId={lensGoalId || null} loading={loading} onPick={(id) => {
-          const find = (nodes: GoalTreeNode[]): GoalTreeNode | undefined => {
-            for (const node of nodes) { if (node.id === id) return node; const child = find(node.children); if (child) return child; }
-            return undefined;
-          };
-          const node = find(goalTree);
-          setSelectedGoal(node ? { id: node.id, name: node.name, type: "Goal", description: "" } : null);
-          setLensGoalId(id);
-          setSelectedNodeId(null);
-        }} />
+        <GoalNav
+          language={language === "zh" ? "zh" : "en"}
+          roots={navRoots}
+          pages={navPages}
+          focusId={lensGoalId || null}
+          pathIds={navPath}
+          loading={loading}
+          onPick={(id) => { void pickNavGoal(id); }}
+          onExpand={(id, more) => { void expandNav(id, more); }}
+          onSearch={searchNav}
+        />
         <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
           {graphNodes.length === 0 ? (
             <div

@@ -20,7 +20,7 @@ function GoalMark({ depth }: { depth: number }) {
 export type GoalTreeNode = { id: string; name: string; children: GoalTreeNode[] };
 export type GoalPage = { items: GraphNodeSummary[]; total: number; loading: boolean; loaded?: boolean; nextOffset?: number };
 
-export default function NavPanel({ language, roots, pages, focusId, pathIds, loading, onPick, onExpand, onSearch }: {
+export default function NavPanel({ language, roots, pages, focusId, pathIds, loading, onPick, onExpand, onSearch, onClose }: {
   language: "zh" | "en";
   roots: GraphNodeSummary[];
   pages: Record<string, GoalPage>;
@@ -30,6 +30,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   onPick: (id: string) => void;
   onExpand: (id: string, more?: boolean) => void;
   onSearch: (query: string) => Promise<GraphNodeSummary[]>;
+  onClose?: () => void;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -95,6 +96,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   return <aside className="onto-nav">
     <div className="onto-file-header">
       <span>{t("Goal navigation", "目标导航")}</span>
+      {onClose && <button type="button" className="onto-panel-close" onClick={onClose} aria-label={t("Collapse goal tree", "收起目标目录")}>×</button>}
       <div className={`onto-goal-search${searchOpen ? " is-open" : ""}`} ref={searchRef}>
         <button type="button" className="onto-goal-search-toggle" aria-label={searchOpen ? t("Close search", "关闭搜索") : t("Search goals", "搜索目标")} aria-expanded={searchOpen} onClick={() => { setSearchOpen((value) => !value); if (searchOpen) { setQuery(""); setResults([]); } }}>
           {searchOpen ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" /><path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>}

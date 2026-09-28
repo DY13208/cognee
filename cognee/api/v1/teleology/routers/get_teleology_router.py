@@ -3,13 +3,31 @@ from pathlib import Path
 from typing import List, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Path as PathParam, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from cognee.api.DTO import InDTO
 from cognee.exceptions import CogneeApiError
 from cognee.modules.data.exceptions.exceptions import DatasetNotFoundError
+from cognee.modules.teleology.goal_workspace import (
+    create_goal as create_workspace_goal,
+)
+from cognee.modules.teleology.goal_workspace import (
+    delete_goal as delete_workspace_goal,
+)
+from cognee.modules.teleology.goal_workspace import (
+    goal_detail,
+    goal_path,
+    goal_relations,
+)
+from cognee.modules.teleology.goal_workspace import (
+    move_goal as move_workspace_goal,
+)
+from cognee.modules.teleology.goal_workspace import (
+    update_goal as update_workspace_goal,
+)
 from cognee.modules.teleology.graph_annotations import (
     add_graph_annotation,
     list_graph_annotations,
@@ -17,14 +35,12 @@ from cognee.modules.teleology.graph_annotations import (
     sync_from_company_tree,
     sync_goals_to_graph,
 )
-from cognee.modules.teleology.goal_workspace import (
-    create_goal as create_workspace_goal,
-    delete_goal as delete_workspace_goal,
-    goal_detail,
-    goal_path,
-    goal_relations,
-    move_goal as move_workspace_goal,
-    update_goal as update_workspace_goal,
+from cognee.modules.teleology.purpose_analyze import analyze_goal
+from cognee.modules.teleology.purpose_layer import (
+    commit_teleology_proposal,
+    get_purpose_context,
+    propose_teleology,
+    start_purpose_review,
 )
 from cognee.modules.users.methods import get_authenticated_user
 from cognee.modules.users.models import User
@@ -90,6 +106,23 @@ class WorkspaceGoalUpdate(InDTO):
 
 class WorkspaceGoalMove(InDTO):
     parent_id: str = Field(min_length=1)
+
+
+class PurposeAnalyzeRequest(InDTO):
+    dataset_id: UUID
+    goal_id: str = Field(min_length=1)
+
+
+class PurposeProposalCreate(InDTO):
+    dataset_id: UUID
+    source_goal_id: str = Field(min_length=1)
+    proposal: dict = Field(default_factory=dict)
+
+
+class PurposeProposalCommit(InDTO):
+    dataset_id: UUID
+    accepted_item_ids: List[str] = Field(default_factory=list)
+    edits: Optional[dict] = None
 
 
 def get_teleology_router() -> APIRouter:
@@ -390,8 +423,8 @@ def get_teleology_router() -> APIRouter:
     async def sync_teleology_from_company_tree(
         dataset_id: UUID = Query(..., description="Dataset that owns the company goal tree"),
         link_entities: bool = Query(
-            default=True,
-            description="Also attach serves edges from knowledge entities whose names overlap a goal.",
+            default=False,
+            description="Optional name-overlap serves edges. They are system_derived, not purpose analysis.",
         ),
         source_room: Optional[str] = Query(
             default=None,
@@ -463,5 +496,87 @@ def get_teleology_router() -> APIRouter:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Delete teleology annotation failed: %s", exc, exc_info=True)
             return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.get("/annotations/goals/{goal_id}/purpose-context", response_model=dict)
+    async def read_purpose_context(
+        goal_id: str,
+        dataset_id: UUID = Query(...),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Bounded context for one company-tree goal. Does not return the whole tree."""
+        try:
+            return await get_purpose_context(dataset_id, user, goal_id)
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+
+    @router.post("/annotations/goals/{goal_id}/purpose-review", response_model=dict)
+    async def open_purpose_review(
+        goal_id: str,
+        dataset_id: UUID = Query(...),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Record which goals lack a confirmed purpose. Does not invent purpose text."""
+        try:
+            return await start_purpose_review(dataset_id, user, goal_id)
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.post("/annotations/purpose-proposals", response_model=dict)
+    async def create_purpose_proposal(
+        payload: PurposeProposalCreate,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Store an AI candidate. It stays out of the formal graph until commit."""
+        try:
+            return await propose_teleology(
+                payload.dataset_id,
+                user,
+                source_goal_id=payload.source_goal_id,
+                proposal=payload.proposal,
+            )
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.post("/annotations/purpose-proposals/{proposal_id}/commit", response_model=dict)
+    async def commit_purpose_proposal(
+        proposal_id: str,
+        payload: PurposeProposalCommit,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Write only the accepted items, with ai_inferred provenance."""
+        try:
+            return await commit_teleology_proposal(
+                payload.dataset_id,
+                user,
+                proposal_id,
+                payload.accepted_item_ids,
+                edits=payload.edits,
+            )
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except KeyError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @router.post("/analyze", response_model=dict)
+    async def analyze_purpose(
+        payload: PurposeAnalyzeRequest,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Analyze one goal with the configured model and store a proposal."""
+        try:
+            return await analyze_goal(payload.dataset_id, user, payload.goal_id)
+        except (DatasetNotFoundError, KeyError) as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Purpose analysis failed: %s", exc, exc_info=True)
+            return JSONResponse(status_code=502, content={"error": str(exc)})
 
     return router

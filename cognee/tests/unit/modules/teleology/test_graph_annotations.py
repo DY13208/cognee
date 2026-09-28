@@ -9,6 +9,31 @@ from cognee.modules.teleology.graph_annotations import (
 )
 
 
+def test_index_graph_hides_structural_advances() -> None:
+    nodes = [
+        ("parent", {"name": "公司运营", "type": "Goal"}),
+        ("child", {"name": "韩国公司", "type": "Goal"}),
+    ]
+    edges = [
+        ("parent", "child", "has_subgoal", {}),
+        ("child", "parent", "advances", {"origin": "system_derived"}),
+        ("child", "parent", "advances", {}),
+        (
+            "child",
+            "parent",
+            "advances",
+            {
+                "origin": "ai_inferred",
+                "reason": "文档说明韩国公司推进公司运营",
+                "evidence_node_ids": ["doc-1"],
+            },
+        ),
+    ]
+    _by_id, annotations = _index_graph(nodes, edges)
+    assert len(annotations) == 1
+    assert annotations[0]["origin"] == "ai_inferred"
+
+
 def test_index_graph_finds_teleology_edges() -> None:
     nodes = [
         ("e1", {"name": "Hybrid search", "type": "Entity"}),
@@ -64,6 +89,7 @@ async def test_known_fields_fill_created_at_and_purpose() -> None:
         graph,
         [
             {"id": "child", "parent_id": "root", "created_at": None, "primary_purpose_id": None},
+            {"id": "plain", "parent_id": "root", "created_at": None, "primary_purpose_id": None},
             {"id": "root", "parent_id": None, "created_at": None, "primary_purpose_id": None},
             {
                 "id": "kept",
@@ -78,8 +104,9 @@ async def test_known_fields_fill_created_at_and_purpose() -> None:
     assert rows[0]["primary_purpose_id"] == "root"
     assert rows[0]["primary_purpose_relation"] == "serves"
     assert rows[1]["primary_purpose_id"] is None
-    assert rows[2]["primary_purpose_id"] == "stored"
-    assert rows[2]["created_at"] == 5
+    assert rows[2]["primary_purpose_id"] is None
+    assert rows[3]["primary_purpose_id"] == "stored"
+    assert rows[3]["created_at"] == 5
 
 
 def test_token_overlap_matches_chinese_and_substring() -> None:

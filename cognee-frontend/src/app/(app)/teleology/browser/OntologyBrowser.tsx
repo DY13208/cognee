@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CogneeInstance } from "@/modules/instances/types";
-import { createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalPath, getGoalRelations, getGraphAnnotations, moveWorkspaceGoal, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GraphAnnotation, type GraphNodeSummary } from "@/modules/teleology/teleologyApi";
+import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, moveWorkspaceGoal, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GraphAnnotation, type GraphNodeSummary, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
 import { notifications } from "@mantine/notifications";
 import NavPanel, { type GoalPage } from "./NavPanel";
 import DetailPanel from "./DetailPanel";
+import PurposeReview from "./PurposeReview";
 import { displayName } from "./entityMeta";
 import type { OntologyEdge, OntologyEntity } from "./types";
 import "./ontology.css";
@@ -57,6 +58,9 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const [topOpen, setTopOpen] = useState(true);
   const [datasetMenu, setDatasetMenu] = useState(false);
   const [view, setView] = useState<"focus" | "tree">("focus");
+  const [why, setWhy] = useState<GraphNodeSummary[]>([]);
+  const [review, setReview] = useState<TeleologyProposal | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const requestId = useRef(0);
 
   const loadPath = useCallback((goal: GraphNodeSummary) => getGoalPath(instance, datasetId, goal.id), [instance, datasetId]);
@@ -79,6 +83,9 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
       setFocusId(id); setSelectedId(id); setFocusGoal(current); setParent(parentGoal); setPath(chain);
       setChildren(visibleChildren); setChildTotal(childPage.goals_total ?? childPage.goals.length);
       setRelations(edges(relationPage.items)); setRelationCounts(relationPage.counts);
+      const context = await getPurposeContext(instance, datasetId, id).catch(() => null);
+      if (serial !== requestId.current) return;
+      setWhy(context?.purposes || []);
       setPages((old) => {
         const next = { ...old };
         chain.slice(0, -1).forEach((ancestor, index) => {
@@ -105,7 +112,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [instance, datasetId, enter]);
 
   useEffect(() => {
-    requestId.current += 1; setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]);
+    requestId.current += 1; setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]); setWhy([]); setReview(null);
     if (datasetId) void loadRoots();
   }, [datasetId, loadRoots]);
 
@@ -153,12 +160,12 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [drawer, focusId, relationOffset, relationType, instance, datasetId]);
 
   const selectedEntity = useMemo(() => {
-    const found = [focus, parent, ...children, ...path, ...roots].find((goal) => goal?.id === selectedId);
+    const found = [focus, parent, ...why, ...children, ...path, ...roots].find((goal) => goal?.id === selectedId);
     if (found) return entity(found);
     const relation = relations.find((edge) => edge.sourceId === selectedId || edge.targetId === selectedId);
     if (!relation || !selectedId) return null;
     return { id: selectedId, name: relation.sourceId === selectedId ? relation.sourceName : relation.targetName, type: "Goal", kind: "Goal" as const };
-  }, [focus, parent, children, path, roots, selectedId, relations]);
+  }, [focus, parent, why, children, path, roots, selectedId, relations]);
 
   async function viewSelectedPath() {
     try {
@@ -236,6 +243,17 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   }
 
+  async function analyzeCurrentGoal() {
+    if (!focusId) return;
+    setAnalyzing(true);
+    onBusy(true);
+    try {
+      setReview(await analyzePurpose(instance, datasetId, focusId));
+    } catch (cause) {
+      notifications.show({ title: t("Analysis failed", "分析失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" });
+    } finally { setAnalyzing(false); onBusy(false); }
+  }
+
   async function syncTree() {
     onBusy(true);
     try { const result = await syncTeleologyFromCompanyTree(instance, datasetId); notifications.show({ title: t("Synced", "已同步"), message: `${result.tree_goals} ${t("goals", "个目标")}`, color: "green" }); setPages({}); await loadRoots(); }
@@ -255,8 +273,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
         <div style={{ position: "relative" }}><button type="button" className="onto-select" onClick={() => setDatasetMenu(!datasetMenu)}>{selectedDataset?.name || datasets[0]?.name || t("No dataset", "暂无数据集")} ▾</button>
           {datasetMenu && <div className="onto-search-menu">{datasets.map((dataset) => <button type="button" className="onto-search-item" key={dataset.id} onClick={() => { onSelectDataset(dataset); setDatasetMenu(false); }}>{dataset.name}</button>)}</div>}
         </div>
-        <button type="button" className="onto-btn onto-btn-primary" title={t("Refresh this goal's purpose relationships", "刷新当前目标的目的关系")} disabled={!focusId || loading} onClick={() => { if (focusId) void enter(focusId); }}>{t("Generate purpose relations", "生成目的关系")}</button>
-        <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncTree()}>{t("Sync goal tree", "同步目标树")}</button>
+        <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncTree()}>{t("Sync company tree", "同步公司树")}</button>
+        <button type="button" className="onto-btn onto-btn-primary" title={t("Analyze this goal only. The result stays a proposal until you confirm.", "只分析当前目标。确认前都是候选。")} disabled={!focusId || busy || analyzing} onClick={() => void analyzeCurrentGoal()}>{analyzing ? t("Analyzing…", "分析中…") : t("Analyze purpose relations", "分析目的关系")}</button>
         <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncYaml()}>{t("Sync YAML", "同步 YAML")}</button>
         <div className="onto-view-switch"><button type="button" className={view === "focus" ? "is-active" : ""} onClick={() => setView("focus")}>{t("Focus view", "聚焦视图")}</button><button type="button" className={view === "tree" ? "is-active" : ""} onClick={() => setView("tree")}>{t("Tree overview", "树图概览")}</button></div>
       </> : <span className="onto-collapsed-title">{t("Teleology", "目的论")} · {selectedDataset?.name || datasets[0]?.name}</span>}
@@ -264,28 +282,28 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     </header>
     <div className="onto-body">
       <div className={`onto-side-container onto-side-left${leftOpen ? "" : " is-collapsed"}`}>
-        {leftOpen && <NavPanel language={language} roots={roots} pages={pages} focusId={focusId} pathIds={path.map((goal) => goal.id)} loading={loading} onPick={(id) => void enter(id)} onExpand={expand} onSearch={search} />}
-        <button type="button" className="onto-seam-tab onto-seam-tab-left" onClick={() => setLeftOpen(!leftOpen)}>{leftOpen ? "‹" : "›"}</button>
+        {leftOpen ? <NavPanel language={language} roots={roots} pages={pages} focusId={focusId} pathIds={path.map((goal) => goal.id)} loading={loading} onPick={(id) => void enter(id)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} /> : <button type="button" className="onto-panel-reopen onto-panel-reopen-left" onClick={() => setLeftOpen(true)} aria-label={t("Expand goal tree", "展开目标目录")}>›</button>}
       </div>
       <main className="onto-main onto-focus-main">
         {error && <div className="onto-focus-error" role="alert">{error}</div>}
         <div className="onto-breadcrumb">{path.map((goal, index) => <span key={goal.id}><button type="button" onClick={() => void enter(goal.id)}>{goal.name}</button>{index < path.length - 1 && <b>›</b>}</span>)}</div>
         {view === "focus" ? <div className="onto-focus-scroll">
           {focus && <>
-            {parent && <div className="onto-focus-parent-wrap"><div className="onto-lane-caption">{t("Parent purpose", "上级目的")}</div><button type="button" className="onto-focus-parent" onClick={() => setSelectedId(parent.id)} onDoubleClick={() => void enter(parent.id)}><span className="onto-file-icon" aria-hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></span>{parent.name}<small>{t("Enter", "进入")} ↗</small></button><div className="onto-hierarchy-line">↓</div></div>}
+            <div className="onto-focus-parent-wrap"><div className="onto-lane-caption">WHY · {t("Purpose", "目的")}</div>{why.length ? why.map((purpose) => <button type="button" key={purpose.id} className="onto-focus-parent" onClick={() => setSelectedId(purpose.id)}>{purpose.name}</button>) : <div className="onto-why-empty">{t("No confirmed purpose yet.", "还没有确认的目的。")}</div>}{review && <div className="onto-candidate-row">{review.items.filter((item) => item.kind === "purpose" || item.kind === "goal" || item.kind === "constraint").map((item) => <div key={item.id} className="onto-candidate"><b>{item.name}</b><small>{t("AI suggestion", "AI 建议")}</small></div>)}{review.items.filter((item) => item.kind === "relation").map((item) => <div key={item.id} className="onto-candidate-link">{item.relationship}<span>{item.reason}</span></div>)}</div>}<div className="onto-hierarchy-line">serves</div></div>
             <div className="onto-focus-row">
-              <div className="onto-focus-side is-left"><button type="button" className="onto-purpose-pill is-serves" onClick={() => { setRelationType("serves"); setRelationOffset(0); setDrawer("relations"); }}>{t("Serves", "服务于")} <b>{relationCounts.serves}</b></button></div>
+              <div className="onto-focus-side is-left"><button type="button" className="onto-purpose-pill is-serves" onClick={() => { setRelationType("serves"); setRelationOffset(0); setDrawer("relations"); }}>{t("Serves", "服务于")} <b>{relationCounts.serves}</b></button>{relations.filter((edge) => edge.relationship === "serves").slice(0, 3).map((edge) => <small key={edge.id} className="onto-purpose-name">{edge.sourceId === focus.id ? edge.targetName : edge.sourceName}</small>)}</div>
               <div className={`onto-focus-card${loading ? " is-loading" : ""}`}><span className="onto-focus-icon" aria-hidden><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></span><div><strong>{focus.name}</strong><small>{t("Current goal", "当前目标")}</small></div><p>{focus.description || t("No description yet", "暂无描述")}</p><footer><span>{t("Subgoals", "子目标")} {childTotal}</span><span>{t("Relations", "关系")} {relationCounts.serves + relationCounts.advances + relationCounts.blocks}</span>{focus.progress != null && <span>{t("Progress", "进度")} {focus.progress}%</span>}</footer></div>
-              <div className="onto-focus-side is-right"><button type="button" className="onto-purpose-pill is-advances" onClick={() => { setRelationType("advances"); setRelationOffset(0); setDrawer("relations"); }}>{t("Advances", "推进")} <b>{relationCounts.advances}</b></button><button type="button" className="onto-purpose-pill is-blocks" onClick={() => { setRelationType("blocks"); setRelationOffset(0); setDrawer("relations"); }}>{t("Blocks", "阻碍")} <b>{relationCounts.blocks}</b></button></div>
+              <div className="onto-focus-side is-right"><button type="button" className="onto-purpose-pill is-advances" onClick={() => { setRelationType("advances"); setRelationOffset(0); setDrawer("relations"); }}>{t("Advances", "推进")} <b>{relationCounts.advances}</b></button>{relations.filter((edge) => edge.relationship === "advances").slice(0, 3).map((edge) => <small key={edge.id} className="onto-purpose-name">{edge.sourceId === focus.id ? edge.targetName : edge.sourceName}</small>)}<button type="button" className="onto-purpose-pill is-blocks" onClick={() => { setRelationType("blocks"); setRelationOffset(0); setDrawer("relations"); }}>{t("Blocks", "阻碍")} <b>{relationCounts.blocks}</b></button>{relations.filter((edge) => edge.relationship === "blocks").slice(0, 3).map((edge) => <small key={edge.id} className="onto-purpose-name">{edge.sourceId === focus.id ? edge.targetName : edge.sourceName}</small>)}</div>
             </div>
-            <div className="onto-hierarchy-line">↓</div><div className="onto-lane-caption">{t("Direct subgoals", "实现 / 直接下级目标")}</div>
+            <div className="onto-hierarchy-line">↓</div><div className="onto-lane-caption">HOW · {t("Direct subgoals", "下级目标 / 实现方式")}</div>
             <div className="onto-child-grid">{children.map((goal) => <div key={goal.id} className={`onto-child-card${selectedId === goal.id ? " is-selected" : ""}`} onClick={() => setSelectedId(goal.id)} onDoubleClick={() => void enter(goal.id)}><strong><span className="onto-file-icon" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></span>{goal.name}</strong><p>{goal.description || ""}</p><footer>{t("Subgoals", "子目标")} {goal.child_count || 0}<button type="button" onClick={(event) => { event.stopPropagation(); void enter(goal.id); }}>{t("Enter", "进入")} ↗</button></footer></div>)}</div>
             {childTotal > children.length && <button type="button" className="onto-view-all" onClick={() => { setDrawerOffset(0); setDrawerQuery(""); setDrawer("children"); }}>＋ {t(`${childTotal - children.length} more subgoals · View all`, `还有 ${childTotal - children.length} 个子目标 · 查看全部`)}</button>}
           </>}
         </div> : <div className="onto-tree-overview"><div className="onto-lane-caption">{t("Current branch · expand goals on demand", "当前分支 · 按需展开目标")}</div>{roots.map((goal) => <button type="button" key={goal.id} onClick={() => void enter(goal.id)}>◎ {goal.name} <small>{goal.child_count || 0} {t("direct goals", "个直接目标")}</small></button>)}{rootTotal > roots.length && <button type="button" onClick={async () => { const result = await getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }); setRoots((old) => [...old, ...result.goals]); }}>{t("More roots", "加载更多根目标")}</button>}</div>}
       </main>
-      <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}><button type="button" className="onto-seam-tab onto-seam-tab-right" onClick={() => setRightOpen(!rightOpen)}>{rightOpen ? "›" : "‹"}</button>{rightOpen && <DetailPanel entity={selectedEntity} edges={relations.filter((edge) => edge.sourceId === selectedId || edge.targetId === selectedId)} focusId={focusId} language={language} path={selectedId === focusId ? path : undefined} onViewPath={() => void viewSelectedPath()} onSetFocus={(id) => void enter(id)} onSelectNeighbor={(id) => setSelectedId(id)} onCreateChild={createChild} onRelate={relateGoal} onCopy={copyGoal} onMove={moveGoal} onDelete={removeGoal} onEdit={editGoal} onExport={exportGoal} />}</div>
+      <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}>{rightOpen ? <DetailPanel entity={selectedEntity} edges={relations.filter((edge) => edge.sourceId === selectedId || edge.targetId === selectedId)} focusId={focusId} language={language} path={selectedId === focusId ? path : undefined} onViewPath={() => void viewSelectedPath()} onSetFocus={(id) => void enter(id)} onSelectNeighbor={(id) => setSelectedId(id)} onCreateChild={createChild} onRelate={relateGoal} onCopy={copyGoal} onMove={moveGoal} onDelete={removeGoal} onEdit={editGoal} onExport={exportGoal} onClose={() => setRightOpen(false)} /> : <button type="button" className="onto-panel-reopen onto-panel-reopen-right" onClick={() => setRightOpen(true)} aria-label={t("Expand details", "展开目标详情")}>‹</button>}</div>
     </div>
+    {review && <PurposeReview instance={instance} datasetId={datasetId} proposal={review} language={language} onClose={() => setReview(null)} onCommitted={() => { setReview(null); if (focusId) void enter(focusId); }} />}
     {drawer && <div className="onto-drawer-backdrop" onMouseDown={() => setDrawer(null)}><aside className="onto-drawer" onMouseDown={(event) => event.stopPropagation()}><header><strong>{drawer === "children" ? t("Browse subgoals", "浏览子目标") : drawer === "path" ? t("Goal path", "目标路径") : t("Purpose relations", "目的关系")}</strong><button type="button" onClick={() => setDrawer(null)}>×</button></header>
       {drawer === "children" && <><input value={drawerQuery} onChange={(event) => { setDrawerQuery(event.target.value); setDrawerOffset(0); }} placeholder={t("Search subgoals", "搜索子目标")} /><div className="onto-drawer-list">{drawerLoading ? t("Loading…", "加载中…") : drawerPage.map((goal) => <button type="button" key={goal.id} onClick={() => { setDrawer(null); void enter(goal.id); }}>◎ {goal.name}<small>{goal.child_count || 0} {t("subgoals", "个子目标")}</small></button>)}</div><footer><button type="button" disabled={drawerOffset === 0} onClick={() => setDrawerOffset(Math.max(0, drawerOffset - PAGE))}>{t("Previous", "上一页")}</button><span>{drawerOffset + 1}–{Math.min(drawerOffset + PAGE, drawerTotal)} / {drawerTotal}</span><button type="button" disabled={drawerOffset + PAGE >= drawerTotal} onClick={() => setDrawerOffset(drawerOffset + PAGE)}>{t("Next", "下一页")}</button></footer></>}
       {drawer === "path" && <div className="onto-drawer-list">{drawerPath.map((goal) => <button type="button" key={goal.id} onClick={() => { setDrawer(null); void enter(goal.id); }}>◎ {goal.name}</button>)}</div>}

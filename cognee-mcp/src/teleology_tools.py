@@ -81,9 +81,9 @@ def register_teleology_tools(registry, get_client) -> None:
 
     @registry.tool(tags={"teleology"})
     async def sync_teleology_from_company_tree(
-        dataset_id: str, link_entities: bool = True, source_room: str = None
+        dataset_id: str, link_entities: bool = False, source_room: str = None
     ) -> list:
-        """Derive purpose goals and edges from a dataset's company goal tree."""
+        """Read the company tree and stamp structural edges. Does not generate teleology."""
         return await request("POST", "/api/v1/teleology/annotations/sync-from-company-tree", params={
             "dataset_id": dataset_id, "link_entities": link_entities, "source_room": source_room,
         })
@@ -107,3 +107,43 @@ def register_teleology_tools(registry, get_client) -> None:
             "dataset_id": dataset_id, "source_id": source_id, "target_id": target_id,
             "relationship": relationship,
         })
+
+    @registry.tool(tags={"teleology"})
+    async def analyze_purpose_relations(dataset_id: str, goal_id: str) -> list:
+        """Analyze one goal and store a purpose proposal. Does not write the formal graph."""
+        return await request("POST", "/api/v1/teleology/analyze", body={
+            "dataset_id": dataset_id, "goal_id": goal_id,
+        })
+
+    @registry.tool(tags={"teleology"})
+    async def get_purpose_context(dataset_id: str, goal_id: str) -> list:
+        """Read one goal's local purpose context. Does not return the whole company tree."""
+        return await request(
+            "GET",
+            f"/api/v1/teleology/annotations/goals/{quote(goal_id, safe='')}/purpose-context",
+            params={"dataset_id": dataset_id},
+        )
+
+    @registry.tool(tags={"teleology"})
+    async def propose_teleology(dataset_id: str, source_goal_id: str, proposal_json: str) -> list:
+        """Store a candidate teleology. It is not written to the formal graph."""
+        try:
+            proposal = json.loads(proposal_json)
+            if not isinstance(proposal, dict):
+                raise ValueError("proposal_json must be a JSON object")
+        except (ValueError, TypeError) as exc:
+            return [types.TextContent(type="text", text=f"Error: {exc}")]
+        return await request("POST", "/api/v1/teleology/annotations/purpose-proposals", body={
+            "dataset_id": dataset_id, "source_goal_id": source_goal_id, "proposal": proposal,
+        })
+
+    @registry.tool(tags={"teleology"})
+    async def commit_teleology_proposal(
+        proposal_id: str, dataset_id: str, accepted_item_ids: list[str]
+    ) -> list:
+        """Write only the accepted proposal items into the formal teleology layer."""
+        return await request(
+            "POST",
+            f"/api/v1/teleology/annotations/purpose-proposals/{quote(proposal_id, safe='')}/commit",
+            body={"dataset_id": dataset_id, "accepted_item_ids": accepted_item_ids or []},
+        )

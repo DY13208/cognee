@@ -19,6 +19,7 @@ export default function DetailPanel({
   onDelete,
   onEdit,
   onExport,
+  onClose,
 }: {
   entity: OntologyEntity | null;
   edges: OntologyEdge[];
@@ -35,14 +36,16 @@ export default function DetailPanel({
   onDelete?: (id: string) => void;
   onEdit?: (id: string) => void;
   onExport?: (id: string) => void;
+  onClose: () => void;
 }) {
   const t = (en: string, zh: string) => (language === "zh" ? zh : en);
 
   if (!entity) {
     return (
       <aside className="onto-detail">
-        <div className="onto-detail-empty">
-          {t("Select a node to inspect properties and relations.", "选中节点以查看属性与关系。")}
+        <div className="onto-detail-head">
+          <div className="onto-detail-empty">{t("Select a node to inspect properties and relations.", "选中节点以查看属性与关系。")}</div>
+          <button type="button" className="onto-panel-close" onClick={onClose} aria-label={t("Collapse details", "收起目标详情")}>×</button>
         </div>
       </aside>
     );
@@ -63,6 +66,7 @@ export default function DetailPanel({
             UID · {shortId(entity.id)}
           </div>
         </div>
+        <button type="button" className="onto-panel-close" onClick={onClose} aria-label={t("Collapse details", "收起目标详情")}>×</button>
       </div>
 
       <div className="onto-detail-actions">
