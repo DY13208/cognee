@@ -17,7 +17,7 @@ export default function TeleologyPage() {
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"browser" | "classic">("browser");
-  const [browserHeaderCollapsed, setBrowserHeaderCollapsed] = useState(false);
+  const [browserHeaderCollapsed, setBrowserHeaderCollapsed] = useState(true);
 
   useEffect(() => {
     try { if (window.localStorage.getItem(MODE_KEY) === "classic") setMode("classic"); } catch { /* ignore */ }

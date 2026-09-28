@@ -110,14 +110,8 @@ export default function OntologyBrowser({
     () => new Set(["Goal", "Project", "Metric", "Department", "Person", "Document", "Entity", "Other"]),
   );
 
-  const [searchQ, setSearchQ] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchHits, setSearchHits] = useState<OntologyEntity[]>([]);
-  const [searching, setSearching] = useState(false);
-  const searchSeq = useRef(0);
-
   const [goalTree, setGoalTree] = useState<GoalTreeNode[]>([]);
-  const [topOpen, setTopOpen] = useState(true);
+  const [topOpen, setTopOpen] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -311,33 +305,6 @@ export default function OntologyBrowser({
     [instance, datasetId],
   );
 
-  const runSearch = useCallback(
-    async (q: string) => {
-      if (!instance || !datasetId) return;
-      const seq = ++searchSeq.current;
-      setSearching(true);
-      try {
-        const trimmed = q.trim();
-        const res = await getGraphAnnotations(instance, datasetId, {
-          q: trimmed || undefined,
-          parentId: trimmed ? undefined : "_roots",
-          limit: 1,
-          goalsLimit: 30,
-        });
-        if (seq !== searchSeq.current) return;
-        const hits = (res.goals || []).map(toEntity);
-        setSearchHits(hits);
-        // Search hits stay in the dropdown; browse list is the tree walker.
-      } catch {
-        if (seq !== searchSeq.current) return;
-        setSearchHits([]);
-      } finally {
-        if (seq === searchSeq.current) setSearching(false);
-      }
-    },
-    [instance, datasetId],
-  );
-
   useEffect(() => {
     setFocusId(null);
     setSelectedId(null);
@@ -348,12 +315,6 @@ export default function OntologyBrowser({
       void loadConnectedTree();
     }
   }, [datasetId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!searchOpen) return;
-    const h = window.setTimeout(() => void runSearch(searchQ), 220);
-    return () => window.clearTimeout(h);
-  }, [searchQ, searchOpen, runSearch]);
 
   const setFocus = useCallback(
     async (id: string) => {
@@ -559,68 +520,6 @@ export default function OntologyBrowser({
           ) : null}
         </div>
 
-        <div className="onto-search-wrap">
-          <input
-            className="onto-input"
-            style={{ width: "100%", paddingRight: 56 }}
-            value={searchQ}
-            placeholder={t(
-              "Search goals / entities / relationships…",
-              "搜索目标 / 实体 / 关系…",
-            )}
-            onFocus={() => setSearchOpen(true)}
-            onChange={(e) => {
-              setSearchQ(e.target.value);
-              setSearchOpen(true);
-            }}
-            onBlur={() => window.setTimeout(() => setSearchOpen(false), 180)}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-                e.preventDefault();
-                (e.target as HTMLInputElement).focus();
-              }
-            }}
-          />
-          <span className="onto-kbd">⌘K</span>
-          {searchOpen ? (
-            <div className="onto-search-menu">
-              {searching && searchHits.length === 0 ? (
-                <div style={{ padding: 10, fontSize: 12, color: "rgba(232,231,228,0.45)" }}>
-                  {t("Searching…", "搜索中…")}
-                </div>
-              ) : searchHits.length === 0 ? (
-                <div style={{ padding: 10, fontSize: 12, color: "rgba(232,231,228,0.45)" }}>
-                  {t("No hits", "无结果")}
-                </div>
-              ) : (
-                searchHits.map((h) => (
-                  <button
-                    key={h.id}
-                    type="button"
-                    className="onto-search-item"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setSearchQ(h.name);
-                      setSearchOpen(false);
-                      setFocus(h.id);
-                    }}
-                  >
-                    <div style={{ fontSize: 10, color: "rgba(232,231,228,0.4)", fontWeight: 650 }}>
-                      {h.kind}
-                    </div>
-                    {h.name}
-                    {h.parentName ? (
-                      <div style={{ fontSize: 11, color: "rgba(232,231,228,0.4)" }}>
-                        {t("under", "隶属于")} {h.parentName}
-                      </div>
-                    ) : null}
-                  </button>
-                ))
-              )}
-            </div>
-          ) : null}
-        </div>
-
         <button type="button" className="onto-btn onto-btn-primary" disabled={!datasetId || loadingFocus} onClick={() => void loadConnectedTree()}>{t("Generate graph", "生成图")}</button>
         <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={handleSyncTree}>
           {t("Sync goal tree", "同步目标树")}
@@ -640,10 +539,11 @@ export default function OntologyBrowser({
       <div className="onto-body">
         <div className={`onto-side-container onto-side-left${leftOpen ? "" : " is-collapsed"}`}>
           {leftOpen && <NavPanel language={language} tree={goalTree} selectedId={focusId} loading={loadingFocus} onPick={setFocus} />}
-          <button type="button" className="onto-side-handle" onClick={() => setLeftOpen((value) => !value)} aria-label={leftOpen ? t("Collapse goal tree", "收起目标目录") : t("Expand goal tree", "展开目标目录")} aria-expanded={leftOpen}>{leftOpen ? "‹" : "›"}</button>
         </div>
 
         <div className="onto-main" ref={mainRef}>
+          <button type="button" className="onto-canvas-edge onto-canvas-edge-left" onClick={() => setLeftOpen((value) => !value)} aria-label={leftOpen ? t("Collapse goal tree", "收起目标目录") : t("Expand goal tree", "展开目标目录")} aria-expanded={leftOpen}>{leftOpen ? "‹" : "›"}</button>
+          <button type="button" className="onto-canvas-edge onto-canvas-edge-right" onClick={() => setRightOpen((value) => !value)} aria-label={rightOpen ? t("Collapse details", "收起目标详情") : t("Expand details", "展开目标详情")} aria-expanded={rightOpen}>{rightOpen ? "›" : "‹"}</button>
           {loadError ? (
             <div style={{ padding: 12, color: "#F87171", fontSize: 12 }}>{loadError}</div>
           ) : null}
@@ -684,7 +584,6 @@ export default function OntologyBrowser({
         </div>
 
         <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}>
-        <button type="button" className="onto-side-handle" onClick={() => setRightOpen((value) => !value)} aria-label={rightOpen ? t("Collapse details", "收起目标详情") : t("Expand details", "展开目标详情")} aria-expanded={rightOpen}>{rightOpen ? "›" : "‹"}</button>
         {rightOpen && <DetailPanel
           entity={selectedEntity}
           edges={visible.edges.filter(
