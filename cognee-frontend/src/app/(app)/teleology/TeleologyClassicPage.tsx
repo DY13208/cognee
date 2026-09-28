@@ -762,15 +762,7 @@ export default function TeleologyClassicPage() {
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#EDECEA" }}>
-              {t(language, "Teleology", "目的论")}
-            </div>
-            <div style={{ fontSize: 13, color: "rgba(237,236,234,0.5)", marginTop: 4 }}>
-              {t(language, "Pick a purpose — the graph lights up.", "选一个目的，图谱亮起来。")}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", marginLeft: "auto" }}>
             <button
               type="button"
               style={btn(true)}

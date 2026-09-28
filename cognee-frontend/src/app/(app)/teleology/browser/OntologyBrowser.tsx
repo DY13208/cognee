@@ -529,10 +529,6 @@ export default function OntologyBrowser({
     <div className="onto-root">
       <header className={`onto-top${topOpen ? "" : " is-collapsed"}`}>
         {topOpen ? <>
-        <div className="onto-title-block">
-          <div className="onto-title">{t("Teleology", "目的论")}</div>
-        </div>
-
         <div style={{ position: "relative" }}>
           <button
             type="button"
