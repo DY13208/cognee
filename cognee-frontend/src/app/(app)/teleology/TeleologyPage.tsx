@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TrackPageView } from "@/modules/analytics";
 import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
@@ -18,6 +18,7 @@ export default function TeleologyPage() {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"browser" | "classic">("browser");
   const [browserHeaderCollapsed, setBrowserHeaderCollapsed] = useState(true);
+  const datasetDefaulted = useRef(false);
 
   useEffect(() => {
     try { if (window.localStorage.getItem(MODE_KEY) === "classic") setMode("classic"); } catch { /* ignore */ }
@@ -29,7 +30,13 @@ export default function TeleologyPage() {
   }
 
   useEffect(() => {
-    if (!cogniInstance || isInitializing || datasetsLoading) return;
+    if (!cogniInstance || isInitializing || datasetsLoading || datasetDefaulted.current || datasets.length === 0) return;
+    datasetDefaulted.current = true;
+    const preferred = datasets.find((dataset) => dataset.name.trim().toLowerCase() === "yiran_cpd");
+    if (preferred) {
+      if (selectedDataset?.id !== preferred.id) setSelectedDataset(preferred);
+      return;
+    }
     if (!selectedDataset && datasets[0]) setSelectedDataset(datasets[0]);
   }, [cogniInstance, isInitializing, datasetsLoading, datasets, selectedDataset, setSelectedDataset]);
 

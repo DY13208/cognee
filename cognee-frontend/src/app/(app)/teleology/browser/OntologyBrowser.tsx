@@ -567,9 +567,9 @@ export default function OntologyBrowser({
             onHover={setHoverId}
           />
           <div className="onto-canvas-toolbar">
+            <div className="onto-toolbar-spacer" />
             <div className="onto-zoom-group"><button type="button" onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))} aria-label={t("Zoom out", "缩小")}>−</button><button type="button" onClick={() => setZoom(1)} aria-label={t("Reset zoom", "重置缩放")}>{Math.round(zoom * 100)}%</button><button type="button" onClick={() => setZoom((value) => Math.min(1.6, Math.round((value + 0.1) * 10) / 10))} aria-label={t("Zoom in", "放大")}>＋</button></div>
             <button type="button" className="onto-btn" onClick={() => { if (document.fullscreenElement === mainRef.current) void document.exitFullscreen(); else void mainRef.current?.requestFullscreen(); }} aria-label={t("Toggle fullscreen", "切换全屏")}>⛶</button>
-            <div className="onto-toolbar-spacer" />
             <div className="onto-toolbar-filters">
               <button type="button" className="onto-btn" onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen}>{t("Display filters", "显示筛选")} ▾</button>
               {filtersOpen && <div className="onto-filter-popover">

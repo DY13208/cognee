@@ -276,7 +276,10 @@ export default function TeleologyClassicPage() {
 
   useEffect(() => {
     if (!cogniInstance || isInitializing || datasetsLoading) return;
-    if (!selectedDataset && datasets[0]) setSelectedDataset(datasets[0]);
+    if (!selectedDataset) {
+      const preferred = datasets.find((dataset) => dataset.name.trim().toLowerCase() === "yiran_cpd");
+      if (preferred || datasets[0]) setSelectedDataset(preferred ?? datasets[0]);
+    }
   }, [cogniInstance, isInitializing, datasetsLoading, datasets, selectedDataset, setSelectedDataset]);
 
   useEffect(() => {
