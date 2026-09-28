@@ -1,6 +1,8 @@
 /* Ontology browser — restrained dark product UI */
 
-.teleology-mode-bar { display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); background: #141416; }
+.teleology-mode-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border: 0; background: transparent; }
+.teleology-mode-tabs { display: flex; gap: 6px; flex: none; }
+.teleology-classic-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap; }
 .teleology-mode-tab { border: 1px solid rgba(255,255,255,0.17); border-radius: 7px; background: #222228; color: #e8e7e4; padding: 7px 13px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .teleology-mode-tab:hover { background: #30303a; border-color: rgba(157,168,255,0.5); }
 .teleology-mode-tab.is-active { background: #414d83; border-color: #8b9eff; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
@@ -160,13 +162,13 @@
 }
 
 .onto-file-tree { min-height: 0; overflow: auto; padding: 4px 0 0; border: 0; border-radius: 0; background: transparent; font-family: inherit; }
-.onto-file-header { position: relative; display: flex; align-items: center; gap: 8px; padding: 2px 8px 8px; margin-bottom: 4px; border: 0; color: rgba(232,231,228,0.42); font-size: 11px; letter-spacing: 0.04em; }
-.onto-goal-search { position: relative; width: 28px; height: 28px; flex: none; }
-.onto-goal-search-toggle { position: relative; z-index: 2; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,0.14); border-radius: 999px; background: #161616; color: rgba(232,231,228,0.78); cursor: pointer; }
+.onto-file-header { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; padding: 2px 8px 8px; margin-bottom: 4px; border: 0; color: rgba(232,231,228,0.42); font-size: 11px; letter-spacing: 0.04em; }
+.onto-goal-search { position: relative; width: 28px; height: 28px; flex: none; margin-left: auto; }
+.onto-goal-search-toggle { position: absolute; right: 0; top: 0; z-index: 2; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,0.14); border-radius: 999px; background: #161616; color: rgba(232,231,228,0.78); cursor: pointer; }
 .onto-goal-search-toggle:hover { color: #fff; border-color: rgba(255,255,255,0.28); }
-.onto-goal-search-form { position: absolute; left: 0; top: 0; z-index: 1; height: 28px; width: 28px; margin: 0; display: flex; align-items: center; overflow: hidden; border: 1px solid transparent; border-radius: 999px; background: transparent; opacity: 0; pointer-events: none; transition: width 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease, border-color 160ms ease, background 160ms ease; }
+.onto-goal-search-form { position: absolute; right: 0; top: 0; z-index: 1; height: 28px; width: 28px; margin: 0; display: flex; align-items: center; overflow: hidden; border: 1px solid transparent; border-radius: 999px; background: transparent; opacity: 0; pointer-events: none; transition: width 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease, border-color 160ms ease, background 160ms ease; }
 .onto-goal-search.is-open .onto-goal-search-form { width: 196px; opacity: 1; pointer-events: auto; border-color: rgba(255,255,255,0.14); background: #101010; box-shadow: 0 8px 20px rgba(0,0,0,0.35); }
-.onto-goal-search-input { width: 100%; height: 100%; margin: 0; padding: 0 12px 0 34px; border: 0; outline: none; background: transparent; color: #e8e7e4; font: inherit; font-size: 12px; }
+.onto-goal-search-input { width: 100%; height: 100%; margin: 0; padding: 0 36px 0 12px; border: 0; outline: none; background: transparent; color: #e8e7e4; font: inherit; font-size: 12px; }
 .onto-goal-search-input::placeholder { color: rgba(232,231,228,0.38); }
 .onto-file-dots { display: flex; gap: 6px; }
 .onto-file-dots span { width: 10px; height: 10px; border-radius: 50%; }
@@ -833,7 +835,7 @@
 .onto-root .onto-btn-primary { background: #e8e7e4; border-color: #e8e7e4; color: #111; box-shadow: none; }
 .onto-root .onto-btn-primary:hover:not(:disabled) { background: #fff; }
 .onto-root .onto-input, .onto-root .onto-select { background: #141414; border-color: rgba(255,255,255,.12); color: #f2f2f2; }
-.onto-top { flex-wrap: nowrap; gap: 10px; min-height: 66px; padding: 10px 16px; background: #0a0a0a; border-bottom-color: var(--onto-border); }
+.onto-top { flex-wrap: nowrap; gap: 10px; min-height: 0; padding: 8px 12px; background: transparent; border-bottom: 0; }
 .onto-title-block { flex: none; margin-right: 8px; }
 .onto-title { font-size: 18px; line-height: 1.2; color: #fff; }
 .onto-search-wrap { min-width: 180px; max-width: none; }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import { TrackPageView } from "@/modules/analytics";
 import { useFilter } from "@/ui/layout/FilterContext";
@@ -116,6 +117,11 @@ export default function TeleologyClassicPage() {
   const { language } = useBusinessLanguage();
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
+  const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setActionsHost(document.getElementById("teleology-classic-actions"));
+  }, []);
 
   const [status, setStatus] = useState<TeleologyStatus | null>(null);
   const [graph, setGraph] = useState<GraphAnnotationsPayload | null>(null);
@@ -753,46 +759,50 @@ export default function TeleologyClassicPage() {
       {/* Header + purpose lens */}
       <div
         style={{
-          padding: "20px 28px 14px",
+          padding: "8px 16px 10px",
           flexShrink: 0,
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          background: "transparent",
+          border: 0,
           display: "flex",
           flexDirection: "column",
           gap: 12,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", marginLeft: "auto" }}>
-            <button
-              type="button"
-              style={btn(true)}
-              disabled={busy || !datasetId}
-              onClick={handleSyncFromCompanyTree}
-              title={t(
-                language,
-                "Derive purpose edges from the company goal tree / mindmap on this dataset.",
-                "从本数据集的公司目标树/脑图自动生成目的边。",
-              )}
-            >
-              {t(language, "From goal tree", "从目标树同步")}
-            </button>
-            <button type="button" style={btn(false)} disabled={busy || !datasetId} onClick={handleSync}>
-              {t(language, "Sync YAML goals", "同步 YAML 目标")}
-            </button>
-            <button
-              type="button"
-              style={btn(false)}
-              onClick={() => {
-                setVocabQuery("");
-                setVocabHits([]);
-                setVocabTotal(null);
-                setVocabOpen(true);
-              }}
-            >
-              {t(language, "Manage goals", "管理目标")}
-            </button>
-          </div>
-        </div>
+        {actionsHost
+          ? createPortal(
+              <>
+                <button
+                  type="button"
+                  style={btn(true)}
+                  disabled={busy || !datasetId}
+                  onClick={handleSyncFromCompanyTree}
+                  title={t(
+                    language,
+                    "Derive purpose edges from the company goal tree / mindmap on this dataset.",
+                    "从本数据集的公司目标树/脑图自动生成目的边。",
+                  )}
+                >
+                  {t(language, "From goal tree", "从目标树同步")}
+                </button>
+                <button type="button" style={btn(false)} disabled={busy || !datasetId} onClick={handleSync}>
+                  {t(language, "Sync YAML goals", "同步 YAML 目标")}
+                </button>
+                <button
+                  type="button"
+                  style={btn(false)}
+                  onClick={() => {
+                    setVocabQuery("");
+                    setVocabHits([]);
+                    setVocabTotal(null);
+                    setVocabOpen(true);
+                  }}
+                >
+                  {t(language, "Manage goals", "管理目标")}
+                </button>
+              </>,
+              actionsHost,
+            )
+          : null}
 
         <div
           style={{

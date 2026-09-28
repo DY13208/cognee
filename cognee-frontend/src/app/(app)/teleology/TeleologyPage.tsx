@@ -43,8 +43,11 @@ export default function TeleologyPage() {
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}>
       <TrackPageView page="teleology" />
       {!(mode === "browser" && browserHeaderCollapsed) && <div className="teleology-mode-bar">
-        <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
-        <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
+        <div className="teleology-mode-tabs">
+          <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
+          <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
+        </div>
+        <div id="teleology-classic-actions" className="teleology-classic-actions" />
       </div>}
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {mode === "browser" ? (
