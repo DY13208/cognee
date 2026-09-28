@@ -437,16 +437,18 @@
 .onto-more-menu button:hover:not(:disabled) { background: #222; }
 .onto-more-menu button:disabled { opacity: .5; cursor: default; }
 .onto-body { gap: 0; padding: 0; background-color: #050505; background-image: radial-gradient(circle, rgba(255,255,255,.07) .75px, transparent 1px); background-size: 20px 20px; }
-.onto-side-container { position: relative; display: flex; flex: none; min-width: 0; min-height: 0; width: 264px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.onto-side-container.is-collapsed { width: 0; overflow: hidden; background: transparent; }
+.onto-side-container { position: relative; z-index: 6; display: flex; flex: none; min-width: 0; min-height: 0; width: 264px; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
+.onto-side-container.is-collapsed { width: 0; overflow: visible; background: transparent; }
 .onto-side-left .onto-nav { width: 100%; min-width: 0; border: 0; border-radius: 10px; padding: 14px; background: transparent; color: var(--onto-ink); }
 .onto-side-right { width: 272px; }
 .onto-side-right .onto-detail { width: 100%; min-width: 0; border: 0; border-radius: 10px; padding: 15px; background: transparent; }
-.onto-canvas-edge { position: absolute; top: 50%; z-index: 12; width: 22px; height: 44px; display: grid; place-items: center; transform: translateY(-50%); border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: rgba(12,12,12,.88); color: #e8e7e4; font-size: 18px; line-height: 1; cursor: pointer; }
-.onto-canvas-edge-left { left: 10px; }
-.onto-canvas-edge-right { right: 10px; }
-.onto-canvas-edge:hover { background: #242424; }
-.onto-canvas-edge:focus-visible { outline: 2px solid rgba(255,255,255,.4); outline-offset: 2px; }
+.onto-seam-tab { position: absolute; top: 50%; z-index: 8; width: 24px; height: 44px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.16); border-radius: 7px; background: rgba(8,8,8,.42); color: rgba(232,231,228,.42); font-size: 15px; line-height: 1; cursor: pointer; }
+.onto-seam-tab:hover { background: rgba(22,22,22,.92); border-color: rgba(255,255,255,.42); color: #fff; }
+.onto-seam-tab:focus-visible { outline: 2px solid rgba(255,255,255,.4); outline-offset: 2px; }
+.onto-seam-tab-left { right: 0; transform: translate(50%, -50%); }
+.onto-side-left.is-collapsed .onto-seam-tab-left { right: auto; left: 0; transform: translateY(-50%); }
+.onto-seam-tab-right { left: 0; transform: translate(-50%, -50%); }
+.onto-side-right.is-collapsed .onto-seam-tab-right { left: auto; right: 0; transform: translateY(-50%); }
 .onto-main { position: relative; border: 0; border-radius: 0; overflow: hidden; background: transparent; }
 .onto-canvas-toolbar { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 12; gap: 8px; flex-wrap: nowrap; min-height: 0; padding: 0; border: 0; background: transparent; pointer-events: none; }
 .onto-canvas-toolbar > * { pointer-events: auto; }

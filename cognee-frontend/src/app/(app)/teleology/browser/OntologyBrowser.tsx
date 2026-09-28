@@ -539,11 +539,10 @@ export default function OntologyBrowser({
       <div className="onto-body">
         <div className={`onto-side-container onto-side-left${leftOpen ? "" : " is-collapsed"}`}>
           {leftOpen && <NavPanel language={language} tree={goalTree} selectedId={focusId} loading={loadingFocus} onPick={setFocus} />}
+          <button type="button" className="onto-seam-tab onto-seam-tab-left" onClick={() => setLeftOpen((value) => !value)} aria-label={leftOpen ? t("Collapse goal tree", "收起目标目录") : t("Expand goal tree", "展开目标目录")} aria-expanded={leftOpen}>{leftOpen ? "‹" : "›"}</button>
         </div>
 
         <div className="onto-main" ref={mainRef}>
-          <button type="button" className="onto-canvas-edge onto-canvas-edge-left" onClick={() => setLeftOpen((value) => !value)} aria-label={leftOpen ? t("Collapse goal tree", "收起目标目录") : t("Expand goal tree", "展开目标目录")} aria-expanded={leftOpen}>{leftOpen ? "‹" : "›"}</button>
-          <button type="button" className="onto-canvas-edge onto-canvas-edge-right" onClick={() => setRightOpen((value) => !value)} aria-label={rightOpen ? t("Collapse details", "收起目标详情") : t("Expand details", "展开目标详情")} aria-expanded={rightOpen}>{rightOpen ? "›" : "‹"}</button>
           {loadError ? (
             <div style={{ padding: 12, color: "#F87171", fontSize: 12 }}>{loadError}</div>
           ) : null}
@@ -584,6 +583,7 @@ export default function OntologyBrowser({
         </div>
 
         <div className={`onto-side-container onto-side-right${rightOpen ? "" : " is-collapsed"}`}>
+        <button type="button" className="onto-seam-tab onto-seam-tab-right" onClick={() => setRightOpen((value) => !value)} aria-label={rightOpen ? t("Collapse details", "收起目标详情") : t("Expand details", "展开目标详情")} aria-expanded={rightOpen}>{rightOpen ? "›" : "‹"}</button>
         {rightOpen && <DetailPanel
           entity={selectedEntity}
           edges={visible.edges.filter(
