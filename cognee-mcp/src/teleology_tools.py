@@ -167,3 +167,63 @@ def register_teleology_tools(registry, get_client) -> None:
             f"/api/v1/teleology/annotations/purpose-proposals/{quote(proposal_id, safe='')}/commit",
             body={"dataset_id": dataset_id, "accepted_item_ids": accepted_item_ids or []},
         )
+
+    @registry.tool(tags={"teleology"})
+    async def start_teleology_coverage(
+        dataset_id: str,
+        mode: str = "incremental",
+        batch_size: int = 20,
+        concurrency: int = 3,
+        max_goals: int | None = None,
+        token_budget: int | None = None,
+    ) -> list:
+        """Start a backend coverage run for one dataset. Modes: baseline, incremental, force.
+
+        The server queues goals and calls analyze itself. Do not walk the company tree or call
+        analyze_goal once per goal. This only creates proposals. It never commits them.
+        Use max_goals for a pilot. Omit it only when a full run is intended.
+        """
+        body = {
+            "dataset_id": dataset_id,
+            "mode": mode or "incremental",
+            "batch_size": batch_size or 20,
+            "concurrency": concurrency or 3,
+        }
+        if max_goals:
+            body["max_goals"] = max_goals
+        if token_budget:
+            body["token_budget"] = token_budget
+        return await request("POST", "/api/v1/teleology/coverage/runs", body=body)
+
+    @registry.tool(tags={"teleology"})
+    async def get_teleology_coverage_status(run_id: str) -> list:
+        """Read one coverage run. The queue is in the database, so this survives an API restart."""
+        return await request("GET", f"/api/v1/teleology/coverage/runs/{quote(run_id, safe='')}")
+
+    @registry.tool(tags={"teleology"})
+    async def pause_teleology_coverage(run_id: str) -> list:
+        """Stop claiming new goals. A goal already sent to the model can finish."""
+        return await request(
+            "POST", f"/api/v1/teleology/coverage/runs/{quote(run_id, safe='')}/pause"
+        )
+
+    @registry.tool(tags={"teleology"})
+    async def resume_teleology_coverage(run_id: str) -> list:
+        """Continue a paused coverage run from the stored queue."""
+        return await request(
+            "POST", f"/api/v1/teleology/coverage/runs/{quote(run_id, safe='')}/resume"
+        )
+
+    @registry.tool(tags={"teleology"})
+    async def cancel_teleology_coverage(run_id: str) -> list:
+        """Cancel a coverage run. Pending goals are not analyzed. Nothing is committed."""
+        return await request(
+            "POST", f"/api/v1/teleology/coverage/runs/{quote(run_id, safe='')}/cancel"
+        )
+
+    @registry.tool(tags={"teleology"})
+    async def retry_teleology_coverage_failures(run_id: str) -> list:
+        """Requeue failed goals and continue. Successful goals are not repeated."""
+        return await request(
+            "POST", f"/api/v1/teleology/coverage/runs/{quote(run_id, safe='')}/retry-failures"
+        )

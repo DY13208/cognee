@@ -14,6 +14,7 @@ from cognee.modules.teleology.purpose_layer import get_purpose_context, propose_
 from cognee.modules.users.models import User
 
 _RELATIONS = frozenset({"serves", "advances", "blocks"})
+PROMPT_VERSION = "purpose-analyze-v1"
 
 _SYSTEM = """You infer why one company goal exists. The company tree is fact. You only propose a teleology layer.
 

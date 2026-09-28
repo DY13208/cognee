@@ -35,6 +35,16 @@ from cognee.modules.teleology.graph_annotations import (
     sync_from_company_tree,
     sync_goals_to_graph,
 )
+from cognee.modules.teleology.coverage_service import (
+    CoverageServiceError,
+    cancel_coverage,
+    coverage_run,
+    coverage_state,
+    pause_coverage,
+    resume_coverage,
+    retry_coverage_failures,
+    start_coverage,
+)
 from cognee.modules.teleology.purpose_analyze import analyze_goal
 from cognee.modules.teleology.purpose_layer import (
     ProposalCommitIncomplete,
@@ -120,6 +130,15 @@ class PurposeProposalCreate(InDTO):
     source_goal_id: str = Field(min_length=1)
     proposal: dict = Field(default_factory=dict)
     generated_by: Optional[str] = None
+
+
+class CoverageRunCreate(InDTO):
+    dataset_id: UUID
+    mode: Literal["baseline", "incremental", "force"] = "incremental"
+    batch_size: int = Field(default=20, ge=1, le=100)
+    concurrency: int = Field(default=3, ge=1, le=5)
+    max_goals: Optional[int] = Field(default=None, ge=1)
+    token_budget: Optional[int] = Field(default=None, ge=1)
 
 
 class PurposeProposalCommit(InDTO):
@@ -597,5 +616,90 @@ def get_teleology_router() -> APIRouter:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Purpose analysis failed: %s", exc, exc_info=True)
             return JSONResponse(status_code=502, content={"error": str(exc)})
+
+    @router.post("/coverage/runs", response_model=dict)
+    async def start_coverage_run(
+        payload: CoverageRunCreate,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Queue a coverage run. It creates proposals and never commits them."""
+        try:
+            return await start_coverage(
+                payload.dataset_id,
+                user,
+                mode=payload.mode,
+                batch_size=payload.batch_size,
+                concurrency=payload.concurrency,
+                max_goals=payload.max_goals,
+                token_budget=payload.token_budget,
+            )
+        except CoverageServiceError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.get("/coverage/runs/{run_id}", response_model=dict)
+    async def get_coverage_run(
+        run_id: str,
+        user: User = Depends(get_authenticated_user),
+    ):
+        del user
+        try:
+            return await coverage_run(run_id)
+        except CoverageServiceError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/coverage/runs/{run_id}/pause", response_model=dict)
+    async def pause_coverage_run(
+        run_id: str,
+        user: User = Depends(get_authenticated_user),
+    ):
+        del user
+        try:
+            return await pause_coverage(run_id)
+        except CoverageServiceError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/coverage/runs/{run_id}/resume", response_model=dict)
+    async def resume_coverage_run(
+        run_id: str,
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            current = await coverage_run(run_id)
+            return await resume_coverage(run_id, UUID(str(current["dataset_id"])), user)
+        except CoverageServiceError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/coverage/runs/{run_id}/cancel", response_model=dict)
+    async def cancel_coverage_run(
+        run_id: str,
+        user: User = Depends(get_authenticated_user),
+    ):
+        del user
+        try:
+            return await cancel_coverage(run_id)
+        except CoverageServiceError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/coverage/runs/{run_id}/retry-failures", response_model=dict)
+    async def retry_coverage_run(
+        run_id: str,
+        user: User = Depends(get_authenticated_user),
+    ):
+        try:
+            current = await coverage_run(run_id)
+            return await retry_coverage_failures(run_id, UUID(str(current["dataset_id"])), user)
+        except CoverageServiceError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.get("/coverage/state", response_model=dict)
+    async def get_coverage_state(
+        dataset_id: UUID,
+        status: Optional[str] = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+        user: User = Depends(get_authenticated_user),
+    ):
+        del user
+        return await coverage_state(dataset_id, status=status, limit=limit, offset=offset)
 
     return router

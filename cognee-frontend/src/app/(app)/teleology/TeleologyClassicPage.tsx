@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
+import CoveragePanel from "./CoveragePanel";
 import { TrackPageView } from "@/modules/analytics";
 import { useFilter } from "@/ui/layout/FilterContext";
 import recallKnowledge from "@/modules/datasets/recallKnowledge";
@@ -116,6 +117,7 @@ export default function TeleologyClassicPage() {
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null);
+  const [coverageOpen, setCoverageOpen] = useState(false);
   const { leftOpen, rightOpen, setLeftOpen, setRightOpen } = useSideOpen();
 
   useEffect(() => {
@@ -836,6 +838,9 @@ export default function TeleologyClassicPage() {
                 <button type="button" style={btn(false)} disabled={busy || !datasetId} onClick={handleSync}>
                   {t(language, "Sync YAML goals", "同步 YAML 目标")}
                 </button>
+                <button type="button" style={btn(false)} disabled={!datasetId} onClick={() => setCoverageOpen(true)}>
+                  {t(language, "Purpose coverage", "目的论覆盖分析")}
+                </button>
                 <button
                   type="button"
                   style={btn(false)}
@@ -1041,6 +1046,10 @@ export default function TeleologyClassicPage() {
       </div>
 
       {/* Graph + inspector — same shell as the goal hierarchy view */}
+      {coverageOpen && cogniInstance && datasetId ? (
+        <CoveragePanel instance={cogniInstance} datasetId={datasetId} onClose={() => setCoverageOpen(false)} />
+      ) : null}
+
       <div className="onto-body">
         <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t(language, "Expand goal tree", "展开目标目录")}>
           <GoalNav

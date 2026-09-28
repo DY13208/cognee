@@ -23,7 +23,10 @@ class FakeGraph:
         return self.nodes.get(node_id)
 
     async def add_nodes(self, nodes):
-        if getattr(self, "crash_after", None) is not None and len(self.added_nodes) >= self.crash_after:
+        if (
+            getattr(self, "crash_after", None) is not None
+            and len(self.added_nodes) >= self.crash_after
+        ):
             raise RuntimeError("crash before the next node")
         self.added_nodes.extend(nodes)
         for node in nodes:
@@ -48,6 +51,8 @@ class FakeGraph:
             if getattr(self, "child_rows", None) is not None:
                 return [(len(self.child_rows),)]
             return [(1,)]
+        if "has_detail_reference" in query and "RETURN c.id" in query:
+            return getattr(self, "reference_rows", [])
         if "RETURN c.id, c.name, c.type" in query:
             if getattr(self, "child_rows", None) is not None:
                 return self.child_rows
@@ -96,9 +101,7 @@ def storage(tmp_path, monkeypatch):
     monkeypatch.setattr(purpose_layer, "_authorized_dataset", authorized)
     monkeypatch.setattr(purpose_layer, "get_graph_engine", engine)
     monkeypatch.setattr(purpose_layer, "set_database_global_context_variables", _context)
-    monkeypatch.setattr(
-        "cognee.modules.teleology.proposal_store.database_enabled", lambda: False
-    )
+    monkeypatch.setattr("cognee.modules.teleology.proposal_store.database_enabled", lambda: False)
     return fake
 
 
@@ -272,7 +275,9 @@ async def test_commit_is_stale_after_description_child_or_relation_change(storag
     purpose_id = proposal["items"][0]["id"]
 
     async def changed_detail(*_args, **_kwargs):
-        return {"goal": {"id": "korea", "name": "韩国公司", "type": "Goal", "description": "描述已修改"}}
+        return {
+            "goal": {"id": "korea", "name": "韩国公司", "type": "Goal", "description": "描述已修改"}
+        }
 
     monkeypatch.setattr(purpose_layer, "goal_detail", changed_detail)
     with pytest.raises(purpose_layer.ProposalStaleError):
@@ -318,7 +323,9 @@ async def test_commit_is_stale_after_description_child_or_relation_change(storag
 
 
 async def _async_detail():
-    return {"goal": {"id": "korea", "name": "韩国公司", "type": "Goal", "description": "税务与外汇"}}
+    return {
+        "goal": {"id": "korea", "name": "韩国公司", "type": "Goal", "description": "税务与外汇"}
+    }
 
 
 @pytest.mark.asyncio
@@ -440,3 +447,27 @@ async def test_context_reports_truncation_child_evidence_and_soft_dedup(storage)
     assert prompt["children_total"] == 55
     assert "children_truncated" in _SYSTEM
     assert "完整业务结构" in _SYSTEM
+
+
+@pytest.mark.asyncio
+async def test_map_reference_is_evidence_and_name_does_not_reclassify(storage):
+    storage.child_rows = [
+        ("step", "报关", "Goal", '{"cpd_kind":"goal","description":"步骤"}'),
+        (
+            "law",
+            "法规管理办法",
+            "Goal",
+            '{"cpd_kind":"map_reference","source_scope":"company_model_only","source_note":"引用"}',
+        ),
+        ("named", "法规管理办法", "Goal", '{"cpd_kind":"goal","description":"这是业务步骤"}'),
+    ]
+    storage.reference_rows = [
+        ("room", "明细图", "Goal", '{"cpd_kind":"map_reference","source_note":"挂接"}')
+    ]
+    context = await purpose_layer.get_purpose_context(uuid4(), SimpleNamespace(), "korea")
+    assert [child["id"] for child in context["children"]] == ["step", "named"]
+    assert all(child["semantic_role"] == "goal" for child in context["children"])
+    referenced = {item["id"]: item for item in context["documents"]}
+    assert referenced["law"]["type"] == "MapReference"
+    assert referenced["law"]["semantic_role"] == "map_reference"
+    assert "named" not in referenced

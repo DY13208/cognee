@@ -220,6 +220,61 @@ def _dedupe_evidence(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return kept
 
 
+def _props_dict(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _hierarchy_row(row: Any, *, edge: str) -> dict[str, Any] | None:
+    """Classify a direct child from stored kind and edge label, never from its name."""
+    if not row or row[0] is None:
+        return None
+    props = _props_dict(row[3] if len(row) > 3 else None)
+    kind = str(props.get("cpd_kind") or "").strip()
+    role = "map_reference" if edge == "has_detail_reference" or kind == "map_reference" else "goal"
+    return {
+        "id": str(row[0]),
+        "name": str(row[1] or row[0]),
+        "type": "MapReference" if role == "map_reference" else str(row[2] or "Goal"),
+        "description": str(props.get("description") or props.get("source_note") or ""),
+        "semantic_role": role,
+        "cpd_kind": kind or None,
+        "source_scope": props.get("source_scope") or None,
+    }
+
+
+def _split_direct_children(
+    child_rows: list[Any] | None,
+    reference_rows: list[Any] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    goals: list[dict[str, Any]] = []
+    references: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in child_rows or []:
+        entry = _hierarchy_row(row, edge="has_subgoal")
+        if entry is None or entry["id"] in seen:
+            continue
+        seen.add(entry["id"])
+        if entry["semantic_role"] == "map_reference":
+            references.append(entry)
+        else:
+            goals.append(entry)
+    for row in reference_rows or []:
+        entry = _hierarchy_row(row, edge="has_detail_reference")
+        if entry is None or entry["id"] in seen:
+            continue
+        seen.add(entry["id"])
+        references.append(entry)
+    return goals, references
+
+
 def _knowledge_entry(row: tuple[Any, ...]) -> dict[str, Any] | None:
     if not row or len(row) < 3:
         return None
@@ -305,6 +360,14 @@ async def get_purpose_context(dataset_id: UUID, user: User, goal_id: str) -> dic
             LIMIT 40""",
             {"id": goal_id},
         )
+        reference_rows = await graph.query(
+            """MATCH (p:Node)-[r:EDGE]->(c:Node)
+            WHERE p.id = $id AND r.relationship_name = 'has_detail_reference'
+            RETURN c.id, c.name, c.type, c.properties
+            ORDER BY c.name, c.id
+            LIMIT 40""",
+            {"id": goal_id},
+        )
         missing_rows = await graph.query(
             """MATCH (p:Node)-[h:EDGE]->(c:Node)
             WHERE p.id = $id AND h.relationship_name = 'has_subgoal'
@@ -318,7 +381,8 @@ async def get_purpose_context(dataset_id: UUID, user: User, goal_id: str) -> dic
             LIMIT 40""",
             {"id": goal_id},
         )
-        child_ids = [str(row[0]) for row in children_rows or [] if row]
+        goal_children, map_references = _split_direct_children(children_rows, reference_rows)
+        child_ids = [child["id"] for child in goal_children]
         child_evidence_rows: list[Any] = []
         if child_ids:
             try:
@@ -347,19 +411,23 @@ async def get_purpose_context(dataset_id: UUID, user: User, goal_id: str) -> dic
                 )
         neighbor_rows, knowledge_total = await _knowledge_rows(graph, goal_id, limit=20)
     goal = detail["goal"]
-    children = [
-        {
-            "id": str(row[0]),
-            "name": str(row[1] or row[0]),
-            "type": str(row[2] or "Goal"),
-            "description": "",
-        }
-        for row in children_rows or []
-        if row
-    ]
+    children = goal_children
     relation_items = relations.get("items") or []
     purposes = _linked(relation_items, "Purpose")
     entities, documents = _split_knowledge(neighbor_rows)
+    for ref in map_references:
+        documents.append(
+            {
+                "id": ref["id"],
+                "name": ref["name"],
+                "type": "MapReference",
+                "summary": ref["description"],
+                "semantic_role": "map_reference",
+                "cpd_kind": ref["cpd_kind"],
+                "source_scope": ref["source_scope"],
+            }
+        )
+    documents = _dedupe_evidence(documents)
     child_buckets: dict[str, dict[str, Any]] = {
         child["id"]: {
             "goal_id": child["id"],
@@ -379,7 +447,11 @@ async def get_purpose_context(dataset_id: UUID, user: User, goal_id: str) -> dic
         entry = _knowledge_entry((row[1], row[2], row[3], row[4] if len(row) > 4 else None))
         if entry is None:
             continue
-        slot = "documents" if entry["type"] in _DOC_TYPES or entry["type"] == "Document" else "entities"
+        slot = (
+            "documents"
+            if entry["type"] in _DOC_TYPES or entry["type"] == "Document"
+            else "entities"
+        )
         if len(bucket["entities"]) + len(bucket["documents"]) >= _CHILD_EVIDENCE_PER_GOAL:
             continue
         bucket[slot].append(entry)
@@ -393,7 +465,8 @@ async def get_purpose_context(dataset_id: UUID, user: User, goal_id: str) -> dic
     ancestors = path.get("path") or []
     if ancestors and str(ancestors[-1].get("id")) == goal_id:
         ancestors = ancestors[:-1]
-    children_total = int(child_count_rows[0][0]) if child_count_rows else len(children)
+    raw_child_total = int(child_count_rows[0][0]) if child_count_rows else len(children_rows or [])
+    children_total = len(children) if raw_child_total <= 40 else raw_child_total
     result = {
         "dataset_id": str(dataset_id),
         "goal": goal,
@@ -414,7 +487,9 @@ async def get_purpose_context(dataset_id: UUID, user: User, goal_id: str) -> dic
         "documents_truncated": knowledge_total > len(documents),
         "child_evidence": child_evidence,
         "children_missing_purpose": [
-            {"id": str(row[0]), "name": str(row[1] or row[0])} for row in missing_rows or [] if row
+            {"id": str(row[0]), "name": str(row[1] or row[0])}
+            for row in missing_rows or []
+            if row and str(row[0]) not in {ref["id"] for ref in map_references}
         ],
         "source": goal.get("source") or ("company_tree" if goal.get("cpd_kind") else None),
         "revision": str(goal.get("created_at") or ""),
@@ -650,9 +725,13 @@ def _validate_commit_item(
         if not source or not target or source == target:
             raise ValueError("A relation cannot point at itself")
         if source not in known and source not in visible:
-            raise ValueError(f"Relation source {source} is not in the formal graph or this proposal")
+            raise ValueError(
+                f"Relation source {source} is not in the formal graph or this proposal"
+            )
         if target not in known and target not in visible:
-            raise ValueError(f"Relation target {target} is not in the formal graph or this proposal")
+            raise ValueError(
+                f"Relation target {target} is not in the formal graph or this proposal"
+            )
         evidence = [str(node_id) for node_id in item.get("evidence_node_ids") or []]
         if generated_by in {"purpose-agent", "workbuddy"}:
             if not str(item.get("reason") or "").strip() or not evidence:
@@ -661,18 +740,31 @@ def _validate_commit_item(
                 raise ValueError("AI relation evidence must come from the current context")
         resolved_source = id_by_ref.get(source, source)
         resolved_target = id_by_ref.get(target, target)
-        if (resolved_source, relation, resolved_target) in formal or (source, relation, target) in formal:
+        if (resolved_source, relation, resolved_target) in formal or (
+            source,
+            relation,
+            target,
+        ) in formal:
             raise ValueError("This relation already exists")
         endpoints = {source, target, resolved_source, resolved_target}
-        parent_child = (resolved_target, resolved_source) in tree_pairs or (target, source) in tree_pairs
-        if relation == "advances" and parent_child and not any(
-            node_id not in endpoints for node_id in evidence
+        parent_child = (resolved_target, resolved_source) in tree_pairs or (
+            target,
+            source,
+        ) in tree_pairs
+        if (
+            relation == "advances"
+            and parent_child
+            and not any(node_id not in endpoints for node_id in evidence)
         ):
             raise ValueError("A parent-child advances edge needs evidence beyond its endpoints")
         return
     if generated_by in {"purpose-agent", "workbuddy"}:
         evidence = [str(node_id) for node_id in item.get("evidence_node_ids") or []]
-        if not str(item.get("reason") or "").strip() or item.get("confidence") is None or not evidence:
+        if (
+            not str(item.get("reason") or "").strip()
+            or item.get("confidence") is None
+            or not evidence
+        ):
             raise ValueError("AI candidates need a reason, confidence, and evidence")
         if any(node_id not in visible for node_id in evidence):
             raise ValueError("AI evidence must come from the current context")
@@ -864,4 +956,10 @@ async def commit_teleology_proposal(
     proposal["summary"] = _summary(proposal["items"])
     proposal["commit_result"] = result
     await save_proposal(dataset_id, proposal, user=user)
+    related = [str(proposal.get("source_goal_id") or "")]
+    for edge in created_edges:
+        related.extend([str(edge.get("source_id") or ""), str(edge.get("target_id") or "")])
+    from cognee.modules.teleology.coverage_dirty import mark_teleology_dirty
+
+    await mark_teleology_dirty(dataset_id, related, "confirmed_teleology_change")
     return result

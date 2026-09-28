@@ -123,6 +123,42 @@ async def upsert_company_tree(
         if tree_edges:
             await graph.add_edges(tree_edges)
 
+        dirty_ids: set[str] = set()
+        for item in payload.nodes:
+            room = room_of[item.source_uid]
+            source_key = make_source_key(room, item.source_uid)
+            parent_key = (
+                make_source_key(room_of[item.source_parent_uid], item.source_parent_uid)
+                if item.source_parent_uid and item.source_parent_uid in room_of
+                else None
+            )
+            node_id = uid_to_id[item.source_uid]
+            parent_id = uid_to_id.get(item.source_parent_uid) if item.source_parent_uid else None
+            prior = existing.get(source_key)
+            if prior is None:
+                dirty_ids.add(node_id)
+                if parent_id:
+                    dirty_ids.add(parent_id)
+                continue
+            prior_props = prior[1]
+            text_changed = str(prior_props.get("name") or "") != item.name or str(
+                prior_props.get("source_note") or ""
+            ) != str(item.source_note or "")
+            parent_changed = str(prior_props.get("source_parent_key") or "") != str(parent_key or "")
+            if text_changed:
+                dirty_ids.add(node_id)
+            if parent_changed:
+                dirty_ids.add(node_id)
+                if parent_id:
+                    dirty_ids.add(parent_id)
+                old_parent = existing.get(str(prior_props.get("source_parent_key") or ""))
+                if old_parent:
+                    dirty_ids.add(old_parent[0])
+        if dirty_ids:
+            from cognee.modules.teleology.coverage_dirty import mark_teleology_dirty
+
+            await mark_teleology_dirty(dataset_id, list(dirty_ids), "company_tree_semantic_change")
+
         nodes, edges = await graph.get_graph_data()
         return assemble_company_tree(nodes, edges, payload.source_room)
 

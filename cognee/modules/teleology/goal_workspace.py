@@ -162,6 +162,12 @@ def _editable(props: dict[str, Any] | None) -> bool:
     )
 
 
+async def _mark_dirty(dataset_id: UUID, goal_ids: list[str], reason: str) -> None:
+    from cognee.modules.teleology.coverage_dirty import mark_teleology_dirty
+
+    await mark_teleology_dirty(dataset_id, goal_ids, reason)
+
+
 async def create_goal(
     dataset_id: UUID,
     user: User,
@@ -196,6 +202,7 @@ async def create_goal(
                 )
             ]
         )
+        await _mark_dirty(dataset_id, [parent_id, str(goal.id)], "child_added")
         return {
             "dataset_id": str(dataset_id),
             "goal": _node_row(str(goal.id), goal.model_dump(mode="json")),
@@ -245,6 +252,11 @@ async def update_goal(
             source="teleology_workspace",
         )
         await graph.add_nodes([updated])
+        text_changed = (name is not None and name != props.get("name")) or (
+            description is not None and description != (props.get("description") or "")
+        )
+        if text_changed:
+            await _mark_dirty(dataset_id, [goal_id], "goal_text_changed")
         return {
             "dataset_id": str(dataset_id),
             "goal": _node_row(goal_id, updated.model_dump(mode="json")),
@@ -292,6 +304,10 @@ async def move_goal(dataset_id: UUID, user: User, goal_id: str, parent_id: str) 
                 )
             ]
         )
+        moved = [goal_id, parent_id]
+        if old_parent:
+            moved.append(old_parent)
+        await _mark_dirty(dataset_id, moved, "child_moved")
         return {"dataset_id": str(dataset_id), "goal_id": goal_id, "parent_id": parent_id}
 
 
@@ -310,5 +326,10 @@ async def delete_goal(dataset_id: UUID, user: User, goal_id: str) -> dict[str, A
         )
         if rows:
             raise ValueError("Move or delete direct subgoals before deleting this goal")
+        parent = await _parent(graph, goal_id)
         await graph.delete_nodes([goal_id])
+        removed = [goal_id]
+        if parent:
+            removed.append(parent)
+        await _mark_dirty(dataset_id, removed, "child_removed")
         return {"dataset_id": str(dataset_id), "goal_id": goal_id, "deleted": True}

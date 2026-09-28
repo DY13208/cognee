@@ -68,7 +68,6 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const [dialog, setDialog] = useState<GoalDialog | null>(null);
   const [topOpen, setTopOpen] = useState(true);
   const [datasetMenu, setDatasetMenu] = useState(false);
-  const [view, setView] = useState<"focus" | "tree">("focus");
   const [why, setWhy] = useState<GraphNodeSummary[]>([]);
   const [review, setReview] = useState<TeleologyProposal | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -105,7 +104,15 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
           if (!page) next[ancestor.id] = { items: [child], total: ancestor.child_count || 1, loading: false, loaded: false, nextOffset: 0 };
           else if (!page.items.some((item) => item.id === child.id)) next[ancestor.id] = { ...page, items: [...page.items, child] };
         });
-        if (!next[id]?.loaded) next[id] = { items: childPage.goals, total: childPage.goals_total ?? childPage.goals.length, loading: false, loaded: true, nextOffset: childPage.goals.length };
+        const incoming = childPage.goals;
+        const prior = next[id];
+        if (!prior?.loaded) {
+          next[id] = { items: incoming, total: childPage.goals_total ?? incoming.length, loading: false, loaded: true, nextOffset: incoming.length };
+        } else {
+          const items = [...prior.items];
+          incoming.forEach((goal) => { if (!items.some((item) => item.id === goal.id)) items.push(goal); });
+          next[id] = { ...prior, items, loading: false, loaded: true };
+        }
         return next;
       });
     } catch (cause) { if (serial === requestId.current) setError(cause instanceof Error ? cause.message : String(cause)); }
@@ -338,18 +345,17 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
         <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncTree()}>{t("Sync company tree", "同步公司树")}</button>
         <button type="button" className="onto-btn onto-btn-primary" title={t("Analyze this goal only. The result stays a proposal until you confirm.", "只分析当前目标。确认前都是候选。")} disabled={!focusId || busy || analyzing} onClick={() => void analyzeCurrentGoal()}>{analyzing ? t("Analyzing…", "分析中…") : t("Analyze purpose relations", "分析目的关系")}</button>
         <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncYaml()}>{t("Sync YAML", "同步 YAML")}</button>
-        <div className="onto-view-switch"><button type="button" className={view === "focus" ? "is-active" : ""} onClick={() => setView("focus")}>{t("Focus view", "聚焦视图")}</button><button type="button" className={view === "tree" ? "is-active" : ""} onClick={() => setView("tree")}>{t("Tree overview", "树图概览")}</button></div>
       </> : <span className="onto-collapsed-title">{t("Teleology", "目的论")} · {selectedDataset?.name || datasets[0]?.name}</span>}
       <button type="button" className="onto-btn onto-collapse-btn" onClick={() => { setTopOpen(!topOpen); onHeaderCollapsedChange?.(topOpen); }}>{topOpen ? t("Collapse ↑", "收起 ↑") : t("Expand ↓", "展开 ↓")}</button>
     </header>
     <div className="onto-body">
       <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t("Expand goal tree", "展开目标目录")}>
-        <NavPanel language={language} roots={roots} pages={pages} focusId={focusId} pathIds={path.map((goal) => goal.id)} loading={loading} onPick={(id) => void enter(id)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} />
+        <NavPanel language={language} roots={roots} pages={pages} focusId={focusId} pathIds={path.map((goal) => goal.id)} loading={loading} onPick={(id) => void enter(id)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
       </SideRail>
       <main className="onto-main onto-focus-main">
         {error && <div className="onto-focus-error" role="alert">{error}</div>}
         <div className="onto-breadcrumb">{path.map((goal, index) => <span key={goal.id}><button type="button" onClick={() => void enter(goal.id)}>{goal.name}</button>{index < path.length - 1 && <b>›</b>}</span>)}</div>
-        {view === "focus" ? <div className="onto-focus-scroll">
+        <div className="onto-focus-scroll">
           {focus && <>
             <div className="onto-focus-parent-wrap"><div className="onto-lane-caption">WHY · {t("Purpose", "目的")}</div>{why.length ? why.map((purpose) => <button type="button" key={purpose.id} className="onto-focus-parent" onClick={() => setSelectedId(purpose.id)}>{purpose.name}</button>) : <div className="onto-why-empty">{t("No confirmed purpose yet.", "还没有确认的目的。")}</div>}{review && <div className="onto-candidate-row">{review.items.filter((item) => item.kind === "purpose" || item.kind === "goal" || item.kind === "constraint").map((item) => <div key={item.id} className="onto-candidate"><b>{item.name}</b><small>{t("AI suggestion", "AI 建议")}</small></div>)}{review.items.filter((item) => item.kind === "relation").map((item) => <div key={item.id} className="onto-candidate-link">{item.relationship}<span>{item.reason}</span></div>)}</div>}<div className="onto-hierarchy-line">serves</div></div>
             <div className="onto-focus-row">
@@ -358,10 +364,10 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
               <div className="onto-focus-side is-right"><button type="button" className="onto-purpose-pill is-advances" onClick={() => { setRelationType("advances"); setRelationOffset(0); setDrawer("relations"); }}>{t("Advances", "推进")} <b>{relationCounts.advances}</b></button>{relations.filter((edge) => edge.relationship === "advances").slice(0, 3).map((edge) => <small key={edge.id} className="onto-purpose-name">{edge.sourceId === focus.id ? edge.targetName : edge.sourceName}</small>)}<button type="button" className="onto-purpose-pill is-blocks" onClick={() => { setRelationType("blocks"); setRelationOffset(0); setDrawer("relations"); }}>{t("Blocks", "阻碍")} <b>{relationCounts.blocks}</b></button>{relations.filter((edge) => edge.relationship === "blocks").slice(0, 3).map((edge) => <small key={edge.id} className="onto-purpose-name">{edge.sourceId === focus.id ? edge.targetName : edge.sourceName}</small>)}</div>
             </div>
             <div className="onto-hierarchy-line">↓</div><div className="onto-lane-caption">HOW · {t("Direct subgoals", "下级目标 / 实现方式")}</div>
-            <div className="onto-child-grid">{children.map((goal) => <div key={goal.id} className={`onto-child-card${selectedId === goal.id ? " is-selected" : ""}`} onClick={() => setSelectedId(goal.id)} onDoubleClick={() => void enter(goal.id)}><strong><span className="onto-file-icon" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></span>{goal.name}</strong><p>{goal.description || ""}</p><footer>{t("Subgoals", "子目标")} {goal.child_count || 0}<button type="button" onClick={(event) => { event.stopPropagation(); void enter(goal.id); }}>{t("Enter", "进入")} ↗</button></footer></div>)}</div>
+            <div className="onto-child-grid">{children.map((goal) => <div key={goal.id} role="button" tabIndex={0} className={`onto-child-card${selectedId === goal.id ? " is-selected" : ""}`} onClick={() => void enter(goal.id)} onKeyDown={(event) => { if (event.key === "Enter") void enter(goal.id); }}><strong><span className="onto-file-icon" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg></span>{goal.name}</strong><p>{goal.description || ""}</p><footer>{t("Subgoals", "子目标")} {goal.child_count || 0}<span>{t("Enter", "进入")} ↗</span></footer></div>)}</div>
             {childTotal > children.length && <button type="button" className="onto-view-all" onClick={() => { setDrawerOffset(0); setDrawerQuery(""); setDrawer("children"); }}>＋ {t(`${childTotal - children.length} more subgoals · View all`, `还有 ${childTotal - children.length} 个子目标 · 查看全部`)}</button>}
           </>}
-        </div> : <div className="onto-tree-overview"><div className="onto-lane-caption">{t("Current branch · expand goals on demand", "当前分支 · 按需展开目标")}</div>{roots.map((goal) => <button type="button" key={goal.id} onClick={() => void enter(goal.id)}>◎ {goal.name} <small>{goal.child_count || 0} {t("direct goals", "个直接目标")}</small></button>)}{rootTotal > roots.length && <button type="button" onClick={async () => { const result = await getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }); setRoots((old) => [...old, ...result.goals]); }}>{t("More roots", "加载更多根目标")}</button>}</div>}
+        </div>
       </main>
       <SideRail side="right" open={rightOpen} onOpen={() => setRightOpen(true)} expandLabel={t("Expand details", "展开目标详情")}>
         <DetailPanel entity={selectedEntity} edges={relations.filter((edge) => edge.sourceId === selectedId || edge.targetId === selectedId)} focusId={focusId} language={language} path={selectedId === focusId ? path : undefined} onViewPath={() => void viewSelectedPath()} onSetFocus={(id) => void enter(id)} onSelectNeighbor={(id) => setSelectedId(id)} onCreateChild={createChild} onRelate={relateGoal} onCopy={copyGoal} onMove={moveGoal} onDelete={removeGoal} onEdit={editGoal} onExport={exportGoal} onClose={() => setRightOpen(false)} />

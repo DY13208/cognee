@@ -438,3 +438,76 @@ export async function commitPurposeProposal(
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();
 }
+
+export interface CoverageRun {
+  id: string;
+  dataset_id: string;
+  mode: "baseline" | "incremental" | "force" | string;
+  status: string;
+  batch_size: number;
+  concurrency: number;
+  max_goals?: number | null;
+  token_budget?: number | null;
+  used_input_tokens?: number | null;
+  used_output_tokens?: number | null;
+  total_goals: number;
+  eligible_goals: number;
+  queued_goals: number;
+  processed_goals: number;
+  skipped_goals: number;
+  proposal_goals: number;
+  no_change_goals: number;
+  no_context_goals: number;
+  failed_goals: number;
+}
+
+export interface CoverageStatePage {
+  items: { goal_id: string; status: string; dirty_reason?: string | null; retry_count?: number }[];
+  total: number;
+  summary: Record<string, number>;
+}
+
+export async function startCoverageRun(
+  instance: CogneeInstance,
+  input: {
+    dataset_id: string;
+    mode: "baseline" | "incremental" | "force";
+    batch_size?: number;
+    concurrency?: number;
+    max_goals?: number | null;
+    token_budget?: number | null;
+  },
+): Promise<CoverageRun> {
+  const resp = await instance.fetch("/v1/teleology/coverage/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function getCoverageRun(instance: CogneeInstance, runId: string): Promise<CoverageRun> {
+  const resp = await instance.fetch(`/v1/teleology/coverage/runs/${encodeURIComponent(runId)}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function coverageAction(
+  instance: CogneeInstance,
+  runId: string,
+  action: "pause" | "resume" | "cancel" | "retry-failures",
+): Promise<CoverageRun> {
+  const resp = await instance.fetch(`/v1/teleology/coverage/runs/${encodeURIComponent(runId)}/${action}`, {
+    method: "POST",
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function getCoverageState(instance: CogneeInstance, datasetId: string): Promise<CoverageStatePage> {
+  const params = new URLSearchParams({ dataset_id: datasetId, limit: "1" });
+  const resp = await instance.fetch(`/v1/teleology/coverage/state?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}

@@ -20,7 +20,7 @@ function GoalMark({ depth }: { depth: number }) {
 export type GoalTreeNode = { id: string; name: string; children: GoalTreeNode[] };
 export type GoalPage = { items: GraphNodeSummary[]; total: number; loading: boolean; loaded?: boolean; nextOffset?: number };
 
-export default function NavPanel({ language, roots, pages, focusId, pathIds, loading, onPick, onExpand, onSearch, onClose }: {
+export default function NavPanel({ language, roots, pages, focusId, pathIds, loading, onPick, onExpand, onSearch, onClose, hasMoreRoots, onLoadMoreRoots }: {
   language: "zh" | "en";
   roots: GraphNodeSummary[];
   pages: Record<string, GoalPage>;
@@ -31,6 +31,8 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   onExpand: (id: string, more?: boolean) => void;
   onSearch: (query: string) => Promise<GraphNodeSummary[]>;
   onClose?: () => void;
+  hasMoreRoots?: boolean;
+  onLoadMoreRoots?: () => void;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -107,7 +109,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
       </div>
     </div>
     <div className="onto-file-list" role="tree">
-      {query.trim() ? searching ? <div className="onto-nav-loading">{t("Searching…", "搜索中…")}</div> : results.length ? results.map((goal) => <button type="button" className="onto-nav-result" key={goal.id} onClick={() => { onPick(goal.id); setQuery(""); setResults([]); setSearchOpen(false); }}><span className="onto-file-icon" aria-hidden><GoalMark depth={0} /></span><span>{goal.name}</span><small>{goal.parent_name || t("Root goal", "根目标")}</small></button>) : <div className="onto-nav-loading">{t("No matching goals", "没有匹配的目标")}</div> : loading && !roots.length ? <div className="onto-nav-loading">{t("Loading roots…", "加载根目标中…")}</div> : roots.length ? roots.map((goal) => item(goal, 0)) : <div className="onto-nav-loading">{t("No goals. Sync the goal tree first.", "暂无目标，请先同步目标树。")}</div>}
+      {query.trim() ? searching ? <div className="onto-nav-loading">{t("Searching…", "搜索中…")}</div> : results.length ? results.map((goal) => <button type="button" className="onto-nav-result" key={goal.id} onClick={() => { onPick(goal.id); setQuery(""); setResults([]); setSearchOpen(false); }}><span className="onto-file-icon" aria-hidden><GoalMark depth={0} /></span><span>{goal.name}</span><small>{goal.parent_name || t("Root goal", "根目标")}</small></button>) : <div className="onto-nav-loading">{t("No matching goals", "没有匹配的目标")}</div> : loading && !roots.length ? <div className="onto-nav-loading">{t("Loading roots…", "加载根目标中…")}</div> : roots.length ? <>{roots.map((goal) => item(goal, 0))}{hasMoreRoots && <button type="button" className="onto-nav-more" onClick={onLoadMoreRoots}>{t("Load more roots", "加载更多根目标")}</button>}</> : <div className="onto-nav-loading">{t("No goals. Sync the goal tree first.", "暂无目标，请先同步目标树。")}</div>}
     </div>
   </aside>;
 }
