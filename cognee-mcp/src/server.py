@@ -48,6 +48,11 @@ try:
 except ImportError:
     from api_tools import register_api_surface_tools
 
+try:
+    from .teleology_tools import register_teleology_tools
+except ImportError:
+    from teleology_tools import register_teleology_tools
+
 
 try:
     __version__ = importlib.metadata.version("cognee-mcp")
@@ -75,6 +80,7 @@ def _get_cognee_client() -> CogneeClient:
 
 
 register_api_surface_tools(registry, _get_cognee_client)
+register_teleology_tools(registry, _get_cognee_client)
 
 # Per-dataset error ring buffer (bounded so long-running servers don't accumulate
 # unbounded memory). Each entry is (iso_timestamp, error_message).

@@ -187,6 +187,23 @@ class CogneeClient:
             "body": payload,
         }
 
+    async def upload_teleology_yaml(self, filename: str, content: str) -> Dict[str, Any]:
+        """Upload teleology YAML using the API's multipart file contract."""
+        if not self.use_api:
+            raise RuntimeError("Teleology YAML upload requires API mode (--api-url).")
+        if not filename.lower().endswith((".yaml", ".yml")):
+            raise ValueError("filename must end in .yaml or .yml")
+        response = await self.client.post(
+            f"{self.api_url}/api/v1/teleology",
+            headers=self._get_headers(include_content_type=False),
+            files={"teleology_file": (filename, content.encode("utf-8"), "application/x-yaml")},
+        )
+        try:
+            body = response.json()
+        except ValueError:
+            body = response.text
+        return {"status_code": response.status_code, "ok": response.is_success, "body": body}
+
     @staticmethod
     def _json_or_success(response: httpx.Response) -> Dict[str, Any]:
         """Return a JSON body when present, otherwise a generic success shape."""
