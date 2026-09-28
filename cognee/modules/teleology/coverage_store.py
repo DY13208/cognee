@@ -10,6 +10,9 @@ from uuid import uuid4
 from cognee.modules.teleology.proposal_store import _uuid, database_enabled
 
 LEASE_SECONDS = 15 * 60
+_RUN_DATES = frozenset({"created_at", "started_at", "paused_at", "completed_at"})
+_STATE_DATES = frozenset({"last_analyzed_at", "last_success_at"})
+_ITEM_DATES = frozenset({"lease_expires_at"})
 
 
 def _priority(item: dict[str, Any]) -> int:
@@ -221,6 +224,50 @@ class MemoryCoverageStore:
         return count
 
 
+def _as_dt(value: Any) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        parsed = datetime.fromisoformat(str(value))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def build_run_record(run: dict[str, Any]):
+    """Map a run payload onto the table, including started_at."""
+    from cognee.modules.teleology.coverage_models import TeleologyAnalysisRunRecord
+
+    return TeleologyAnalysisRunRecord(
+        id=_uuid(run.get("id")) or uuid4(),
+        dataset_id=_uuid(run["dataset_id"]),
+        mode=run["mode"],
+        status=run.get("status") or "pending",
+        batch_size=int(run.get("batch_size") or 20),
+        concurrency=int(run.get("concurrency") or 3),
+        max_goals=run.get("max_goals"),
+        token_budget=run.get("token_budget"),
+        used_input_tokens=run.get("used_input_tokens"),
+        used_output_tokens=run.get("used_output_tokens"),
+        total_goals=int(run.get("total_goals") or 0),
+        scanned_goals=int(run.get("scanned_goals") or 0),
+        eligible_goals=int(run.get("eligible_goals") or 0),
+        queued_goals=int(run.get("queued_goals") or 0),
+        processed_goals=int(run.get("processed_goals") or 0),
+        skipped_goals=int(run.get("skipped_goals") or 0),
+        proposal_goals=int(run.get("proposal_goals") or 0),
+        no_change_goals=int(run.get("no_change_goals") or 0),
+        no_context_goals=int(run.get("no_context_goals") or 0),
+        failed_goals=int(run.get("failed_goals") or 0),
+        created_at=_as_dt(run.get("created_at")) or datetime.now(timezone.utc),
+        started_at=_as_dt(run.get("started_at")),
+        paused_at=_as_dt(run.get("paused_at")),
+        completed_at=_as_dt(run.get("completed_at")),
+    )
+
+
 def _iso(value: Any) -> str | None:
     if value is None:
         return None
@@ -349,21 +396,7 @@ class SqlCoverageStore:
         }
 
     async def create_run(self, run: dict[str, Any]) -> dict[str, Any]:
-        from cognee.modules.teleology.coverage_models import TeleologyAnalysisRunRecord
-
-        record = TeleologyAnalysisRunRecord(
-            id=_uuid(run.get("id")) or uuid4(),
-            dataset_id=_uuid(run["dataset_id"]),
-            mode=run["mode"],
-            status=run.get("status") or "pending",
-            batch_size=int(run.get("batch_size") or 20),
-            concurrency=int(run.get("concurrency") or 3),
-            max_goals=run.get("max_goals"),
-            token_budget=run.get("token_budget"),
-            used_input_tokens=run.get("used_input_tokens"),
-            used_output_tokens=run.get("used_output_tokens"),
-            created_at=datetime.now(timezone.utc),
-        )
+        record = build_run_record(run)
         async with await self._session() as session:
             session.add(record)
             await session.commit()
@@ -377,8 +410,11 @@ class SqlCoverageStore:
             if row is None:
                 raise KeyError(run_id)
             for key, value in fields.items():
-                if hasattr(row, key):
-                    setattr(row, key, value)
+                if not hasattr(row, key):
+                    continue
+                if key in _RUN_DATES:
+                    value = _as_dt(value)
+                setattr(row, key, value)
             await session.commit()
             return _run_dict(row)
 
@@ -506,8 +542,11 @@ class SqlCoverageStore:
             if row is None:
                 raise KeyError(item_id)
             for key, value in fields.items():
-                if hasattr(row, key):
-                    setattr(row, key, value)
+                if not hasattr(row, key):
+                    continue
+                if key in _ITEM_DATES:
+                    value = _as_dt(value)
+                setattr(row, key, value)
             await session.commit()
             return _item_dict(row)
 
@@ -589,6 +628,9 @@ def _apply_state(row: Any, state: dict[str, Any]) -> None:
     ):
         if key in state:
             setattr(row, key, state[key])
+    for key in _STATE_DATES:
+        if key in state:
+            setattr(row, key, _as_dt(state[key]))
 
 
 def _state_dict(row: Any) -> dict[str, Any]:
@@ -627,6 +669,7 @@ def _run_dict(row: Any) -> dict[str, Any]:
         "used_input_tokens": row.used_input_tokens,
         "used_output_tokens": row.used_output_tokens,
         "total_goals": row.total_goals,
+        "scanned_goals": row.scanned_goals,
         "eligible_goals": row.eligible_goals,
         "queued_goals": row.queued_goals,
         "processed_goals": row.processed_goals,

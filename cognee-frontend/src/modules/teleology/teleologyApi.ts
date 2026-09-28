@@ -453,6 +453,7 @@ export interface CoverageRun {
   used_input_tokens?: number | null;
   used_output_tokens?: number | null;
   total_goals: number;
+  scanned_goals?: number;
   eligible_goals: number;
   queued_goals: number;
   processed_goals: number;

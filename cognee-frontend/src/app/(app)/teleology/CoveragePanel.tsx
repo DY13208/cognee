@@ -144,7 +144,8 @@ export default function CoveragePanel({
       {run ? (
         <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6 }}>
           <div>当前 Run {run.status} · {run.mode}</div>
-          <div>processed {run.processed_goals} / {run.total_goals || run.queued_goals}</div>
+          <div>已扫描 {run.scanned_goals || 0} / {run.total_goals || 0}</div>
+          <div>queued {run.queued_goals} · processed {run.processed_goals}</div>
           <div>skipped {run.skipped_goals} · proposal {run.proposal_goals} · no change {run.no_change_goals} · failed {run.failed_goals}</div>
         </div>
       ) : null}

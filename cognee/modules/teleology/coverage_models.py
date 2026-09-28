@@ -55,6 +55,7 @@ class TeleologyAnalysisRunRecord(Base):
     used_input_tokens = Column(Integer, nullable=True)
     used_output_tokens = Column(Integer, nullable=True)
     total_goals = Column(Integer, nullable=False, default=0)
+    scanned_goals = Column(Integer, nullable=False, default=0)
     eligible_goals = Column(Integer, nullable=False, default=0)
     queued_goals = Column(Integer, nullable=False, default=0)
     processed_goals = Column(Integer, nullable=False, default=0)

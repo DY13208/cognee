@@ -360,6 +360,169 @@ def test_sql_claim_locks_one_row_and_skips_locked():
     assert "LEASE_EXPIRES_AT" in sql
 
 
+def test_run_record_persists_started_at():
+    from cognee.modules.teleology.coverage_store import build_run_record
+
+    record = build_run_record(
+        {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "dataset_id": "22222222-2222-2222-2222-222222222222",
+            "mode": "baseline",
+            "status": "running",
+            "batch_size": 20,
+            "concurrency": 2,
+            "max_goals": 100,
+            "started_at": "2026-09-28T10:00:00+00:00",
+            "scanned_goals": 0,
+        }
+    )
+    assert record.started_at is not None
+    assert record.scanned_goals == 0
+
+
+@pytest.mark.asyncio
+async def test_started_at_is_set_when_the_run_is_created():
+    engine = CoverageEngine(MemoryCoverageStore(), FakeSources({"g": _context("g")}, _ok))
+    run = await engine.start("dataset", object(), mode="baseline", max_goals=1, wait=False)
+    assert run["started_at"]
+
+
+@pytest.mark.asyncio
+async def test_max_goals_streams_and_does_not_scan_the_whole_dataset():
+    store = MemoryCoverageStore()
+    sources = _StreamSources(total=12000, block_second_page=True)
+    engine = CoverageEngine(store, sources)
+    sources.engine = engine
+    original = store.claim_next
+
+    async def claim(run_id):
+        item = await original(run_id)
+        if item and sources.claimed_at is None:
+            current = await store.get_run(run_id)
+            sources.claimed_at = int(current["scanned_goals"] or 0)
+            sources.claimed.set()
+        return item
+
+    store.claim_next = claim
+    run = await engine.start(
+        "dataset",
+        object(),
+        mode="baseline",
+        batch_size=20,
+        concurrency=2,
+        max_goals=100,
+        wait=True,
+    )
+    items = await store.list_items(run["id"])
+    assert run["status"] == "completed"
+    assert run["started_at"]
+    assert run["queued_goals"] == 100
+    assert run["total_goals"] == 12000
+    assert run["scanned_goals"] < 12000
+    assert len(items) == 100
+    assert not any(item["status"] == "pending" for item in items)
+    assert sources.calls == 100
+    assert max(sources.offsets) <= 200
+    assert sources.claimed_at is not None and sources.claimed_at <= 200
+    assert run["scanned_goals"] > sources.claimed_at
+    assert any(0 < value < run["scanned_goals"] for value in sources.scans)
+    assert any(0 < value < 100 for value in sources.queued_seen)
+
+
+@pytest.mark.asyncio
+async def test_pause_during_scan_stops_enqueue():
+    store = MemoryCoverageStore()
+    sources = _StreamSources(total=400, pause_at=30)
+    engine = CoverageEngine(store, sources)
+    sources.engine = engine
+    run = await engine.start(
+        "dataset",
+        object(),
+        mode="baseline",
+        batch_size=20,
+        concurrency=2,
+        max_goals=100,
+        wait=True,
+    )
+    items = await store.list_items(run["id"])
+    assert run["status"] == "paused"
+    assert run["scanned_goals"] <= 30
+    assert max(sources.offsets) == 0
+    assert items
+    assert all(int(item["goal_id"][1:]) < 30 for item in items)
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_scan_adds_no_further_pending():
+    store = MemoryCoverageStore()
+    sources = _StreamSources(total=400, cancel_at=30)
+    engine = CoverageEngine(store, sources)
+    sources.engine = engine
+    run = await engine.start(
+        "dataset",
+        object(),
+        mode="baseline",
+        batch_size=20,
+        concurrency=2,
+        max_goals=100,
+        wait=True,
+    )
+    items = await store.list_items(run["id"])
+    assert run["status"] == "cancelled"
+    assert run["scanned_goals"] <= 30
+    assert not any(item["status"] == "pending" for item in items)
+    assert all(int(item["goal_id"][1:]) < 30 for item in items)
+
+
+class _StreamSources:
+    def __init__(self, total: int, pause_at: int | None = None, cancel_at: int | None = None, block_second_page: bool = False):
+        self.total = total
+        self.pause_at = pause_at
+        self.cancel_at = cancel_at
+        self.block_second_page = block_second_page
+        self.engine = None
+        self.offsets: list[int] = []
+        self.scans: list[int] = []
+        self.queued_seen: list[int] = []
+        self.calls = 0
+        self.claimed: asyncio.Event = asyncio.Event()
+        self.claimed_at: int | None = None
+
+    async def goal_page(self, _dataset_id, _user, offset, limit):
+        self.offsets.append(offset)
+        if self.block_second_page and offset >= 200:
+            await asyncio.wait_for(self.claimed.wait(), timeout=3)
+        stop = min(offset + limit, self.total)
+        return [f"g{index}" for index in range(offset, stop)], self.total
+
+    async def context(self, _dataset_id, _user, goal_id):
+        index = int(goal_id[1:])
+        if self.engine is not None:
+            current = await self.engine.store.get_run(self.engine.current_run_id)
+            self.scans.append(int(current.get("scanned_goals") or 0))
+            self.queued_seen.append(int(current.get("queued_goals") or 0))
+            if self.pause_at is not None and index == self.pause_at:
+                await self.engine.pause(self.engine.current_run_id)
+            if self.cancel_at is not None and index == self.cancel_at:
+                await self.engine.cancel(self.engine.current_run_id)
+        if index % 3:
+            return _context(goal_id, goal={"id": goal_id, "name": "空", "description": ""}, note="")
+        return _context(goal_id)
+
+    async def analyze(self, _dataset_id, _user, goal_id):
+        self.calls += 1
+        return _proposal(goal_id)
+
+    async def open_proposal(self, _dataset_id, _goal_id):
+        return None
+
+    async def mark_stale(self, _dataset_id, _user, _proposal):
+        return None
+
+    async def remember_semantic_hash(self, _dataset_id, _user, proposal, semantic_hash):
+        proposal["semantic_context_hash"] = semantic_hash
+
+
 def test_coverage_engine_never_commits():
     root = Path(__file__).resolve().parents[4] / "modules" / "teleology"
     for name in ("coverage_engine.py", "coverage_sources.py", "coverage_service.py"):

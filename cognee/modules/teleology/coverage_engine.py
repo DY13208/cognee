@@ -21,6 +21,8 @@ from cognee.modules.teleology.purpose_analyze import PROMPT_VERSION
 from cognee.modules.teleology.semantic_hash import semantic_context_hash
 
 logger = logging.getLogger(__name__)
+_DISCOVERY_PAGE = 200
+_STOP_STATUSES = frozenset({"paused", "paused_budget", "cancelled", "failed", "completed"})
 
 # TODO: LLMGateway.acreate_structured_output does not return provider token
 # usage to analyze_goal. Counts stay null until that hook exists. Do not estimate.
@@ -44,8 +46,9 @@ class CoverageSources(Protocol):
     ) -> None: ...
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _utcnow() -> datetime:
+    """Timezone-aware timestamp for DateTime columns. API responses serialize it."""
+    return datetime.now(timezone.utc)
 
 
 def _status_after_skip(state: dict[str, Any] | None, proposal: dict[str, Any] | None) -> str:
@@ -55,6 +58,30 @@ def _status_after_skip(state: dict[str, Any] | None, proposal: dict[str, Any] | 
     if current in {"confirmed", "clean", "no_supported_proposal", "insufficient_context"}:
         return current
     return "clean"
+
+
+class _ScanGate:
+    """Wakes consumers when a batch is queued, and when the scan stops."""
+
+    def __init__(self) -> None:
+        self.scan_done = False
+        self.version = 0
+        self._wake = asyncio.Event()
+
+    def pulse(self) -> None:
+        self.version += 1
+        self._wake.set()
+
+    def finish(self) -> None:
+        self.scan_done = True
+        self.version += 1
+        self._wake.set()
+
+    async def wait(self, seen: int) -> int:
+        while self.version == seen and not self.scan_done:
+            await self._wake.wait()
+        self._wake.clear()
+        return self.version
 
 
 def _usage(result: dict[str, Any] | None) -> tuple[int, int] | None:
@@ -126,6 +153,7 @@ class CoverageEngine:
                 "used_input_tokens": None,
                 "used_output_tokens": None,
                 "total_goals": 0,
+                "scanned_goals": 0,
                 "eligible_goals": 0,
                 "queued_goals": 0,
                 "processed_goals": 0,
@@ -134,7 +162,7 @@ class CoverageEngine:
                 "no_change_goals": 0,
                 "no_context_goals": 0,
                 "failed_goals": 0,
-                "started_at": _now(),
+                "started_at": _utcnow(),
             }
         )
         self.current_run_id = run["id"]
@@ -147,25 +175,38 @@ class CoverageEngine:
         run = await self.store.get_run(run_id)
         if not run:
             return
+        workers: list[asyncio.Task[None]] = []
         try:
             if run["status"] in {"pending", "paused", "paused_budget"}:
-                await self.store.update_run(
-                    run_id, status="running", started_at=run.get("started_at") or _now()
-                )
+                fields: dict[str, Any] = {"status": "running"}
+                if not run.get("started_at"):
+                    fields["started_at"] = _utcnow()
+                await self.store.update_run(run_id, **fields)
             await self.store.release_expired_leases(run_id)
-            if int(run.get("queued_goals") or 0) == 0 and not await self.store.list_items(run_id):
-                await self._enqueue(run_id, dataset_id, user)
-            await self._process(run_id, dataset_id, user)
+            gate = _ScanGate()
+            workers = [
+                asyncio.create_task(self._produce(run_id, dataset_id, user, gate)),
+                asyncio.create_task(self._process(run_id, dataset_id, user, gate)),
+            ]
+            await asyncio.gather(*workers)
         except Exception:
             logger.exception("Teleology coverage run %s failed", run_id)
-            await self.store.update_run(run_id, status="failed", completed_at=_now())
+            # Stop the sibling before writing failed. Otherwise a consumer that
+            # already observed status=running can commit completed afterwards,
+            # and the failed write never sticks.
+            for task in workers:
+                if not task.done():
+                    task.cancel()
+            if workers:
+                await asyncio.gather(*workers, return_exceptions=True)
+            await self.store.update_run(run_id, status="failed", completed_at=_utcnow())
 
     async def pause(self, run_id: str) -> dict[str, Any]:
         run = await self._require(run_id)
         if run["status"] != "running":
             raise ValueError("Only a running coverage run can be paused.")
         return (
-            self.present(await self.store.update_run(run_id, status="paused", paused_at=_now()))
+            self.present(await self.store.update_run(run_id, status="paused", paused_at=_utcnow()))
             or {}
         )
 
@@ -187,7 +228,7 @@ class CoverageEngine:
             await self.store.update_item(item["id"], status="cancelled")
         return (
             self.present(
-                await self.store.update_run(run_id, status="cancelled", completed_at=_now())
+                await self.store.update_run(run_id, status="cancelled", completed_at=_utcnow())
             )
             or {}
         )
@@ -226,26 +267,111 @@ class CoverageEngine:
             raise KeyError(run_id)
         return run
 
-    async def _enqueue(self, run_id: str, dataset_id: Any, user: Any) -> None:
+    async def _produce(self, run_id: str, dataset_id: Any, user: Any, gate: _ScanGate) -> None:
+        try:
+            await self._scan(run_id, dataset_id, user, gate)
+        finally:
+            gate.finish()
+
+    async def _scan(self, run_id: str, dataset_id: Any, user: Any, gate: _ScanGate) -> None:
         run = await self._require(run_id)
-        offset = 0
-        total = None
-        queued = skipped = no_context = 0
-        while total is None or offset < total:
-            goal_ids, total = await self.sources.goal_page(dataset_id, user, offset, 200)
-            if not goal_ids:
-                break
-            for goal_id in goal_ids:
-                outcome = await self._consider(run, user, goal_id)
-                if outcome == "queued":
-                    queued += 1
-                elif outcome == "insufficient":
-                    no_context += 1
-                else:
-                    skipped += 1
-            offset += 200
+        if not self._scan_open(run):
+            return
+        scanned = int(run.get("scanned_goals") or 0)
+        queued = int(run.get("queued_goals") or 0)
+        skipped = int(run.get("skipped_goals") or 0)
+        no_context = int(run.get("no_context_goals") or 0)
+        total = int(run.get("total_goals") or 0) or None
+        cap = run.get("max_goals")
+        batch = int(run.get("batch_size") or 20)
+        offset = scanned
+        buffer: list[dict[str, Any]] = []
+        discard = False
+        try:
+            while total is None or offset < total:
+                status = await self._run_status(run_id)
+                if status in _STOP_STATUSES:
+                    discard = status == "cancelled"
+                    return
+                if cap is not None and queued >= int(cap):
+                    return
+                goal_ids, total = await self.sources.goal_page(
+                    dataset_id, user, offset, _DISCOVERY_PAGE
+                )
+                if not goal_ids:
+                    return
+                for goal_id in goal_ids:
+                    status = await self._run_status(run_id)
+                    if status in _STOP_STATUSES:
+                        discard = status == "cancelled"
+                        return
+                    if cap is not None and queued >= int(cap):
+                        return
+                    outcome = await self._consider(run, user, goal_id, buffer=buffer)
+                    if outcome == "stopped":
+                        discard = await self._run_status(run_id) == "cancelled"
+                        return
+                    scanned += 1
+                    offset += 1
+                    if outcome == "queued":
+                        queued += 1
+                    elif outcome == "insufficient":
+                        no_context += 1
+                    else:
+                        skipped += 1
+                    await self._publish_scan(
+                        run_id,
+                        scanned=scanned,
+                        total=total,
+                        queued=queued,
+                        skipped=skipped,
+                        no_context=no_context,
+                    )
+                    if outcome == "queued" and len(buffer) >= batch:
+                        await self._flush(buffer, gate, dataset_id)
+                    if cap is not None and queued >= int(cap):
+                        return
+        finally:
+            if discard:
+                queued -= len(buffer)
+                buffer.clear()
+                await self._publish_scan(
+                    run_id,
+                    scanned=scanned,
+                    total=total,
+                    queued=queued,
+                    skipped=skipped,
+                    no_context=no_context,
+                )
+            else:
+                await self._flush(buffer, gate, dataset_id)
+
+    def _scan_open(self, run: dict[str, Any]) -> bool:
+        cap = run.get("max_goals")
+        queued = int(run.get("queued_goals") or 0)
+        if cap is not None and queued >= int(cap):
+            return False
+        total = int(run.get("total_goals") or 0)
+        scanned = int(run.get("scanned_goals") or 0)
+        return not total or scanned < total
+
+    async def _run_status(self, run_id: str) -> str:
+        run = await self.store.get_run(run_id)
+        return str((run or {}).get("status") or "failed")
+
+    async def _publish_scan(
+        self,
+        run_id: str,
+        *,
+        scanned: int,
+        total: int | None,
+        queued: int,
+        skipped: int,
+        no_context: int,
+    ) -> None:
         await self.store.update_run(
             run_id,
+            scanned_goals=scanned,
             total_goals=int(total or 0),
             eligible_goals=queued,
             queued_goals=queued,
@@ -253,7 +379,36 @@ class CoverageEngine:
             no_context_goals=no_context,
         )
 
-    async def _consider(self, run: dict[str, Any], user: Any, goal_id: str) -> str:
+    async def _flush(self, buffer: list[dict[str, Any]], gate: _ScanGate, dataset_id: Any) -> None:
+        if not buffer:
+            return
+        staged = list(buffer)
+        buffer.clear()
+        await self.store.add_items(
+            [
+                {key: value for key, value in item.items() if not key.startswith("_")}
+                for item in staged
+            ]
+        )
+        for item in staged:
+            await self._write_state(
+                dataset_id,
+                item["goal_id"],
+                item.get("_state"),
+                status="queued",
+                semantic_context_hash=(item.get("_state") or {}).get("semantic_context_hash"),
+                last_run_id=item["run_id"],
+            )
+        gate.pulse()
+        await asyncio.sleep(0)
+
+    async def _consider(
+        self,
+        run: dict[str, Any],
+        user: Any,
+        goal_id: str,
+        buffer: list[dict[str, Any]] | None = None,
+    ) -> str:
         dataset_id = run["dataset_id"]
         state = await self.store.get_state(dataset_id, goal_id)
         status = str((state or {}).get("status") or "never_analyzed")
@@ -265,6 +420,8 @@ class CoverageEngine:
         current = semantic_context_hash(context)
         proposal = await self.sources.open_proposal(dataset_id, goal_id)
         action = decide_coverage(run["mode"], state, context, proposal, current)
+        if await self._run_status(run["id"]) in _STOP_STATUSES:
+            return "stopped"
         if action == "skip":
             return "skip"
         if action == "insufficient":
@@ -278,17 +435,17 @@ class CoverageEngine:
                 last_run_id=run["id"],
             )
             return "insufficient"
-        await self.store.add_items(
-            [
-                {
-                    "run_id": run["id"],
-                    "goal_id": goal_id,
-                    "priority": priority_for(context),
-                    "semantic_context_hash": current,
-                    "action": action,
-                }
-            ]
-        )
+        item = {
+            "run_id": run["id"],
+            "goal_id": goal_id,
+            "priority": priority_for(context),
+            "semantic_context_hash": current,
+            "action": action,
+        }
+        if buffer is not None:
+            buffer.append({**item, "_state": state})
+            return "queued"
+        await self.store.add_items([item])
         await self._write_state(
             dataset_id,
             goal_id,
@@ -350,20 +507,24 @@ class CoverageEngine:
         )
         return "dirty"
 
-    async def _process(self, run_id: str, dataset_id: Any, user: Any) -> None:
+    async def _process(
+        self,
+        run_id: str,
+        dataset_id: Any,
+        user: Any,
+        gate: _ScanGate | None = None,
+    ) -> None:
+        if gate is None:
+            gate = _ScanGate()
+            gate.scan_done = True
+        seen = gate.version
         inflight: set[asyncio.Task[None]] = set()
         while True:
             run = await self.store.get_run(run_id)
             if not run or run["status"] != "running":
                 break
-            if self._budget_exhausted(run) or self._goal_cap_reached(run):
-                status = "paused_budget" if self._budget_exhausted(run) else "completed"
-                await self.store.update_run(
-                    run_id,
-                    status=status,
-                    paused_at=_now() if status == "paused_budget" else None,
-                    completed_at=_now() if status == "completed" else None,
-                )
+            if self._budget_exhausted(run):
+                await self.store.update_run(run_id, status="paused_budget", paused_at=_utcnow())
                 break
             if len(inflight) >= int(run["concurrency"]):
                 await self._wait_some(inflight)
@@ -373,11 +534,21 @@ class CoverageEngine:
                 if inflight:
                     await self._wait_some(inflight)
                     continue
-                await self.store.update_run(run_id, status="completed", completed_at=_now())
+                if not gate.scan_done:
+                    seen = await gate.wait(seen)
+                    continue
+                current = await self.store.get_run(run_id)
+                if current and current["status"] == "running":
+                    await self._complete_queue(run_id)
                 break
             inflight.add(asyncio.create_task(self._one(run_id, dataset_id, user, item)))
         if inflight:
             await asyncio.gather(*inflight, return_exceptions=True)
+
+    async def _complete_queue(self, run_id: str) -> None:
+        for item in await self.store.list_items(run_id, "pending"):
+            await self.store.update_item(item["id"], status="cancelled")
+        await self.store.update_run(run_id, status="completed", completed_at=_utcnow())
 
     async def _wait_some(self, inflight: set[asyncio.Task[None]]) -> None:
         done, _pending = await asyncio.wait(inflight, return_when=asyncio.FIRST_COMPLETED)
@@ -457,7 +628,7 @@ class CoverageEngine:
         started_reason = (state or {}).get("dirty_reason")
         if latest and latest.get("dirty_reason") and latest.get("dirty_reason") != started_reason:
             status = "dirty"
-        now = _now()
+        now = _utcnow()
         usage = _usage(result)
         await self._write_state(
             dataset_id,
@@ -544,7 +715,7 @@ class CoverageEngine:
             budget = run.get("token_budget")
             if budget is not None and used_in + used_out >= int(budget):
                 fields["status"] = "paused_budget"
-                fields["paused_at"] = _now()
+                fields["paused_at"] = _utcnow()
             await self.store.update_run(run_id, **fields)
         await self.store.update_item(item["id"], input_tokens=usage[0], output_tokens=usage[1])
 
@@ -583,10 +754,3 @@ class CoverageEngine:
             return False
         used = int(run.get("used_input_tokens") or 0) + int(run.get("used_output_tokens") or 0)
         return used >= int(budget)
-
-    def _goal_cap_reached(self, run: dict[str, Any]) -> bool:
-        cap = run.get("max_goals")
-        if cap is None:
-            return False
-        analyzed = int(run.get("proposal_goals") or 0) + int(run.get("no_change_goals") or 0)
-        return analyzed >= int(cap)
