@@ -277,7 +277,7 @@ def test_cross_proposal_purpose_is_a_conflict_not_an_endpoint():
     assert body["open_conflicts"]
     assert body["open_conflicts"][0]["proposal_id"] == "proposal-a"
     assert all(item["target"] != "open-item-1" for item in body["relations"])
-    assert body["purposes"][0]["id"] != "open-item-1"
+    assert body["purposes"] == []
 
 
 def test_relation_aliases_normalize_to_source_and_target():

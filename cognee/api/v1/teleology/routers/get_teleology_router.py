@@ -65,6 +65,10 @@ from ..teleology import TeleologyService
 
 logger = get_logger(__name__)
 
+
+def _optional_query(value: Optional[str]) -> Optional[str]:
+    return value.strip() or None if value is not None else None
+
 # Bundled with the teleology package (present in Docker images; examples/ is not).
 _SAMPLE_PATH = Path(__file__).resolve().parents[4] / "modules" / "teleology" / "sample_goals.yaml"
 
@@ -633,8 +637,10 @@ def get_teleology_router() -> APIRouter:
     ):
         await _authorized_dataset(dataset_id, user, "read")
         return await list_proposals(
-            dataset_id, run_id=run_id, source_goal_id=source_goal_id,
-            status=status, generated_by=generated_by, limit=limit, offset=offset,
+            dataset_id, run_id=_optional_query(run_id),
+            source_goal_id=_optional_query(source_goal_id),
+            status=_optional_query(status), generated_by=_optional_query(generated_by),
+            limit=limit, offset=offset,
         )
 
     @router.get("/proposals/{proposal_id}", response_model=dict)
@@ -658,7 +664,9 @@ def get_teleology_router() -> APIRouter:
         user: User = Depends(get_authenticated_user),
     ):
         try:
-            return await coverage_items(run_id, user, status=status, limit=limit, offset=offset)
+            return await coverage_items(
+                run_id, user, status=_optional_query(status), limit=limit, offset=offset
+            )
         except CoverageServiceError as exc:
             return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
 

@@ -70,6 +70,8 @@ async def coverage_items(
 ) -> dict[str, Any]:
     from cognee.modules.teleology.graph_annotations import _authorized_dataset
 
+    status = str(status).strip() or None if status is not None else None
+
     try:
         UUID(str(run_id))
     except ValueError as exc:

@@ -24,6 +24,77 @@ _CONSTRAINT_MARKERS = (
     "时限",
 )
 _OVERREACH = re.compile(r"必须使用|必须锚定|须锚定|必须通过|must use", re.IGNORECASE)
+_STRUCTURAL_REASON = re.compile(
+    r"直接子目标|上级节点|结构上(?:明确)?归属|层级关系|符合\s*goal\s*tree(?:\s*结构)?|"
+    r"\bparent\b|\bancestor\b|\bhierarchy\b",
+    re.IGNORECASE,
+)
+
+
+def same_purpose(left: str, right: str) -> bool:
+    """Match exact normalized names and obvious near duplicates."""
+    first = "".join(ch for ch in str(left or "").casefold() if not ch.isspace())
+    second = "".join(ch for ch in str(right or "").casefold() if not ch.isspace())
+    if len(first) < 4 or len(second) < 4:
+        return first == second and len(first) >= 2
+    shorter, longer = (first, second) if len(first) <= len(second) else (second, first)
+    return shorter in longer
+
+
+def _context_node_types(context: dict[str, Any]) -> dict[str, str]:
+    types: dict[str, str] = {}
+    for key, default_type in (
+        ("goal", "Goal"),
+        ("ancestors", "Goal"),
+        ("children", "Goal"),
+        ("purposes", "Purpose"),
+        ("constraints", "Constraint"),
+        ("entities", "Entity"),
+        ("documents", "Document"),
+    ):
+        nodes = [context.get(key)] if key == "goal" else context.get(key) or []
+        for node in nodes:
+            if isinstance(node, dict) and node.get("id"):
+                types[str(node["id"])] = str(node.get("type") or default_type).casefold()
+    for entry in context.get("child_evidence") or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("goal_id"):
+            types[str(entry["goal_id"])] = "goal"
+        for bucket, default_type in (("entities", "Entity"), ("documents", "Document")):
+            for node in entry.get(bucket) or []:
+                if isinstance(node, dict) and node.get("id"):
+                    types[str(node["id"])] = str(node.get("type") or default_type).casefold()
+    for relation in context.get("relations") or []:
+        if not isinstance(relation, dict):
+            continue
+        for side in ("source", "target"):
+            node_id = relation.get(f"{side}_id")
+            node_type = relation.get(f"{side}_type")
+            if node_id and node_type:
+                types.setdefault(str(node_id), str(node_type).casefold())
+    return types
+
+
+def structural_hierarchy_only(item: dict[str, Any], context: dict[str, Any]) -> bool:
+    """A hierarchy-aligned semantic relation needs non-Goal evidence and a semantic reason."""
+    if item.get("kind") != "relation":
+        return False
+    current = str((context.get("goal") or {}).get("id") or "")
+    ancestors = {str(node.get("id")) for node in context.get("ancestors") or []}
+    children = {str(node.get("id")) for node in context.get("children") or []}
+    source, target = str(item.get("source") or ""), str(item.get("target") or "")
+    aligned = (source == current and target in ancestors) or (
+        source in children and target == current
+    )
+    if not aligned:
+        return False
+    types = _context_node_types(context)
+    evidence = [str(value) for value in item.get("evidence_node_ids") or []]
+    independent = any(types.get(node_id) not in {None, "goal"} for node_id in evidence)
+    reason = str(item.get("reason") or "").strip()
+    structural_reason_only = bool(_STRUCTURAL_REASON.fullmatch(reason.strip("。,. ")))
+    return not independent or structural_reason_only
 
 
 def min_relation_confidence() -> float:
@@ -109,13 +180,16 @@ def partition_ai_items(
     conflicts: list[dict[str, Any]] = []
     warnings: list[str] = []
     threshold = min_relation_confidence()
+    seen_purposes: list[str] = []
     for item in items:
         kind = item.get("kind")
         if kind == "gap":
             kept.append(item)
             continue
         reason = str(item.get("reason") or "").strip()
-        evidence = [node_id for node_id in item.get("evidence_node_ids") or [] if str(node_id).strip()]
+        evidence = [
+            node_id for node_id in item.get("evidence_node_ids") or [] if str(node_id).strip()
+        ]
         confidence = item.get("confidence")
         illegal = [node_id for node_id in evidence if node_id not in visible]
         if illegal:
@@ -128,10 +202,36 @@ def partition_ai_items(
         if kind == "constraint" and constraint_overreach(item):
             weak.append({**item, "weak_reason": "constraint_overreach"})
             continue
+        if kind == "purpose":
+            matching = next(
+                (
+                    other
+                    for other in foreign
+                    if other.get("kind") == "purpose"
+                    and same_purpose(str(item.get("name") or ""), str(other.get("name") or ""))
+                ),
+                None,
+            )
+            if matching:
+                conflicts.append(
+                    {
+                        "type": "similar_open_proposal",
+                        "proposal_id": matching.get("proposal_id"),
+                        "item_id": matching.get("id"),
+                        "name": matching.get("name") or "",
+                    }
+                )
+                continue
+            if any(same_purpose(str(item.get("name") or ""), name) for name in seen_purposes):
+                continue
+            seen_purposes.append(str(item.get("name") or ""))
         if kind == "relation" and float(confidence) < threshold:
             weak.append({**item, "weak_reason": "low_confidence"})
             continue
         if kind == "relation":
+            if structural_hierarchy_only(item, context or {}):
+                weak.append({**item, "weak_reason": "structural_hierarchy_only"})
+                continue
             source = str(item.get("source") or "")
             target = str(item.get("target") or "")
             blocked = next((node_id for node_id in (source, target) if node_id in foreign_ids), "")
@@ -147,18 +247,4 @@ def partition_ai_items(
                 )
                 continue
         kept.append(item)
-    for item in kept:
-        if item.get("kind") != "purpose":
-            continue
-        name = str(item.get("name") or "").casefold()
-        for other in foreign:
-            if other.get("kind") == "purpose" and str(other.get("name") or "").casefold() == name:
-                conflicts.append(
-                    {
-                        "type": "similar_open_proposal",
-                        "proposal_id": other.get("proposal_id"),
-                        "item_id": other.get("id"),
-                        "name": other.get("name") or "",
-                    }
-                )
     return kept, weak, conflicts, warnings

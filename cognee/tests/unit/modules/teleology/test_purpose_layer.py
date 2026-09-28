@@ -106,6 +106,85 @@ def storage(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_persisted_ai_relation_cannot_repackage_hierarchy(storage):
+    proposal = await purpose_layer.propose_teleology(
+        uuid4(), SimpleNamespace(), source_goal_id="korea",
+        proposal={"relations": [{
+            "source": "korea", "target": "finance", "relationship": "serves",
+            "reason": "结构上明确归属", "confidence": 0.9,
+            "evidence_node_ids": ["korea", "finance"],
+        }]},
+        generated_by="workbuddy",
+    )
+    assert proposal["items"] == []
+    assert proposal["weak_signals"][0]["weak_reason"] == "structural_hierarchy_only"
+
+
+@pytest.mark.asyncio
+async def test_non_coverage_proposal_has_no_run_id(storage):
+    proposal = await purpose_layer.propose_teleology(
+        uuid4(), SimpleNamespace(), source_goal_id="korea",
+        proposal={"items": []}, generated_by="purpose-agent",
+    )
+    assert proposal["run_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_open_purpose_is_saved_only_once(storage):
+    import asyncio
+
+    dataset_id = uuid4()
+    body = {
+        "purposes": [{
+            "name": "支撑项目级利润准确核算与回款闭环",
+            "description": "利润与回款结果",
+            "reason": "税务备忘提供独立业务证据",
+            "confidence": 0.9,
+            "evidence_node_ids": ["doc-1"],
+        }],
+    }
+    first, second = await asyncio.gather(*[
+        purpose_layer.propose_teleology(
+            dataset_id, SimpleNamespace(), source_goal_id="korea",
+            proposal=body, generated_by="purpose-agent",
+        )
+        for _ in range(2)
+    ])
+    assert sum(len(proposal["items"]) for proposal in (first, second)) == 1
+    blocked = first if not first["items"] else second
+    assert len(blocked["open_conflicts"]) == 1
+    assert len((purpose_layer._load(dataset_id)["proposals"])) == 2
+
+
+@pytest.mark.asyncio
+async def test_open_conflict_merge_is_deduplicated(storage):
+    dataset_id = uuid4()
+    body = {
+        "purposes": [{
+            "name": "支撑项目级利润准确核算与回款闭环",
+            "reason": "税务备忘提供独立业务证据",
+            "confidence": 0.9,
+            "evidence_node_ids": ["doc-1"],
+        }],
+    }
+    first = await purpose_layer.propose_teleology(
+        dataset_id, SimpleNamespace(), source_goal_id="korea",
+        proposal=body, generated_by="purpose-agent",
+    )
+    conflict = {
+        "type": "similar_open_proposal", "proposal_id": first["id"],
+        "item_id": first["items"][0]["id"], "name": first["items"][0]["name"],
+    }
+    second = await purpose_layer.propose_teleology(
+        dataset_id, SimpleNamespace(), source_goal_id="korea",
+        proposal={**body, "open_conflicts": [conflict, conflict]},
+        generated_by="purpose-agent",
+    )
+    assert second["items"] == []
+    assert second["open_conflicts"] == [conflict]
+
+
+@pytest.mark.asyncio
 async def test_coverage_run_id_is_saved_on_proposal(storage):
     run_id = str(uuid4())
     proposal = await purpose_layer.propose_teleology(

@@ -55,6 +55,27 @@ async def test_proposal_review_tools_only_issue_get_requests():
 
 
 @pytest.mark.asyncio
+async def test_review_tools_omit_absent_filters():
+    registry = FakeRegistry()
+    client = FakeClient()
+    register_teleology_tools(registry, lambda: client)
+
+    await registry.tools["list_teleology_proposals"]("dataset-1")
+    await registry.tools["list_teleology_proposals"](
+        "dataset-1", run_id="", source_goal_id=" ", status="open"
+    )
+    await registry.tools["get_teleology_coverage_items"]("run-1")
+    await registry.tools["get_teleology_coverage_items"]("run-1", status="")
+
+    assert client.calls[0][3] == {"dataset_id": "dataset-1", "limit": 50, "offset": 0}
+    assert client.calls[1][3] == {
+        "dataset_id": "dataset-1", "status": "open", "limit": 50, "offset": 0,
+    }
+    assert client.calls[2][3] == {"limit": 50, "offset": 0}
+    assert client.calls[3][3] == {"limit": 50, "offset": 0}
+
+
+@pytest.mark.asyncio
 async def test_teleology_tools_route_to_api():
     registry = FakeRegistry()
     client = FakeClient()

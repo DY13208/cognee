@@ -9,7 +9,12 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 from cognee.infrastructure.llm.LLMGateway import LLMGateway
-from cognee.modules.teleology.proposal_rules import constraint_overreach, min_relation_confidence
+from cognee.modules.teleology.proposal_rules import (
+    constraint_overreach,
+    min_relation_confidence,
+    same_purpose,
+    structural_hierarchy_only,
+)
 from cognee.modules.teleology.purpose_layer import get_purpose_context, propose_teleology
 from cognee.modules.users.models import User
 
@@ -22,6 +27,9 @@ Allowed node kinds: Purpose, Constraint, Suggested Goal.
 Allowed relationships: serves, advances, blocks.
 Do not emit has_subgoal or any other relationship.
 Do not emit an advances edge only because one node is the child or parent of another. That structural link is already known. An advances edge needs evidence beyond those two endpoints, such as a document or entity id from the context.
+Open/uncommitted proposals are not evidence.
+Never cite, summarize, reinforce, or imitate another open proposal.
+Only use the bounded goal context and its graph/document/entity evidence.
 Reuse an existing purpose when the meaning matches. Do not create a near-duplicate purpose name.
 evidence_node_ids must be ids present in the context. Every item needs a non-empty reason, a confidence from 0 to 1, and at least one evidence id from this context.
 Do not invent an owner or a progress value. Do not rewrite the company tree.
@@ -66,13 +74,7 @@ def _fold(value: str) -> str:
 
 
 def _same_purpose(left: str, right: str) -> bool:
-    first, second = _fold(left), _fold(right)
-    if len(first) < 4 or len(second) < 4:
-        return first == second and len(first) >= 2
-    if first == second:
-        return True
-    shorter, longer = (first, second) if len(first) <= len(second) else (second, first)
-    return shorter in longer
+    return same_purpose(left, right)
 
 
 def _index(context: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
@@ -175,6 +177,7 @@ def _existing_keys(
 
 
 def _prompt_context(context: dict[str, Any], open_items: list[dict[str, Any]]) -> dict[str, Any]:
+    del open_items  # Open proposals are only used after inference for duplicate/conflict checks.
     def brief(node: dict[str, Any]) -> dict[str, str]:
         return {
             "id": str(node.get("id") or ""),
@@ -208,11 +211,6 @@ def _prompt_context(context: dict[str, Any], open_items: list[dict[str, Any]]) -
         "entities": [brief(node) for node in context.get("entities") or []],
         "documents": [brief(node) for node in context.get("documents") or []],
         "child_evidence": context.get("child_evidence") or [],
-        "open_proposal_names": [
-            item.get("name")
-            for item in open_items
-            if item.get("status") == "proposed" and item.get("name")
-        ],
     }
 
 
@@ -227,12 +225,6 @@ def normalize_analysis(
     open_items = open_items or []
     taken = _existing_keys(context, open_items)
     goal_id = str((context.get("goal") or {}).get("id") or "")
-    child_ids = {str(node.get("id")) for node in context.get("children") or []}
-    parent_id = (
-        str((context.get("ancestors") or [{}])[-1].get("id") or "")
-        if context.get("ancestors")
-        else ""
-    )
     created: dict[str, str] = {}
     purposes: list[dict[str, Any]] = []
     constraints: list[dict[str, Any]] = []
@@ -240,13 +232,7 @@ def normalize_analysis(
     weak_signals: list[dict[str, Any]] = []
     open_conflicts: list[dict[str, Any]] = []
 
-    def reuse_purpose(name: str) -> str | None:
-        for node in context.get("purposes") or []:
-            if _same_purpose(name, str(node.get("name") or "")):
-                return str(node.get("id"))
-        for item in purposes:
-            if _same_purpose(name, item["name"]):
-                return item["id"]
+    def reuse_purpose(name: str) -> tuple[str | None, bool]:
         for item in open_items:
             if item.get("kind") == "purpose" and _same_purpose(name, str(item.get("name") or "")):
                 open_conflicts.append(
@@ -257,7 +243,14 @@ def normalize_analysis(
                         "name": item.get("name") or name,
                     }
                 )
-        return None
+                return None, True
+        for node in context.get("purposes") or []:
+            if _same_purpose(name, str(node.get("name") or "")):
+                return str(node.get("id")), False
+        for item in purposes:
+            if _same_purpose(name, item["name"]):
+                return item["id"], False
+        return None, False
 
     def add_node(bucket: list[dict[str, Any]], kind: str, raw: dict[str, Any]) -> None:
         name = str(raw.get("name") or "").strip()
@@ -265,7 +258,9 @@ def normalize_analysis(
         if not name or not reason:
             return
         if kind == "purpose":
-            existing = reuse_purpose(name)
+            existing, blocked = reuse_purpose(name)
+            if blocked:
+                return
             if existing:
                 created[_fold(name)] = existing
                 created[name] = existing
@@ -334,6 +329,17 @@ def normalize_analysis(
         if not evidence_ids:
             continue
         confidence = _confidence(raw.get("confidence"))
+        candidate = {
+            "kind": "relation", "source": source_id, "target": target_id,
+            "relationship": relationship, "reason": reason,
+            "evidence_node_ids": evidence_ids,
+        }
+        if structural_hierarchy_only(candidate, context):
+            weak_signals.append({
+                **candidate, "confidence": confidence,
+                "weak_reason": "structural_hierarchy_only",
+            })
+            continue
         if confidence < min_relation_confidence():
             weak_signals.append(
                 {
@@ -364,13 +370,6 @@ def normalize_analysis(
                     "name": other.get("name") or "",
                 }
             )
-            continue
-        extra = [node_id for node_id in evidence_ids if node_id not in {source_id, target_id}]
-        structural = relationship == "advances" and (
-            (source_id in child_ids and target_id == goal_id)
-            or (source_id == goal_id and parent_id and target_id == parent_id)
-        )
-        if structural and not extra:
             continue
         key = (source_id, relationship, target_id)
         folded_key = (_fold(source_id), relationship, _fold(target_id))

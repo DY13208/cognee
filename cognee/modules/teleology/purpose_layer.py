@@ -8,6 +8,7 @@ nodes and edges, never as ``has_subgoal`` children of the company tree.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -24,6 +25,24 @@ from cognee.modules.teleology.purpose_relations import is_structural_advance
 from cognee.modules.users.models import User
 
 _RELATIONS = frozenset({"serves", "advances", "blocks"})
+_PROPOSAL_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _proposal_lock(dataset_id: UUID) -> asyncio.Lock:
+    return _PROPOSAL_LOCKS.setdefault(str(dataset_id), asyncio.Lock())
+
+
+def _dedupe_conflicts(conflicts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str, str]] = set()
+    result = []
+    for conflict in conflicts:
+        key = tuple(str(conflict.get(field) or "") for field in (
+            "type", "proposal_id", "item_id", "name"
+        ))
+        if key not in seen:
+            seen.add(key)
+            result.append(conflict)
+    return result
 
 
 def _semantic_hash(context: dict[str, Any]) -> str:
@@ -603,36 +622,41 @@ async def propose_teleology(
     incoming_conflicts = [
         entry for entry in proposal.get("open_conflicts") or [] if isinstance(entry, dict)
     ]
-    items, weak_signals, open_conflicts, warnings = partition_ai_items(
-        items,
-        generated_by=generated_by,
-        context=context,
-        open_items=await open_items(dataset_id),
-    )
-    for item in items:
-        if item["kind"] == "goal":
-            item["review_status"] = "proposed"
-            item["status"] = "proposed"
-    stored = {
-        "id": str(uuid4()),
-        "dataset_id": str(dataset_id),
-        "source_goal_id": source_goal_id,
-        "status": "open",
-        "run_id": str(run_id or proposal.get("run_id") or uuid4()),
-        "created_at": int(time.time() * 1000),
-        "generated_by": generated_by,
-        "source_revision": str(proposal.get("source_revision") or context.get("revision") or ""),
-        "context_hash": context.get("context_hash") or "",
-        "semantic_context_hash": _semantic_hash(context),
-        "analysis_summary": _analysis_text(proposal),
-        "items": items,
-        "weak_signals": incoming_weak + weak_signals,
-        "open_conflicts": incoming_conflicts + open_conflicts,
-        "validation_warnings": warnings,
-        "summary": _summary(items),
-    }
-    await save_proposal(dataset_id, stored, user=user)
-    return stored
+    async with _proposal_lock(dataset_id):
+        # Reload after inference while holding the lock. Concurrent goals cannot both
+        # accept the same open Purpose in this API worker.
+        items, weak_signals, open_conflicts, warnings = partition_ai_items(
+            items,
+            generated_by=generated_by,
+            context=context,
+            open_items=await open_items(dataset_id),
+        )
+        for item in items:
+            if item["kind"] == "goal":
+                item["review_status"] = "proposed"
+                item["status"] = "proposed"
+        stored = {
+            "id": str(uuid4()),
+            "dataset_id": str(dataset_id),
+            "source_goal_id": source_goal_id,
+            "status": "open",
+            "run_id": str(run_id) if run_id else None,
+            "created_at": int(time.time() * 1000),
+            "generated_by": generated_by,
+            "source_revision": str(
+                proposal.get("source_revision") or context.get("revision") or ""
+            ),
+            "context_hash": context.get("context_hash") or "",
+            "semantic_context_hash": _semantic_hash(context),
+            "analysis_summary": _analysis_text(proposal),
+            "items": items,
+            "weak_signals": incoming_weak + weak_signals,
+            "open_conflicts": _dedupe_conflicts(incoming_conflicts + open_conflicts),
+            "validation_warnings": warnings,
+            "summary": _summary(items),
+        }
+        await save_proposal(dataset_id, stored, user=user)
+        return stored
 
 
 async def start_purpose_review(dataset_id: UUID, user: User, goal_id: str) -> dict[str, Any]:

@@ -42,6 +42,7 @@ class FakeSources:
         self.contexts = contexts
         self._analyze = analyze
         self.calls = []
+        self.run_ids = []
         self.stale = []
 
     async def goal_page(self, _dataset_id, _user, offset, limit):
@@ -53,6 +54,7 @@ class FakeSources:
 
     async def analyze(self, _dataset_id, _user, goal_id, run_id):
         self.calls.append(goal_id)
+        self.run_ids.append(run_id)
         return await self._analyze(goal_id)
 
     async def open_proposal(self, _dataset_id, goal_id):
@@ -228,6 +230,7 @@ async def test_pause_resume_and_restart_do_not_repeat_a_finished_goal():
     restarted = CoverageEngine(store, sources)
     resumed = await restarted.resume(run["id"], "dataset", object(), wait=True)
     assert sources.calls == ["a", "b"]
+    assert sources.run_ids == [run["id"], run["id"]]
     assert resumed["status"] == "completed"
 
 

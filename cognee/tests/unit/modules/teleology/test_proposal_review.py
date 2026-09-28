@@ -15,13 +15,21 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
 from cognee.infrastructure.databases.relational import Base
-from cognee.modules.teleology import coverage_service, coverage_sources, proposal_review
+from cognee.modules.teleology import (
+    coverage_service,
+    coverage_sources,
+    proposal_review,
+    proposal_store,
+)
 from cognee.modules.teleology.coverage_models import (
     TeleologyAnalysisRunItemRecord,
     TeleologyAnalysisRunRecord,
 )
 from cognee.modules.teleology.coverage_store import SqlCoverageStore
-from cognee.modules.teleology.proposal_models import TeleologyProposalRecord
+from cognee.modules.teleology.proposal_models import (
+    TeleologyProposalItemRecord,
+    TeleologyProposalRecord,
+)
 from cognee.modules.users.methods import get_authenticated_user
 
 router_module = importlib.import_module("cognee.api.v1.teleology.routers.get_teleology_router")
@@ -69,6 +77,7 @@ async def review_db(monkeypatch):
             Base.metadata.create_all,
             tables=[
                 TeleologyProposalRecord.__table__,
+                TeleologyProposalItemRecord.__table__,
                 TeleologyAnalysisRunRecord.__table__,
                 TeleologyAnalysisRunItemRecord.__table__,
             ],
@@ -166,6 +175,33 @@ async def review_db(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_coverage_run_id_is_persisted_in_proposal_record(review_db, monkeypatch):
+    db = review_db
+
+    async def get_engine():
+        return _Engine(db.factory)
+
+    monkeypatch.setattr(proposal_store, "database_enabled", lambda: True)
+    monkeypatch.setattr(proposal_store, "_engine", get_engine)
+    proposal_id = str(uuid4())
+    await proposal_store.save_proposal(
+        db.dataset_a,
+        {
+            "id": proposal_id,
+            "dataset_id": str(db.dataset_a),
+            "source_goal_id": "new-goal",
+            "status": "open",
+            "generated_by": "purpose-agent",
+            "run_id": str(db.run_a),
+            "items": [],
+        },
+    )
+    async with db.factory() as session:
+        row = await session.get(TeleologyProposalRecord, UUID(proposal_id))
+        assert row.run_id == str(db.run_a)
+
+
+@pytest.mark.asyncio
 async def test_list_filters_run_goal_and_pagination(review_db):
     db = review_db
     listed = await proposal_review.list_proposals(db.dataset_a)
@@ -182,6 +218,11 @@ async def test_list_filters_run_goal_and_pagination(review_db):
     assert goal["total"] == 2
     assert (await proposal_review.list_proposals(db.dataset_a, status="open"))["total"] == 3
     assert (await proposal_review.list_proposals(db.dataset_a, generated_by="manual"))["total"] == 0
+    assert (
+        await proposal_review.list_proposals(
+            db.dataset_a, run_id="", source_goal_id=" ", status="", generated_by=" "
+        )
+    )["total"] == 3
     page = await proposal_review.list_proposals(db.dataset_a, limit=1, offset=1)
     assert page["total"] == 3 and len(page["items"]) == 1
     assert page["items"][0]["id"] != listed["items"][0]["id"]
@@ -339,6 +380,19 @@ async def test_http_review_routes_enforce_dataset_access_without_writes(review_d
             f"{base}/coverage/runs/{db.run_a}/items", params={"status": "done"}
         )
         assert response.status_code == 200 and response.json()["total"] == 1
+        response = await client.get(
+            f"{base}/coverage/runs/{db.run_a}/items", params={"status": " "}
+        )
+        assert response.status_code == 200 and response.json()["total"] == 2
+        response = await client.get(
+            f"{base}/proposals",
+            params={
+                "dataset_id": str(db.dataset_a),
+                "run_id": "",
+                "status": " ",
+            },
+        )
+        assert response.status_code == 200 and response.json()["total"] == 3
         response = await client.get(
             f"{base}/proposals/{db.proposals[0]['id']}",
             params={"dataset_id": str(db.dataset_b)},

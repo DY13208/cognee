@@ -177,10 +177,13 @@ def register_teleology_tools(registry, get_client) -> None:
         status: str = None, limit: int = 50, offset: int = 0,
     ) -> list:
         """Read paginated proposal summaries within a dataset, optionally for one coverage run."""
-        return await request("GET", "/api/v1/teleology/proposals", params={
-            "dataset_id": dataset_id, "run_id": run_id, "source_goal_id": source_goal_id,
-            "status": status, "limit": limit, "offset": offset,
-        }, safe_error=True)
+        params = {"dataset_id": dataset_id, "limit": limit, "offset": offset}
+        for key, value in (("run_id", run_id), ("source_goal_id", source_goal_id),
+                           ("status", status)):
+            if value and value.strip():
+                params[key] = value.strip()
+        return await request("GET", "/api/v1/teleology/proposals", params=params,
+                             safe_error=True)
 
     @registry.tool(tags={"teleology"})
     async def get_teleology_proposal(dataset_id: str, proposal_id: str) -> list:
@@ -195,9 +198,12 @@ def register_teleology_tools(registry, get_client) -> None:
         run_id: str, status: str = None, limit: int = 50, offset: int = 0,
     ) -> list:
         """Read persisted queue items for one coverage run without changing their status."""
+        params = {"limit": limit, "offset": offset}
+        if status and status.strip():
+            params["status"] = status.strip()
         return await request(
             "GET", f"/api/v1/teleology/coverage/runs/{quote(run_id, safe='')}/items",
-            params={"status": status, "limit": limit, "offset": offset}, safe_error=True,
+            params=params, safe_error=True,
         )
 
     @registry.tool(tags={"teleology"})

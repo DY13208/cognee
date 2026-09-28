@@ -41,6 +41,10 @@ def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _optional_filter(value: str | None) -> str | None:
+    return str(value).strip() or None if value is not None else None
+
+
 def _view(payload: dict[str, Any], row: Any | None = None, *, detail: bool = False) -> dict:
     fields = (
         "id",
@@ -89,6 +93,10 @@ async def list_proposals(
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    run_id = _optional_filter(run_id)
+    source_goal_id = _optional_filter(source_goal_id)
+    status = _optional_filter(status)
+    generated_by = _optional_filter(generated_by)
     if not database_enabled():
         from cognee.modules.teleology.purpose_layer import _load
 
