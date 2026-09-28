@@ -57,10 +57,11 @@ async def start_coverage(dataset_id: UUID, user: Any, **options: Any) -> dict[st
 
 
 async def coverage_run(run_id: str) -> dict[str, Any]:
-    run = await get_coverage_engine().store.get_run(run_id)
+    engine = get_coverage_engine()
+    run = await engine.store.get_run(run_id)
     if not run:
         raise CoverageServiceError(404, "Coverage run not found.")
-    return run
+    return engine.present(run) or run
 
 
 async def pause_coverage(run_id: str) -> dict[str, Any]:

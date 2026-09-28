@@ -123,6 +123,8 @@ async def upsert_company_tree(
         if tree_edges:
             await graph.add_edges(tree_edges)
 
+        from cognee.modules.teleology.coverage_logic import dirty_ids_for_text
+
         dirty_ids: set[str] = set()
         for item in payload.nodes:
             room = room_of[item.source_uid]
@@ -146,7 +148,9 @@ async def upsert_company_tree(
             ) != str(item.source_note or "")
             parent_changed = str(prior_props.get("source_parent_key") or "") != str(parent_key or "")
             if text_changed:
-                dirty_ids.add(node_id)
+                dirty_ids.update(
+                    dirty_ids_for_text(goal_id=node_id, parent_id=parent_id, text_changed=True)
+                )
             if parent_changed:
                 dirty_ids.add(node_id)
                 if parent_id:

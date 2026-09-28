@@ -3,16 +3,38 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
 from cognee.modules.teleology.proposal_store import _uuid, database_enabled
 
+LEASE_SECONDS = 15 * 60
+
 
 def _priority(item: dict[str, Any]) -> int:
     value = item.get("priority")
     return 3 if value is None else int(value)
+
+
+def _lease_stamp() -> str:
+    return (datetime.now(timezone.utc) + timedelta(seconds=LEASE_SECONDS)).isoformat()
+
+
+def _lease_due(item: dict[str, Any]) -> bool:
+    raw = item.get("lease_expires_at")
+    if not raw:
+        return True
+    moment = datetime.fromisoformat(str(raw))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment <= datetime.now(timezone.utc)
+
+
+def _claimable(item: dict[str, Any]) -> bool:
+    if item.get("status") == "pending":
+        return True
+    return item.get("status") == "analyzing" and _lease_due(item)
 
 
 def _now() -> str:
@@ -150,7 +172,7 @@ class MemoryCoverageStore:
             pending = [
                 item
                 for item in self.items.values()
-                if item["run_id"] == str(run_id) and item["status"] == "pending"
+                if item["run_id"] == str(run_id) and _claimable(item)
             ]
             pending.sort(key=lambda item: (_priority(item), item["goal_id"]))
             if not pending:
@@ -158,7 +180,12 @@ class MemoryCoverageStore:
             item = pending[0]
             item["status"] = "analyzing"
             item["attempts"] = int(item.get("attempts") or 0) + 1
+            item["lease_expires_at"] = _lease_stamp()
             return dict(item)
+
+    async def get_item(self, item_id: str) -> dict[str, Any] | None:
+        item = self.items.get(str(item_id))
+        return dict(item) if item else None
 
     async def update_item(self, item_id: str, **fields: Any) -> dict[str, Any]:
         item = self.items[str(item_id)]
@@ -174,11 +201,12 @@ class MemoryCoverageStore:
         rows.sort(key=lambda item: (_priority(item), item["goal_id"]))
         return rows
 
-    async def release_analyzing(self, run_id: str) -> int:
+    async def release_expired_leases(self, run_id: str) -> int:
         released = 0
         for item in self.items.values():
-            if item["run_id"] == str(run_id) and item["status"] == "analyzing":
+            if item["run_id"] == str(run_id) and item["status"] == "analyzing" and _lease_due(item):
                 item["status"] = "pending"
+                item["lease_expires_at"] = None
                 released += 1
         return released
 
@@ -418,7 +446,44 @@ class SqlCoverageStore:
             await session.commit()
         return added
 
+    @staticmethod
+    def claim_statement(run_id: Any, now: datetime | None = None):
+        """One row lock. SKIP LOCKED keeps a second worker off this goal."""
+        from sqlalchemy import and_, or_, select
+
+        from cognee.modules.teleology.coverage_models import TeleologyAnalysisRunItemRecord
+
+        moment = now or datetime.now(timezone.utc)
+        item = TeleologyAnalysisRunItemRecord
+        return (
+            select(item)
+            .where(
+                item.run_id == _uuid(run_id),
+                or_(
+                    item.status == "pending",
+                    and_(
+                        item.status == "analyzing",
+                        or_(item.lease_expires_at.is_(None), item.lease_expires_at < moment),
+                    ),
+                ),
+            )
+            .order_by(item.priority, item.goal_id)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+
     async def claim_next(self, run_id: str) -> dict[str, Any] | None:
+        async with await self._session() as session:
+            row = (await session.execute(self.claim_statement(run_id))).scalar_one_or_none()
+            if row is None:
+                return None
+            row.status = "analyzing"
+            row.attempts = int(row.attempts or 0) + 1
+            row.lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=LEASE_SECONDS)
+            await session.commit()
+            return _item_dict(row)
+
+    async def get_item(self, item_id: str) -> dict[str, Any] | None:
         from sqlalchemy import select
 
         from cognee.modules.teleology.coverage_models import TeleologyAnalysisRunItemRecord
@@ -426,24 +491,12 @@ class SqlCoverageStore:
         async with await self._session() as session:
             row = (
                 await session.execute(
-                    select(TeleologyAnalysisRunItemRecord)
-                    .where(
-                        TeleologyAnalysisRunItemRecord.run_id == _uuid(run_id),
-                        TeleologyAnalysisRunItemRecord.status == "pending",
+                    select(TeleologyAnalysisRunItemRecord).where(
+                        TeleologyAnalysisRunItemRecord.id == _uuid(item_id)
                     )
-                    .order_by(
-                        TeleologyAnalysisRunItemRecord.priority,
-                        TeleologyAnalysisRunItemRecord.goal_id,
-                    )
-                    .limit(1)
                 )
             ).scalar_one_or_none()
-            if row is None:
-                return None
-            row.status = "analyzing"
-            row.attempts = int(row.attempts or 0) + 1
-            await session.commit()
-            return _item_dict(row)
+            return _item_dict(row) if row else None
 
     async def update_item(self, item_id: str, **fields: Any) -> dict[str, Any]:
         from cognee.modules.teleology.coverage_models import TeleologyAnalysisRunItemRecord
@@ -483,11 +536,34 @@ class SqlCoverageStore:
             )
         return [_item_dict(row) for row in rows]
 
-    async def release_analyzing(self, run_id: str) -> int:
-        items = await self.list_items(run_id, "analyzing")
-        for item in items:
-            await self.update_item(item["id"], status="pending")
-        return len(items)
+    async def release_expired_leases(self, run_id: str) -> int:
+        from sqlalchemy import or_, select
+
+        from cognee.modules.teleology.coverage_models import TeleologyAnalysisRunItemRecord
+
+        moment = datetime.now(timezone.utc)
+        item = TeleologyAnalysisRunItemRecord
+        async with await self._session() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(item)
+                        .where(
+                            item.run_id == _uuid(run_id),
+                            item.status == "analyzing",
+                            or_(item.lease_expires_at.is_(None), item.lease_expires_at < moment),
+                        )
+                        .with_for_update(skip_locked=True)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in rows:
+                row.status = "pending"
+                row.lease_expires_at = None
+            await session.commit()
+        return len(rows)
 
     async def requeue_failed(self, run_id: str) -> int:
         items = await self.list_items(run_id, "failed")
@@ -575,6 +651,7 @@ def _item_dict(row: Any) -> dict[str, Any]:
         "status": row.status,
         "semantic_context_hash": row.semantic_context_hash,
         "attempts": row.attempts,
+        "lease_expires_at": _iso(row.lease_expires_at),
         "proposal_id": row.proposal_id,
         "error": row.error,
         "input_tokens": row.input_tokens,

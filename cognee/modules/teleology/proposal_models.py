@@ -23,6 +23,7 @@ class TeleologyProposalRecord(Base):
     run_id = Column(String(64), nullable=True)
     source_revision = Column(String(128), nullable=True)
     context_hash = Column(String(64), nullable=True)
+    semantic_context_hash = Column(String(64), nullable=True)
     analysis_summary = Column(Text, nullable=True)
     user_id = Column(UUID, nullable=True)
     payload = Column(Text, nullable=False, default="{}")

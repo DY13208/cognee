@@ -58,7 +58,7 @@ export default function CoveragePanel({
   const analyzed = count(summary, "clean") + count(summary, "confirmed") + count(summary, "proposal_open") + count(summary, "no_supported_proposal");
   const coverage = known > 0 ? Math.round((analyzed / known) * 100) : 0;
   const tokens = useMemo(() => {
-    if (!run || (run.used_input_tokens == null && run.used_output_tokens == null)) return "尚未统计";
+    if (!run?.token_usage_available) return "Token 用量暂不可用";
     const input = run.used_input_tokens || 0;
     const output = run.used_output_tokens || 0;
     return `${input + output}（输入 ${input} / 输出 ${output}）`;
@@ -129,6 +129,7 @@ export default function CoveragePanel({
       <p style={{ margin: "8px 0 12px", color: "rgba(237,236,234,0.62)", fontSize: 13 }}>
         只生成提案，不会自动确认，也不会写入正式图谱。默认先处理最多 100 个目标。
       </p>
+      <p style={{ margin: "0 0 12px", fontSize: 12, color: "rgba(237,236,234,0.62)" }}>{tokens}</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
         <Stat label="覆盖率" value={`${coverage}%`} />
         <Stat label="已记录" value={String(known)} />
@@ -145,7 +146,6 @@ export default function CoveragePanel({
           <div>当前 Run {run.status} · {run.mode}</div>
           <div>processed {run.processed_goals} / {run.total_goals || run.queued_goals}</div>
           <div>skipped {run.skipped_goals} · proposal {run.proposal_goals} · no change {run.no_change_goals} · failed {run.failed_goals}</div>
-          <div>token {tokens}</div>
         </div>
       ) : null}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, alignItems: "center" }}>

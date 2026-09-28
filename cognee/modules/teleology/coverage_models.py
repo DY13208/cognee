@@ -81,6 +81,7 @@ class TeleologyAnalysisRunItemRecord(Base):
     status = Column(String(32), nullable=False, default="pending")
     semantic_context_hash = Column(String(64), nullable=True)
     attempts = Column(Integer, nullable=False, default=0)
+    lease_expires_at = Column(DateTime(timezone=True), nullable=True)
     proposal_id = Column(String(64), nullable=True)
     error = Column(Text, nullable=True)
     input_tokens = Column(Integer, nullable=True)

@@ -1,5 +1,7 @@
 """Coverage scheduling without a model and without a database."""
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -91,7 +93,13 @@ def test_semantic_hash_ignores_progress_and_changes_with_evidence_content():
 
 
 def test_description_and_child_dirty_do_not_climb_the_tree():
-    assert dirty_ids_for_text(goal_id="child", text_changed=True) == ["child"]
+    assert dirty_ids_for_text(goal_id="child", parent_id="parent", text_changed=True) == [
+        "parent",
+        "child",
+    ]
+    assert "grandparent" not in dirty_ids_for_text(
+        goal_id="child", parent_id="parent", text_changed=True
+    )
     assert dirty_ids_for_text(goal_id="child", text_changed=False) == []
     assert dirty_ids_for_child(parent_id="parent", child_id="child", previous_parent_id=None) == [
         "parent",
@@ -127,6 +135,21 @@ def test_same_hash_open_proposal_skips_and_changed_hash_reanalyzes():
     changed = _context("g", goal={"id": "g", "name": "目标", "description": "变了"}, note="变了")
     changed_hash = semantic_context_hash(changed)
     assert decide_coverage("incremental", state, changed, proposal, changed_hash) == "stale_analyze"
+    missing_semantic = {
+        "id": "p",
+        "status": "open",
+        "context_hash": context["context_hash"],
+    }
+    assert (
+        decide_coverage("incremental", state, context, missing_semantic, current) == "stale_analyze"
+    )
+    swapped = {
+        "id": "p",
+        "status": "open",
+        "context_hash": current,
+        "semantic_context_hash": context["context_hash"],
+    }
+    assert decide_coverage("incremental", state, context, swapped, current) == "stale_analyze"
 
 
 def test_insufficient_context_does_not_ask_for_analysis():
@@ -244,22 +267,26 @@ async def test_token_budget_pauses_and_unknown_usage_is_not_invented():
         return proposal
 
     sources = FakeSources(contexts, analyze)
-    engine = CoverageEngine(MemoryCoverageStore(), sources)
+    engine = CoverageEngine(MemoryCoverageStore(), sources, token_usage_available=True)
     run = await engine.start(
         "dataset", object(), mode="baseline", concurrency=1, token_budget=10, wait=True
     )
     assert sources.calls == ["a"]
     assert run["status"] == "paused_budget"
+    assert run["token_usage_available"] is True
+    assert run["token_budget_active"] is True
     assert run["used_input_tokens"] == 6
     assert run["used_output_tokens"] == 6
 
-    quiet = FakeSources({"a": _context("a")}, _ok)
+    quiet = FakeSources({"a": _context("a")}, analyze)
     quiet_engine = CoverageEngine(MemoryCoverageStore(), quiet)
     quiet_run = await quiet_engine.start(
         "dataset", object(), mode="baseline", token_budget=1, wait=True
     )
     assert quiet.calls == ["a"]
     assert quiet_run["used_input_tokens"] is None
+    assert quiet_run["token_usage_available"] is False
+    assert quiet_run["token_budget_active"] is False
     assert quiet_run["status"] == "completed"
 
 
@@ -293,6 +320,44 @@ async def test_reconcile_marks_dirty_without_calling_llm():
     assert counts["dirty"] == 1
     assert sources.calls == []
     assert (await store.get_state("dataset", "g"))["status"] == "dirty"
+
+
+@pytest.mark.asyncio
+async def test_claim_is_exclusive_and_only_expired_leases_recover():
+    store = MemoryCoverageStore()
+    await store.create_run({"id": "run", "dataset_id": "dataset", "status": "running"})
+    await store.add_items(
+        [
+            {"run_id": "run", "goal_id": "a", "priority": 0, "status": "pending"},
+            {"run_id": "run", "goal_id": "b", "priority": 1, "status": "pending"},
+        ]
+    )
+    first, second = await asyncio.gather(store.claim_next("run"), store.claim_next("run"))
+    assert {first["goal_id"], second["goal_id"]} == {"a", "b"}
+    assert await store.claim_next("run") is None
+    assert await store.release_expired_leases("run") == 0
+
+    expired = await store.get_item(first["id"])
+    expired["lease_expires_at"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    store.items[expired["id"]] = expired
+    assert await store.release_expired_leases("run") == 1
+    reclaimed = await store.claim_next("run")
+    assert reclaimed["goal_id"] == first["goal_id"]
+    assert reclaimed["attempts"] == 2
+    live = await store.get_item(second["id"])
+    assert live["status"] == "analyzing"
+    assert live["lease_expires_at"] == second["lease_expires_at"]
+
+
+def test_sql_claim_locks_one_row_and_skips_locked():
+    from sqlalchemy.dialects import postgresql
+
+    from cognee.modules.teleology.coverage_store import SqlCoverageStore
+
+    statement = SqlCoverageStore.claim_statement("11111111-1111-1111-1111-111111111111")
+    sql = str(statement.compile(dialect=postgresql.dialect())).upper()
+    assert "FOR UPDATE SKIP LOCKED" in sql
+    assert "LEASE_EXPIRES_AT" in sql
 
 
 def test_coverage_engine_never_commits():

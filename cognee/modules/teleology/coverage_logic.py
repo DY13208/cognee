@@ -95,19 +95,19 @@ def priority_for(context: dict[str, Any]) -> int:
 
 def _proposal_same(
     proposal: dict[str, Any] | None,
-    context: dict[str, Any],
-    current_hash: str,
-    stored_hash: str | None,
-    changed: bool,
+    current_context_hash: str | None,
+    current_semantic_hash: str,
 ) -> bool:
-    if not proposal or proposal.get("status") != "open" or changed:
+    """Compare each stored hash only with the current hash of the same kind."""
+    if not proposal or proposal.get("status") != "open":
         return False
-    if str(proposal.get("context_hash") or "") != str(context.get("context_hash") or ""):
+    proposal_context = proposal.get("context_hash")
+    proposal_semantic = proposal.get("semantic_context_hash")
+    if not proposal_context or not proposal_semantic:
         return False
-    semantic = proposal.get("semantic_context_hash")
-    if semantic:
-        return str(semantic) == current_hash
-    return stored_hash in (None, "", current_hash)
+    return str(proposal_context) == str(current_context_hash or "") and str(
+        proposal_semantic
+    ) == str(current_semantic_hash)
 
 
 def decide_coverage(
@@ -139,7 +139,7 @@ def decide_coverage(
             return "stale_analyze"
         return "analyze"
     if open_proposal and open_proposal.get("status") == "open":
-        if _proposal_same(open_proposal, context, current, stored, changed):
+        if _proposal_same(open_proposal, context.get("context_hash"), current):
             return "skip"
         return "stale_analyze"
     if status in {"clean", "confirmed", "proposal_open", "no_supported_proposal"} and not changed:
@@ -149,8 +149,16 @@ def decide_coverage(
     return "skip"
 
 
-def dirty_ids_for_text(*, goal_id: str, text_changed: bool) -> list[str]:
-    return [goal_id] if text_changed and goal_id else []
+def dirty_ids_for_text(
+    *,
+    goal_id: str,
+    text_changed: bool,
+    parent_id: str | None = None,
+) -> list[str]:
+    """The goal and its direct parent. A parent's hash includes this child's text."""
+    if not text_changed or not goal_id:
+        return []
+    return dirty_ids_for_child(parent_id=parent_id, child_id=goal_id)
 
 
 def dirty_ids_for_child(

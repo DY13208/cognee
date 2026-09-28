@@ -71,10 +71,30 @@ def _usage(result: dict[str, Any] | None) -> tuple[int, int] | None:
 class CoverageEngine:
     """Discover, rank, and persist coverage work. It never commits a proposal."""
 
-    def __init__(self, store: Any, sources: CoverageSources) -> None:
+    def __init__(
+        self,
+        store: Any,
+        sources: CoverageSources,
+        *,
+        token_usage_available: bool = False,
+    ) -> None:
         self.store = store
         self.sources = sources
+        self.token_usage_available = token_usage_available
         self._lock = asyncio.Lock()
+
+    def present(self, run: dict[str, Any] | None) -> dict[str, Any] | None:
+        if run is None:
+            return None
+        shown = dict(run)
+        shown["token_usage_available"] = self.token_usage_available
+        shown["token_budget_active"] = bool(
+            self.token_usage_available and shown.get("token_budget") is not None
+        )
+        if not self.token_usage_available:
+            shown["used_input_tokens"] = None
+            shown["used_output_tokens"] = None
+        return shown
 
     async def start(
         self,
@@ -120,8 +140,8 @@ class CoverageEngine:
         self.current_run_id = run["id"]
         if wait:
             await self.drive(run["id"], dataset_id, user)
-            return await self.store.get_run(run["id"]) or run
-        return run
+            return self.present(await self.store.get_run(run["id"])) or run
+        return self.present(run) or run
 
     async def drive(self, run_id: str, dataset_id: Any, user: Any) -> None:
         run = await self.store.get_run(run_id)
@@ -132,7 +152,7 @@ class CoverageEngine:
                 await self.store.update_run(
                     run_id, status="running", started_at=run.get("started_at") or _now()
                 )
-            await self.store.release_analyzing(run_id)
+            await self.store.release_expired_leases(run_id)
             if int(run.get("queued_goals") or 0) == 0 and not await self.store.list_items(run_id):
                 await self._enqueue(run_id, dataset_id, user)
             await self._process(run_id, dataset_id, user)
@@ -144,7 +164,10 @@ class CoverageEngine:
         run = await self._require(run_id)
         if run["status"] != "running":
             raise ValueError("Only a running coverage run can be paused.")
-        return await self.store.update_run(run_id, status="paused", paused_at=_now())
+        return (
+            self.present(await self.store.update_run(run_id, status="paused", paused_at=_now()))
+            or {}
+        )
 
     async def resume(
         self, run_id: str, dataset_id: Any, user: Any, *, wait: bool = False
@@ -155,14 +178,19 @@ class CoverageEngine:
         updated = await self.store.update_run(run_id, status="running", paused_at=None)
         if wait:
             await self.drive(run_id, dataset_id, user)
-            return await self.store.get_run(run_id) or updated
-        return updated
+            return self.present(await self.store.get_run(run_id)) or updated
+        return self.present(updated) or updated
 
     async def cancel(self, run_id: str) -> dict[str, Any]:
         await self._require(run_id)
         for item in await self.store.list_items(run_id, "pending"):
             await self.store.update_item(item["id"], status="cancelled")
-        return await self.store.update_run(run_id, status="cancelled", completed_at=_now())
+        return (
+            self.present(
+                await self.store.update_run(run_id, status="cancelled", completed_at=_now())
+            )
+            or {}
+        )
 
     async def retry_failures(
         self, run_id: str, dataset_id: Any, user: Any, *, wait: bool = False
@@ -174,8 +202,8 @@ class CoverageEngine:
         )
         if wait:
             await self._process(run_id, dataset_id, user)
-            return await self.store.get_run(run_id) or updated
-        return updated
+            return self.present(await self.store.get_run(run_id)) or updated
+        return self.present(updated) or updated
 
     async def reconcile(self, dataset_id: Any, user: Any) -> dict[str, int]:
         """Page through goals and compare hashes. This never calls the LLM."""
@@ -400,13 +428,16 @@ class CoverageEngine:
                 dataset_id, goal_id, state, status="analyzing", last_run_id=run_id
             )
             result = await self.sources.analyze(dataset_id, user, goal_id)
+            if not await self._still_claimed(item):
+                return
             await self._record_usage(run_id, item, result)
             await self.sources.remember_semantic_hash(dataset_id, user, result, current)
             await self._finish_success(
                 run_id, dataset_id, goal_id, item, context, current, result, state
             )
         except Exception as exc:  # noqa: BLE001 - one goal must not abort the run
-            await self._fail(run_id, dataset_id, item, exc)
+            if await self._still_claimed(item):
+                await self._fail(run_id, dataset_id, item, exc)
 
     async def _finish_success(
         self,
@@ -498,6 +529,8 @@ class CoverageEngine:
     async def _record_usage(
         self, run_id: str, item: dict[str, Any], result: dict[str, Any]
     ) -> None:
+        if not self.token_usage_available:
+            return
         usage = _usage(result)
         if usage is None:
             return
@@ -532,7 +565,17 @@ class CoverageEngine:
         current.update(fields)
         return await self.store.upsert_state(current)
 
+    async def _still_claimed(self, item: dict[str, Any]) -> bool:
+        current = await self.store.get_item(item["id"])
+        return bool(
+            current
+            and current.get("status") == "analyzing"
+            and current.get("lease_expires_at") == item.get("lease_expires_at")
+        )
+
     def _budget_exhausted(self, run: dict[str, Any]) -> bool:
+        if not self.token_usage_available:
+            return False
         budget = run.get("token_budget")
         if budget is None:
             return False

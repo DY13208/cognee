@@ -24,6 +24,14 @@ from cognee.modules.teleology.purpose_relations import is_structural_advance
 from cognee.modules.users.models import User
 
 _RELATIONS = frozenset({"serves", "advances", "blocks"})
+
+
+def _semantic_hash(context: dict[str, Any]) -> str:
+    from cognee.modules.teleology.semantic_hash import semantic_context_hash
+
+    return semantic_context_hash(context)
+
+
 _NODE_KINDS = {"purpose": Purpose, "goal": Goal, "constraint": Constraint}
 _DOC_TYPES = frozenset({"DocumentChunk", "TextDocument", "Document"})
 
@@ -614,6 +622,7 @@ async def propose_teleology(
         "generated_by": generated_by,
         "source_revision": str(proposal.get("source_revision") or context.get("revision") or ""),
         "context_hash": context.get("context_hash") or "",
+        "semantic_context_hash": _semantic_hash(context),
         "analysis_summary": _analysis_text(proposal),
         "items": items,
         "weak_signals": incoming_weak + weak_signals,

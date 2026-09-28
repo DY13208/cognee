@@ -82,6 +82,7 @@ async def save_proposal(dataset_id: UUID, proposal: dict[str, Any], user: Any | 
         record.run_id = str(proposal.get("run_id") or "") or None
         record.source_revision = str(proposal.get("source_revision") or "") or None
         record.context_hash = str(proposal.get("context_hash") or "") or None
+        record.semantic_context_hash = str(proposal.get("semantic_context_hash") or "") or None
         record.analysis_summary = proposal.get("analysis_summary") or None
         record.user_id = user_id
         record.payload = json.dumps(proposal, ensure_ascii=False)
@@ -152,6 +153,10 @@ async def _load_db(dataset_id: UUID) -> dict[str, Any]:
         except json.JSONDecodeError:
             continue
         if isinstance(payload, dict) and payload.get("id"):
+            if row.semantic_context_hash and not payload.get("semantic_context_hash"):
+                payload["semantic_context_hash"] = row.semantic_context_hash
+            if row.context_hash and not payload.get("context_hash"):
+                payload["context_hash"] = row.context_hash
             proposals[str(payload["id"])] = payload
     return {"proposals": proposals}
 

@@ -91,6 +91,7 @@ def upgrade() -> None:
             sa.Column("status", sa.String(length=32), nullable=False),
             sa.Column("semantic_context_hash", sa.String(length=64), nullable=True),
             sa.Column("attempts", sa.Integer(), nullable=False),
+            sa.Column("lease_expires_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("proposal_id", sa.String(length=64), nullable=True),
             sa.Column("error", sa.Text(), nullable=True),
             sa.Column("input_tokens", sa.Integer(), nullable=True),

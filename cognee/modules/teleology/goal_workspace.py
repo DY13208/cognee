@@ -256,7 +256,14 @@ async def update_goal(
             description is not None and description != (props.get("description") or "")
         )
         if text_changed:
-            await _mark_dirty(dataset_id, [goal_id], "goal_text_changed")
+            from cognee.modules.teleology.coverage_logic import dirty_ids_for_text
+
+            parent = await _parent(graph, goal_id)
+            await _mark_dirty(
+                dataset_id,
+                dirty_ids_for_text(goal_id=goal_id, parent_id=parent, text_changed=True),
+                "goal_text_changed",
+            )
         return {
             "dataset_id": str(dataset_id),
             "goal": _node_row(goal_id, updated.model_dump(mode="json")),

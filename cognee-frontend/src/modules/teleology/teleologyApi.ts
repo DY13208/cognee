@@ -448,6 +448,8 @@ export interface CoverageRun {
   concurrency: number;
   max_goals?: number | null;
   token_budget?: number | null;
+  token_usage_available?: boolean;
+  token_budget_active?: boolean;
   used_input_tokens?: number | null;
   used_output_tokens?: number | null;
   total_goals: number;
