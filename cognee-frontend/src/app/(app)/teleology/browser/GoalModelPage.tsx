@@ -132,7 +132,7 @@ export default function GoalModelPage({
           {(model?.classifications || []).map((source) => (
             <li key={source.id}>
               <b>{source.name}</b>
-              <span>{source.source_class}</span>
+              <span>{source.semantic_class || source.source_class} · {source.source_layer || source.layer}</span>
             </li>
           ))}
         </ul>

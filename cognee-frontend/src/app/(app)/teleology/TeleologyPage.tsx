@@ -6,7 +6,7 @@ import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext"
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import { useFilter } from "@/ui/layout/FilterContext";
 import PageLoading from "@/ui/elements/PageLoading";
-import GoalModelPage from "./browser/GoalModelPage";
+import OntologyBrowser from "./browser/OntologyBrowser";
 import TeleologyClassicPage from "./TeleologyClassicPage";
 import "./browser/ontology.css";
 
@@ -16,6 +16,7 @@ export default function TeleologyPage() {
   const { language } = useBusinessLanguage();
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
+  const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"browser" | "classic">("browser");
   const datasetDefaulted = useRef(false);
 
@@ -50,18 +51,30 @@ export default function TeleologyPage() {
       <TrackPageView page="teleology" />
       <div className="teleology-mode-bar">
         <div className="teleology-mode-tabs">
-          <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "AI 目标模型" : "AI Goal Model"}</button>
+          <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
           <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
         </div>
         <div id="teleology-classic-actions" className="teleology-classic-actions" />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {mode === "browser" ? (
-          <GoalModelPage
+          <OntologyBrowser
             instance={cogniInstance}
-            datasetId={selectedDataset?.id || datasets[0]?.id || ""}
-            datasetName={selectedDataset?.name || datasets[0]?.name || ""}
+            datasets={datasets.map((d) => ({ id: d.id, name: d.name }))}
+            selectedDataset={
+              selectedDataset
+                ? { id: selectedDataset.id, name: selectedDataset.name }
+                : datasets[0]
+                  ? { id: datasets[0].id, name: datasets[0].name }
+                  : null
+            }
+            onSelectDataset={(d) => {
+              const full = datasets.find((x) => x.id === d.id);
+              if (full) setSelectedDataset(full);
+            }}
             language={zh ? "zh" : "en"}
+            busy={busy}
+            onBusy={setBusy}
           />
         ) : <TeleologyClassicPage />}
       </div>

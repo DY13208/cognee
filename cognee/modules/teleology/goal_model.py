@@ -16,18 +16,37 @@ from collections import defaultdict
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-SOURCE_CLASSES = (
-    "Goal",
+SOURCE_LAYERS = ("company_tree", "document", "entity", "graph", "other")
+SEMANTIC_CLASSES = (
+    "GoalSignal",
     "Project",
     "Metric",
     "Process",
     "Responsibility",
+    "Constraint",
     "Document",
     "Entity",
-    "Constraint",
     "Reference",
     "Other",
 )
+SOURCE_CLASSES = SEMANTIC_CLASSES
+REJECT_REASONS = (
+    "insufficient_evidence",
+    "responsibility_not_goal",
+    "metric_only",
+    "project_only",
+    "duplicate",
+    "low_confidence",
+    "unsupported_semantics",
+    "other",
+)
+_LAYER_WEIGHTS = {
+    "company_tree": 8,
+    "document": 5,
+    "entity": 4,
+    "graph": 2,
+    "other": 1,
+}
 STAGES = (
     "discovering",
     "classifying",
@@ -42,7 +61,8 @@ _ACTIVE = frozenset({"proposed", "confirmed"})
 _NAMESPACE = uuid5(NAMESPACE_URL, "cognee:teleology:ai-goal-model")
 _BRAND = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
 _RESPONSIBILITY = ("责任分工", "职责分工", "岗位职责")
-_METRIC = ("利润分", "利润率", "指标")
+_METRIC = ("利润分", "利润率", "毛利率", "健康度", "周转率", "指标", "达成率")
+_PROFIT_TEXT = ("利润", "毛利", "盈利")
 _PROCESS = ("流程", "工序", "审批流")
 _OUTCOME = ("提升", "提高", "达成", "实现")
 _OUTCOME_OBJECT = ("能力", "目标", "盈利", "利润")
@@ -93,38 +113,84 @@ def clamp_goal_batch(value: int | None) -> int:
     return min(100, max(1, number))
 
 
-def classify_source(node: dict[str, Any]) -> str:
-    """Classify one dataset object. A company-tree Goal type is not a Goal."""
-    name = str(node.get("name") or "")
-    text = " ".join(
-        (
-            name,
-            str(node.get("text") or ""),
-            str(node.get("description") or ""),
-        )
-    )
+def source_layer_of(node: dict[str, Any]) -> str:
+    """Provenance only. A company-tree node is not a semantic type."""
+    explicit = str(node.get("source_layer") or node.get("layer") or "").strip().lower()
+    aliases = {
+        "company_tree": "company_tree",
+        "document": "document",
+        "documents": "document",
+        "entity": "entity",
+        "entities": "entity",
+        "graph": "graph",
+        "other": "other",
+    }
+    if explicit in aliases:
+        return aliases[explicit]
     graph_type = str(node.get("type") or "")
-    layer = str(node.get("layer") or "")
+    if graph_type == "Document":
+        return "document"
+    if graph_type in {"Entity", "Person", "Organization"}:
+        return "entity"
+    if graph_type == "Goal":
+        return "company_tree"
+    if graph_type:
+        return "graph"
+    return "other"
+
+
+def classify_semantics(node: dict[str, Any]) -> tuple[str, str]:
+    """Semantic class from the text. The source layer is not an input."""
+    name = str(node.get("name") or "")
+    text = " ".join((name, str(node.get("text") or ""), str(node.get("description") or "")))
+    graph_type = str(node.get("type") or "")
     kind = str(node.get("cpd_kind") or "")
+    layer = source_layer_of(node)
     if any(token in text for token in _RESPONSIBILITY):
-        return "Responsibility"
+        return "Responsibility", "名称描述的是职责或分工。"
     if any(token in name for token in _METRIC):
-        return "Metric"
-    if graph_type == "Document" or layer == "document":
-        return "Document"
-    if graph_type == "Constraint" or "约束" in name or "限制" in name:
-        return "Constraint"
-    if kind == "map_reference" or "参考" in name:
-        return "Reference"
-    if graph_type in {"Entity", "Person", "Organization"} or layer == "entity":
-        return "Entity"
+        return "Metric", "名称描述的是可度量的业务指标。"
     if any(token in name for token in _PROCESS):
-        return "Process"
+        return "Process", "名称描述的是流程。"
+    if graph_type == "Constraint" or "约束" in name or "限制" in name:
+        return "Constraint", "名称描述的是约束。"
+    if kind == "map_reference" or "参考" in name:
+        return "Reference", "名称描述的是参照。"
     if any(token in text for token in _OUTCOME) and any(token in text for token in _OUTCOME_OBJECT):
-        return "Goal"
+        return "GoalSignal", "名称包含结果表述，只作为目标信号。"
     if name.endswith("项目") or ("项目" in name and "利润" not in name and "目标" not in name):
-        return "Project"
-    return "Other"
+        return "Project", "名称描述的是项目。"
+    if graph_type == "Document" or layer == "document":
+        return "Document", "来源是文档。"
+    if graph_type in {"Entity", "Person", "Organization"} or layer == "entity":
+        return "Entity", "来源是实体。"
+    return "Other", "名称和正文里没有可识别的业务语义。"
+
+
+def classify_source(node: dict[str, Any]) -> str:
+    """Semantic class. Company-tree provenance does not decide it."""
+    return classify_semantics(node)[0]
+
+
+def stratified_sample(
+    sources: list[dict[str, Any]], max_sources: int | None
+) -> list[dict[str, Any]]:
+    """Spend ``max_sources`` across layers. Id order must not fill the budget."""
+    rows = list(sources or [])
+    if max_sources is None or len(rows) <= max(0, int(max_sources)):
+        return rows
+    budget = max(0, int(max_sources))
+    if budget == 0:
+        return []
+    buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for source in rows:
+        buckets[source_layer_of(source)].append(source)
+    available = {layer: len(items) for layer, items in buckets.items() if items}
+    quotas = _layer_quotas(budget, available)
+    chosen: list[dict[str, Any]] = []
+    for layer in list(SOURCE_LAYERS) + [layer for layer in buckets if layer not in SOURCE_LAYERS]:
+        chosen.extend(buckets.get(layer, [])[: quotas.get(layer, 0)])
+    return chosen
 
 
 def semantic_hash(name: str) -> str:
@@ -152,11 +218,10 @@ def run_goal_build(
     if mode not in {"baseline", "incremental"}:
         raise GoalBuildError("mode must be baseline or incremental")
     size = clamp_goal_batch(batch_size)
-    chosen = list(sources or [])
-    if max_sources is not None:
-        chosen = chosen[: max(0, int(max_sources))]
+    chosen = _prepare_sources(stratified_sample(list(sources or []), max_sources))
     payloads: list[int] = []
     run_id = str(uuid4())
+    layer_counts = _count_values(chosen, "source_layer")
 
     for batch in _chunks(chosen, size):
         payloads.append(len(batch))
@@ -167,21 +232,27 @@ def run_goal_build(
         labels = _classify_batch(batch, model)
         for node, label in zip(batch, labels):
             classified.append(_compact(node, label))
+    class_counts = _count_values(classified, "semantic_class")
 
     index = _index(classified)
     extracted: list[dict[str, Any]] = []
+    rejections: list[dict[str, Any]] = []
     rejected_empty = 0
     for batch in _chunks(index["Project"], size):
         payloads.append(len(batch))
         raw_items = model.extract(batch) if model is not None else extract_candidates(batch, index)
         for raw in raw_items or []:
-            valid = _validated(raw, dataset_id, generated_by)
+            valid, reason = _validated(raw, dataset_id, generated_by)
             if valid is None:
                 rejected_empty += 1
+                rejections.append(_rejection(raw, reason or "insufficient_evidence"))
             else:
                 extracted.append(valid)
+    rejections.extend(_unused_source_rejections(classified, extracted))
+    rejections.extend(_duplicate_rejections(extracted))
 
     canonical = canonicalize(extracted, dataset_id, generated_by)
+    merged_count = max(0, len(extracted) - len(canonical))
     combined = _apply_mode(previous or [], canonical, mode)
     hierarchical = build_hierarchy(combined)
     for goal in hierarchical:
@@ -189,6 +260,37 @@ def run_goal_build(
         goal["run_id"] = run_id
         goal["generated_by"] = goal.get("generated_by") or generated_by
     teleology = infer_teleology(hierarchical, run_id)
+    active_goals = [goal for goal in hierarchical if goal.get("status") in _ACTIVE]
+    parent_ids = {
+        goal["parent_candidate_id"] for goal in active_goals if goal.get("parent_candidate_id")
+    }
+    orphan_goals = [
+        goal
+        for goal in active_goals
+        if not goal.get("parent_candidate_id") and goal["id"] not in parent_ids
+    ]
+    rejected_by_reason = _count_values(rejections, "reject_reason")
+    stage_stats = {
+        "discovering": {"source_count": len(chosen), "source_layer_counts": layer_counts},
+        "classifying": {"semantic_class_counts": class_counts},
+        "extracting_goals": {
+            "raw_candidate_count": len(extracted),
+            "rejected_count": len(rejections),
+        },
+        "canonicalizing": {
+            "canonical_goal_count": len(hierarchical),
+            "merged_count": merged_count,
+        },
+        "building_hierarchy": {
+            "hierarchy_edge_count": len(parent_ids),
+            "orphan_goal_count": len(orphan_goals),
+        },
+        "inferring_teleology": {
+            "purpose_count": len(teleology["purposes"]),
+            "constraint_count": len(teleology["constraints"]),
+            "relation_count": len(teleology["relations"]),
+        },
+    }
     return {
         "run_id": run_id,
         "dataset_id": str(dataset_id),
@@ -196,6 +298,7 @@ def run_goal_build(
         "status": "completed",
         "stage": "completed",
         "stages": list(STAGES),
+        "stage_stats": stage_stats,
         "committed": False,
         "graph_committed": False,
         "batch_size": size,
@@ -203,15 +306,26 @@ def run_goal_build(
         "max_sources": max_sources,
         "max_batch_payload": max(payloads) if payloads else 0,
         "source_count": len(chosen),
+        "source_layer_counts": layer_counts,
+        "semantic_class_counts": class_counts,
+        "raw_candidate_count": len(extracted),
+        "canonical_goal_count": len(hierarchical),
+        "merged_count": merged_count,
         "rejected_empty": rejected_empty,
+        "rejected_count": len(rejections),
+        "rejected_by_reason": rejected_by_reason,
+        "rejections": rejections,
         "candidates": hierarchical,
         "teleology": teleology,
         "classifications": [
             {
                 "id": row["id"],
                 "name": row["name"],
-                "source_class": row["source_class"],
-                "layer": row.get("layer") or "",
+                "source_layer": row.get("source_layer") or "",
+                "semantic_class": row.get("semantic_class") or "",
+                "classification_reason": row.get("classification_reason") or "",
+                "source_class": row.get("semantic_class") or "",
+                "layer": row.get("source_layer") or "",
             }
             for row in classified
         ],
@@ -224,18 +338,16 @@ def extract_candidates(
     """Create outcome goals from project and metric evidence. Directories are not goals."""
     found: list[dict[str, Any]] = []
     for project in projects:
-        if project.get("source_class") != "Project":
+        if _semantic(project) != "Project":
             continue
         related = _related_evidence(project, index)
         profit = [
             row
             for row in related
-            if row.get("source_class") == "Metric" and _is_profit(row) and not _is_accuracy(row)
+            if _semantic(row) == "Metric" and _is_profit(row) and not _is_accuracy(row)
         ]
-        accuracy = [
-            row for row in related if row.get("source_class") == "Metric" and _is_accuracy(row)
-        ]
-        support = [row for row in related if row.get("source_class") in {"Document", "Constraint"}]
+        accuracy = [row for row in related if _semantic(row) == "Metric" and _is_accuracy(row)]
+        support = [row for row in related if _semantic(row) in {"Document", "Constraint"}]
         anchor = _anchor(str(project.get("name") or "")) or "项目"
         if profit:
             found.append(
@@ -349,7 +461,7 @@ def infer_teleology(goals: list[dict[str, Any]], run_id: str) -> dict[str, Any]:
             )
         )
         for entry in goal["evidence"]:
-            if entry.get("source_class") != "Constraint":
+            if _semantic(entry) != "Constraint":
                 continue
             constraints.append(
                 _teleology_item(
@@ -415,6 +527,13 @@ def goal_model_view(dataset_id: Any) -> dict[str, Any]:
             "constraints": [],
             "relations": [],
             "classifications": [],
+            "source_layer_counts": {},
+            "semantic_class_counts": {},
+            "raw_candidate_count": 0,
+            "canonical_goal_count": 0,
+            "rejected_count": 0,
+            "rejected_by_reason": {},
+            "stage_stats": {},
         }
     return _public(saved)
 
@@ -454,7 +573,7 @@ def canonical_context(dataset_id: Any, goal_id: str) -> dict[str, Any] | None:
         },
         "entities": list(goal.get("evidence") or []),
         "documents": [
-            entry for entry in goal.get("evidence") or [] if entry.get("source_class") == "Document"
+            entry for entry in goal.get("evidence") or [] if _semantic(entry) == "Document"
         ],
         "note": goal.get("reason") or "",
         "context_hash": goal.get("semantic_hash"),
@@ -508,6 +627,14 @@ def _public(saved: dict[str, Any]) -> dict[str, Any]:
         "graph_committed": False,
         "batch_size": saved.get("batch_size"),
         "source_count": saved.get("source_count"),
+        "source_layer_counts": dict(saved.get("source_layer_counts") or {}),
+        "semantic_class_counts": dict(saved.get("semantic_class_counts") or {}),
+        "raw_candidate_count": saved.get("raw_candidate_count") or 0,
+        "canonical_goal_count": saved.get("canonical_goal_count") or len(candidates),
+        "rejected_count": saved.get("rejected_count") or 0,
+        "rejected_by_reason": dict(saved.get("rejected_by_reason") or {}),
+        "rejections": list(saved.get("rejections") or []),
+        "stage_stats": dict(saved.get("stage_stats") or {}),
         "max_batch_payload": saved.get("max_batch_payload"),
         "candidates": candidates,
         "hierarchy": [
@@ -611,31 +738,154 @@ def _items_for_goal(teleology: dict[str, Any], goal_id: str) -> list[dict[str, A
     return items
 
 
-def _classify_batch(batch: list[dict[str, Any]], model: Any) -> list[str]:
+def _prepare_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    prepared = []
+    for source in sources:
+        row = dict(source)
+        layer = source_layer_of(row)
+        row["source_layer"] = layer
+        row["layer"] = layer
+        prepared.append(row)
+    return prepared
+
+
+def _layer_quotas(budget: int, available: dict[str, int]) -> dict[str, int]:
+    if not available or budget <= 0:
+        return {layer: 0 for layer in available}
+    weights = {layer: _LAYER_WEIGHTS.get(layer, 1) for layer in available}
+    weight_total = sum(weights.values()) or 1
+    raw = {layer: budget * weights[layer] / weight_total for layer in available}
+    floors = {layer: min(available[layer], int(raw[layer])) for layer in available}
+    remainder = budget - sum(floors.values())
+    order = sorted(
+        available,
+        key=lambda layer: (raw[layer] - int(raw[layer]), weights[layer]),
+        reverse=True,
+    )
+    while remainder > 0:
+        progressed = False
+        for layer in order:
+            if floors[layer] < available[layer] and remainder > 0:
+                floors[layer] += 1
+                remainder -= 1
+                progressed = True
+        if not progressed:
+            break
+    if budget >= len(available):
+        for layer, count in available.items():
+            if floors[layer] == 0 and count > 0:
+                donor = max(floors, key=lambda item: floors[item])
+                if floors[donor] > 1:
+                    floors[donor] -= 1
+                    floors[layer] = 1
+    return floors
+
+
+def _count_values(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        label = str(row.get(key) or "other")
+        counts[label] = counts.get(label, 0) + 1
+    return counts
+
+
+def _semantic(row: dict[str, Any]) -> str:
+    return _normalize_class(str(row.get("semantic_class") or row.get("source_class") or "Other"))
+
+
+def _normalize_class(label: str) -> str:
+    if label == "Goal":
+        return "GoalSignal"
+    return label if label in SEMANTIC_CLASSES else "Other"
+
+
+def _rejection(raw: dict[str, Any], reason: str) -> dict[str, Any]:
+    code = reason if reason in REJECT_REASONS else "other"
+    return {
+        "name": str(raw.get("name") or ""),
+        "source_node_ids": [
+            str(node_id) for node_id in raw.get("source_node_ids") or [] if node_id
+        ],
+        "reject_reason": code,
+    }
+
+
+def _unused_source_rejections(
+    classified: list[dict[str, Any]], extracted: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    used = {
+        node_id for candidate in extracted for node_id in candidate.get("source_node_ids") or []
+    }
+    reasons = {
+        "Responsibility": "responsibility_not_goal",
+        "Metric": "metric_only",
+        "Project": "project_only",
+        "GoalSignal": "insufficient_evidence",
+    }
+    rejections = []
+    for row in classified:
+        if row.get("id") in used:
+            continue
+        reason = reasons.get(_semantic(row))
+        if reason is None:
+            continue
+        rejections.append(
+            _rejection(
+                {"name": row.get("name"), "source_node_ids": [row.get("id")]},
+                reason,
+            )
+        )
+    return rejections
+
+
+def _duplicate_rejections(extracted: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for candidate in extracted:
+        groups[_merge_key(candidate)].append(candidate)
+    rejections = []
+    for items in groups.values():
+        for extra in items[1:]:
+            rejections.append(_rejection(extra, "duplicate"))
+    return rejections
+
+
+def _classify_batch(batch: list[dict[str, Any]], model: Any) -> list[tuple[str, str]]:
     if model is None:
-        return [classify_source(node) for node in batch]
+        return [classify_semantics(node) for node in batch]
     labels = list(model.classify(batch))
     if len(labels) != len(batch):
         raise GoalBuildError("classifier returned a different batch size")
-    return [label if label in SOURCE_CLASSES else "Other" for label in labels]
+    normalized = []
+    for label in labels:
+        if isinstance(label, tuple):
+            semantic, reason = label
+        else:
+            semantic, reason = label, "模型给出的语义类。"
+        normalized.append((_normalize_class(str(semantic)), str(reason)))
+    return normalized
 
 
-def _compact(node: dict[str, Any], label: str) -> dict[str, Any]:
+def _compact(node: dict[str, Any], label: tuple[str, str]) -> dict[str, Any]:
+    semantic, reason = label
+    layer = source_layer_of(node)
     return {
         "id": str(node.get("id") or ""),
         "name": str(node.get("name") or ""),
         "text": str(node.get("text") or node.get("description") or ""),
         "type": str(node.get("type") or ""),
-        "layer": str(node.get("layer") or ""),
+        "source_layer": layer,
+        "layer": layer,
         "tree_parent_id": node.get("tree_parent_id"),
-        "source_class": label,
+        "semantic_class": semantic,
+        "source_class": semantic,
+        "classification_reason": reason,
     }
 
 
 def _index(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    index: dict[str, list[dict[str, Any]]] = {label: [] for label in SOURCE_CLASSES}
+    index: dict[str, list[dict[str, Any]]] = {label: [] for label in SEMANTIC_CLASSES}
     for row in rows:
-        index.setdefault(str(row.get("source_class") or "Other"), []).append(row)
+        index.setdefault(_semantic(row), []).append(row)
     return index
 
 
@@ -644,34 +894,49 @@ def _related_evidence(
 ) -> list[dict[str, Any]]:
     anchor = _anchor(str(project.get("name") or ""))
     parent = project.get("tree_parent_id")
-    siblings = [
-        row for row in index.get("Project") or [] if parent and row.get("tree_parent_id") == parent
-    ]
+    projects = index.get("Project") or []
+    siblings = [row for row in projects if parent and row.get("tree_parent_id") == parent]
+    only_project = len(projects) == 1
     related: list[dict[str, Any]] = []
     for metric in index.get("Metric") or []:
-        if _metric_supports(project, metric, anchor, len(siblings) == 1):
+        if _metric_supports(project, metric, anchor, len(siblings) == 1, only_project):
             related.append(metric)
     for row in (index.get("Document") or []) + (index.get("Constraint") or []):
-        blob = f"{row.get('name') or ''} {row.get('text') or ''}"
-        if anchor and anchor in blob:
+        if _profit_support(row, anchor, only_project):
             related.append(row)
     return related
 
 
 def _metric_supports(
-    project: dict[str, Any], metric: dict[str, Any], anchor: str, only_sibling: bool
+    project: dict[str, Any],
+    metric: dict[str, Any],
+    anchor: str,
+    only_sibling: bool,
+    only_project: bool,
 ) -> bool:
     blob = f"{metric.get('name') or ''} {metric.get('text') or ''}"
     if anchor and anchor in blob:
         return True
     if metric.get("tree_parent_id") and metric.get("tree_parent_id") == project.get("id"):
         return True
+    profit_name = any(token in str(metric.get("name") or "") for token in _PROFIT_TEXT)
+    if only_project and profit_name:
+        return True
     return bool(
         only_sibling
         and project.get("tree_parent_id")
         and project.get("tree_parent_id") == metric.get("tree_parent_id")
-        and "利润" in str(metric.get("name") or "")
+        and profit_name
     )
+
+
+def _profit_support(row: dict[str, Any], anchor: str, only_project: bool) -> bool:
+    blob = f"{row.get('name') or ''} {row.get('text') or ''}"
+    if not any(token in blob for token in ("利润", "毛利", "盈利", "目标")):
+        return False
+    if anchor and anchor in blob:
+        return True
+    return only_project
 
 
 def _draft(
@@ -694,16 +959,22 @@ def _draft(
 
 
 def _evidence(row: dict[str, Any]) -> dict[str, Any]:
+    semantic = _semantic(row)
+    layer = str(row.get("source_layer") or row.get("layer") or "")
     return {
         "node_id": str(row.get("id") or row.get("node_id") or ""),
         "name": str(row.get("name") or ""),
-        "source_class": row.get("source_class") or "",
-        "layer": row.get("layer") or "",
+        "semantic_class": semantic,
+        "source_class": semantic,
+        "source_layer": layer,
+        "layer": layer,
         "text": str(row.get("text") or ""),
     }
 
 
-def _validated(raw: dict[str, Any], dataset_id: Any, generated_by: str) -> dict[str, Any] | None:
+def _validated(
+    raw: dict[str, Any], dataset_id: Any, generated_by: str
+) -> tuple[dict[str, Any] | None, str]:
     evidence = []
     for entry in raw.get("evidence") or []:
         node_id = str(entry.get("node_id") or "")
@@ -712,8 +983,10 @@ def _validated(raw: dict[str, Any], dataset_id: Any, generated_by: str) -> dict[
                 {
                     "node_id": node_id,
                     "name": str(entry.get("name") or ""),
-                    "source_class": entry.get("source_class") or "",
-                    "layer": entry.get("layer") or "",
+                    "semantic_class": _semantic(entry),
+                    "source_class": _semantic(entry),
+                    "source_layer": entry.get("source_layer") or entry.get("layer") or "",
+                    "layer": entry.get("source_layer") or entry.get("layer") or "",
                     "text": str(entry.get("text") or ""),
                 }
             )
@@ -724,20 +997,25 @@ def _validated(raw: dict[str, Any], dataset_id: Any, generated_by: str) -> dict[
             source_ids.append(text)
     evidence = [entry for entry in evidence if entry["node_id"] in source_ids]
     if len(source_ids) < 2 or len(evidence) < 2:
-        return None
+        return None, "insufficient_evidence"
+    if _unit(raw.get("confidence")) < 0.4:
+        return None, "low_confidence"
     name = str(raw.get("name") or "").strip()
     reason = str(raw.get("reason") or "").strip()
     if not name or not reason:
-        return None
-    return _seal(
-        dataset_id,
-        name=name,
-        description=str(raw.get("description") or ""),
-        confidence=_unit(raw.get("confidence")),
-        reason=reason,
-        source_node_ids=source_ids,
-        evidence=evidence,
-        generated_by=generated_by,
+        return None, "unsupported_semantics"
+    return (
+        _seal(
+            dataset_id,
+            name=name,
+            description=str(raw.get("description") or ""),
+            confidence=_unit(raw.get("confidence")),
+            reason=reason,
+            source_node_ids=source_ids,
+            evidence=evidence,
+            generated_by=generated_by,
+        ),
+        "",
     )
 
 

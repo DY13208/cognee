@@ -83,6 +83,7 @@ describe("GoalModelPage", () => {
     const sources = screen.getByRole("complementary", { name: "来源 / Company Tree" });
     expect(sources).toHaveTextContent("责任分工");
     expect(sources).toHaveTextContent("Responsibility");
+    expect(sources).toHaveTextContent("company_tree");
     expect(screen.getByText("来自证据")).toBeTruthy();
   });
 

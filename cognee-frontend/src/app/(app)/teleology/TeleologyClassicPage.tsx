@@ -199,7 +199,7 @@ export default function TeleologyClassicPage() {
   }, [cogniInstance, datasetId, lensGoalId, focusRevision]);
 
   useEffect(() => {
-    if (!cogniInstance || !datasetId) return;
+    if (!cogniInstance || !datasetId || loading) return;
     let active = true;
     setClassicNavStatuses({});
     void (async () => {
@@ -225,7 +225,7 @@ export default function TeleologyClassicPage() {
       if (active) setClassicNavStatuses((old) => ({ ...statuses, ...old }));
     })().catch((cause) => { if (active) setLoadError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { active = false; };
-  }, [cogniInstance, datasetId, language]);
+  }, [cogniInstance, datasetId, language, loading]);
 
   useEffect(() => {
     if (!lensGoalId) return;
@@ -266,26 +266,19 @@ export default function TeleologyClassicPage() {
       if (yaml) setStatus(yaml);
       setBrainNodes([]);
       setNavPages({});
-      setNavRoots(roots.goals || []);
-      if (!lensGoalId && roots.goals?.length) {
-        const first = roots.goals[0];
-        setLensGoalId(first.id);
+      const rootGoals = roots.goals || [];
+      setNavRoots(rootGoals);
+      const known = rootGoals.some((goal) => goal.id === lensGoalId);
+      const first = known ? rootGoals.find((goal) => goal.id === lensGoalId) : rootGoals[0];
+      if (first) {
+        if (!known) setLensGoalId(first.id);
         setSelectedGoal({
           ...first,
           name: displayName(first.name, first.id),
           description: displayName(first.description || ""),
         });
-        setNavPath([first.id]);
+        if (!known) setNavPath([first.id]);
         setGoalHits([]);
-      }
-      const focus = lensGoalId || roots.goals?.[0]?.id;
-      if (focus) {
-        const neighbourhood = await getGraphAnnotations(cogniInstance, datasetId, {
-          goalId: focus,
-          limit: 80,
-          goalsLimit: 40,
-        });
-        setGraph(neighbourhood);
       } else {
         setGraph(null);
       }
@@ -967,7 +960,7 @@ export default function TeleologyClassicPage() {
     }
   }
 
-  if (loading || isInitializing || datasetsLoading) {
+  if (isInitializing || datasetsLoading) {
     return (
       <Shell>
         <TrackPageView page="Teleology" />

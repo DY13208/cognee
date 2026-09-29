@@ -655,7 +655,21 @@ export interface GoalModelView {
   purposes: GoalTeleologyItem[];
   constraints: GoalTeleologyItem[];
   relations: GoalTeleologyItem[];
-  classifications: { id: string; name: string; source_class: string; layer?: string }[];
+  source_layer_counts?: Record<string, number>;
+  semantic_class_counts?: Record<string, number>;
+  raw_candidate_count?: number;
+  canonical_goal_count?: number;
+  rejected_count?: number;
+  rejected_by_reason?: Record<string, number>;
+  classifications: {
+    id: string;
+    name: string;
+    source_class?: string;
+    semantic_class?: string;
+    source_layer?: string;
+    layer?: string;
+    classification_reason?: string;
+  }[];
 }
 
 export async function getGoalModel(instance: CogneeInstance, datasetId: string): Promise<GoalModelView> {

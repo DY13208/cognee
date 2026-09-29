@@ -15,6 +15,7 @@ from cognee.modules.teleology.goal_model import (
     classify_source,
     run_goal_build,
     set_candidate_status,
+    source_layer_of,
 )
 
 ROOT = Path(__file__).resolve().parents[5]
@@ -217,7 +218,11 @@ def test_a_company_tree_outcome_sentence_is_not_copied_as_a_goal():
     )
 
     assert result["candidates"] == []
-    assert result["classifications"][0]["source_class"] == "Goal"
+    row = result["classifications"][0]
+    assert row["source_layer"] == "company_tree"
+    assert row["semantic_class"] == "GoalSignal"
+    assert row["classification_reason"]
+    assert result["rejected_by_reason"].get("insufficient_evidence", 0) >= 1
 
 
 def test_large_dataset_never_arrives_in_one_batch():
@@ -344,3 +349,127 @@ def test_build_modules_do_not_commit_or_copy_the_tree():
     assert "commit_teleology_proposal" not in build
     assert "get_graph_engine" not in model
     assert "has_subgoal" not in model
+
+
+def mixed_sources() -> list[dict]:
+    company_tree = [
+        ("project", "Arencia项目"),
+        ("metric", "项目利润分"),
+        ("resp", "责任分工"),
+        ("health", "库存健康度"),
+        ("process", "月度复盘流程"),
+        ("flow", "发货审批流"),
+        ("note", "会议纪要"),
+        ("signal", "提升 Arencia 项目盈利能力"),
+    ]
+    documents = [
+        ("profit-doc", "Arencia年度利润目标文档"),
+        ("margin-doc", "毛利要求说明"),
+        ("vendor-doc", "供应商名录"),
+        ("contract-doc", "合同模板"),
+        ("train-doc", "培训手册"),
+    ]
+    entities = [
+        ("brand", "Arencia", "Entity"),
+        ("warehouse", "华北仓", "Entity"),
+        ("person", "李敏", "Person"),
+        ("team", "品牌组", "Organization"),
+    ]
+    graph = [
+        ("edge", "引用边", "Edge"),
+        ("batch", "批次记录", "DataPoint"),
+        ("ref", "外部参考", "Edge"),
+    ]
+    rows = [
+        {"id": node_id, "name": name, "type": "Goal", "layer": "company_tree"}
+        for node_id, name in company_tree
+    ]
+    rows.extend(
+        {"id": node_id, "name": name, "type": "Document", "layer": "document"}
+        for node_id, name in documents
+    )
+    rows.extend(
+        {"id": node_id, "name": name, "type": graph_type, "layer": "entity"}
+        for node_id, name, graph_type in entities
+    )
+    rows.extend(
+        {"id": node_id, "name": name, "type": graph_type, "layer": "graph"}
+        for node_id, name, graph_type in graph
+    )
+    return rows
+
+
+def test_mixed_sources_keep_layer_and_semantic_class_apart():
+    result = run_goal_build(uuid4(), mixed_sources(), max_sources=20, batch_size=5)
+    classes = {row["id"]: row for row in result["classifications"]}
+
+    assert classes["project"]["source_layer"] == "company_tree"
+    assert classes["project"]["semantic_class"] == "Project"
+    assert classes["metric"]["source_layer"] == "company_tree"
+    assert classes["metric"]["semantic_class"] == "Metric"
+    assert classes["resp"]["source_layer"] == "company_tree"
+    assert classes["resp"]["semantic_class"] == "Responsibility"
+    assert classes["health"]["semantic_class"] == "Metric"
+    assert classes["profit-doc"]["source_layer"] == "document"
+    assert classes["profit-doc"]["semantic_class"] == "Document"
+    assert classes["brand"]["source_layer"] == "entity"
+    assert classes["brand"]["semantic_class"] == "Entity"
+    assert all(row["classification_reason"] for row in result["classifications"])
+
+    names = {goal["name"] for goal in result["candidates"]}
+    assert "提升 Arencia 项目盈利能力" in names
+    assert "责任分工" not in names
+    assert "项目利润分" not in names
+    assert "Arencia项目" not in names
+    profit = next(goal for goal in result["candidates"] if goal["name"].startswith("提升"))
+    assert {"project", "metric", "profit-doc"} <= set(profit["source_node_ids"])
+    assert "resp" not in profit["source_node_ids"]
+    assert result["source_layer_counts"] == {
+        "company_tree": 8,
+        "document": 5,
+        "entity": 4,
+        "graph": 3,
+    }
+    assert result["semantic_class_counts"] == {
+        "Project": 1,
+        "Metric": 2,
+        "Responsibility": 1,
+        "Process": 2,
+        "GoalSignal": 1,
+        "Document": 5,
+        "Entity": 4,
+        "Reference": 1,
+        "Other": 3,
+    }
+    assert result["raw_candidate_count"] == 1
+    assert result["canonical_goal_count"] == 1
+    assert result["rejected_count"] == 3
+    assert result["rejected_by_reason"] == {
+        "responsibility_not_goal": 1,
+        "metric_only": 1,
+        "insufficient_evidence": 1,
+    }
+    assert result["stage_stats"]["canonicalizing"]["merged_count"] == 0
+    assert result["committed"] is False
+
+
+def test_max_sources_samples_every_present_layer_instead_of_id_order():
+    sources = []
+    for index in range(1000):
+        sources.append({"id": f"t{index:04d}", "name": f"目录{index}", "type": "Goal"})
+    for index in range(100):
+        sources.append({"id": f"d{index:04d}", "name": f"文档{index}", "type": "Document"})
+    for index in range(100):
+        sources.append({"id": f"e{index:04d}", "name": f"实体{index}", "type": "Entity"})
+
+    assert all(source_layer_of(source) == "company_tree" for source in sources[:20])
+    result = run_goal_build(uuid4(), sources, max_sources=20, batch_size=10)
+    counts = result["source_layer_counts"]
+
+    assert result["source_count"] == 20
+    assert sum(counts.values()) == 20
+    assert counts["company_tree"] < 20
+    assert counts["document"] > 0
+    assert counts["entity"] > 0
+    assert result["max_batch_payload"] <= 10
+    assert result["stage_stats"]["discovering"]["source_count"] == 20

@@ -16,6 +16,8 @@ from cognee.modules.teleology.goal_model import (
     clamp_goal_batch,
     goal_model_view,
     run_goal_build,
+    source_layer_of,
+    stratified_sample,
 )
 from cognee.modules.teleology.graph_annotations import _authorized_dataset
 from cognee.modules.teleology.purpose_layer import _props_dict
@@ -61,25 +63,21 @@ async def load_dataset_sources(
     batch_size: int,
     max_sources: int | None,
 ) -> list[dict[str, Any]]:
-    """Page dataset nodes. ``has_subgoal`` is kept as evidence linkage only."""
+    """Page every layer, then sample. Id order must not fill ``max_sources``."""
     dataset = await _authorized_dataset(dataset_id, user, "read")
     page = clamp_goal_batch(batch_size)
-    cap = None if max_sources is None else max(0, int(max_sources))
     sources: list[dict[str, Any]] = []
     offset = 0
     async with set_database_global_context_variables(dataset_id, dataset.owner_id):
         graph = await get_graph_engine()
         while True:
-            remaining = page if cap is None else min(page, cap - len(sources))
-            if remaining <= 0:
-                break
             rows = await graph.query(
                 """MATCH (n:Node)
                 RETURN n.id, n.name, n.type, n.properties
                 ORDER BY n.id
                 SKIP $offset
                 LIMIT $limit""",
-                {"offset": offset, "limit": remaining},
+                {"offset": offset, "limit": page},
             )
             if not rows:
                 break
@@ -87,13 +85,14 @@ async def load_dataset_sources(
                 source = _source_row(row)
                 if source is not None:
                     sources.append(source)
-            if len(rows) < remaining:
+            if len(rows) < page:
                 break
-            offset += remaining
-        parents = await _parent_links(graph, {source["id"] for source in sources})
-    for source in sources:
+            offset += page
+        chosen = stratified_sample(sources, max_sources)
+        parents = await _parent_links(graph, {source["id"] for source in chosen})
+    for source in chosen:
         source["tree_parent_id"] = parents.get(source["id"])
-    return sources
+    return chosen
 
 
 async def _parent_links(graph: Any, wanted: set[str]) -> dict[str, str]:
@@ -131,16 +130,18 @@ def _source_row(row: Any) -> dict[str, Any] | None:
         return None
     props = _props_dict(row[3] if len(row) > 3 else None)
     graph_type = str(row[2] or "")
-    layer = "document" if graph_type == "Document" else "company_tree"
-    return {
+    draft = {
         "id": str(row[0]),
-        "name": str(row[1] or row[0]),
+        "name": str(row[1] or props.get("name") or row[0]),
         "type": graph_type,
         "text": str(
             props.get("description") or props.get("text") or props.get("source_note") or ""
         ),
         "description": str(props.get("description") or ""),
         "cpd_kind": props.get("cpd_kind") or "",
-        "layer": layer,
         "tree_parent_id": None,
     }
+    layer = source_layer_of(draft)
+    draft["source_layer"] = layer
+    draft["layer"] = layer
+    return draft
