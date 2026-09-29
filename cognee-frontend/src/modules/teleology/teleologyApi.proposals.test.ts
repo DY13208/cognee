@@ -2,7 +2,7 @@ import type { CogneeInstance } from "@/modules/instances/types";
 import { commitCoverageRun, getLatestOpenGoalProposal, getTeleologyProposal, listTeleologyProposals } from "./teleologyApi";
 
 function instance(payload: unknown) {
-  const fetch = jest.fn(async (input: RequestInfo | URL) => {
+  const fetch = jest.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     expect(input).toBeTruthy();
     return { ok: true, json: async () => payload } as Response;
   });
