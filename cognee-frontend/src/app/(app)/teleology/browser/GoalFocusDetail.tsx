@@ -12,6 +12,7 @@ import {
   type ProposalItem,
   type TeleologyProposal,
 } from "@/modules/teleology/teleologyApi";
+import { isMissingGraphGoal } from "./derivedGoalTree";
 import TeleologyFocusMap from "./TeleologyFocusMap";
 import type { OntologyEdge } from "./types";
 
@@ -65,16 +66,42 @@ export default function GoalFocusDetail({
   onReviewProposal?: (proposal: TeleologyProposal) => void;
   onShowChildren?: () => void;
 }) {
-  const presetMatches = preset?.goal.id === goalId ? preset : null;
+  const presetMatches = preset && (preset.goal.id === goalId || preset.goal.candidate_id === goalId || preset.goal.visual_id === goalId) ? preset : null;
   const [loaded, setLoaded] = useState<FocusPreset | null>(presetMatches);
   const [loading, setLoading] = useState(!presetMatches);
   const [error, setError] = useState<string | null>(null);
   const [localProposal, setLocalProposal] = useState<TeleologyProposal | null>(null);
 
   useEffect(() => {
-    if (preset?.goal.id === goalId) {
-      setLoaded(preset);
+    const matched = preset && (preset.goal.id === goalId || preset.goal.candidate_id === goalId || preset.goal.visual_id === goalId) ? preset : null;
+    if (matched) {
+      setLoaded(matched);
       setLocalProposal(null);
+      setLoading(false);
+      setError(null);
+      const graphId = matched.goal.graph_id;
+      if (!graphId) return;
+      let active = true;
+      void Promise.all([
+        getPurposeContext(instance, datasetId, graphId),
+        getGoalRelations(instance, datasetId, graphId, { limit: 30 }),
+      ]).then(([context, relations]) => {
+        if (!active) return;
+        setLoaded((current) => current && current.goal.candidate_id === matched.goal.candidate_id ? {
+          ...current,
+          purposes: current.purposes.length ? current.purposes : context.purposes || [],
+          constraints: current.constraints.length ? current.constraints : context.constraints || [],
+          relations: current.relations.length ? current.relations : relationEdges(relations.items),
+          counts: current.relations.length ? current.counts : relations.counts,
+        } : current);
+      }).catch((cause) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        if (active && !isMissingGraphGoal(message)) setError(message);
+      });
+      return () => { active = false; };
+    }
+    if (goalId.startsWith("visual:") || goalId.startsWith("data:")) {
+      setLoaded(null);
       setLoading(false);
       setError(null);
       return;
@@ -108,7 +135,7 @@ export default function GoalFocusDetail({
     return () => { active = false; };
   }, [instance, datasetId, goalId, preset]);
 
-  const view = loaded?.goal.id === goalId ? loaded : presetMatches;
+  const view = loaded && (loaded.goal.id === goalId || loaded.goal.candidate_id === goalId || loaded.goal.visual_id === goalId) ? loaded : presetMatches;
   const proposal = localProposal || view?.proposal || null;
   const t = (en: string, zh: string) => (language === "zh" ? zh : en);
 

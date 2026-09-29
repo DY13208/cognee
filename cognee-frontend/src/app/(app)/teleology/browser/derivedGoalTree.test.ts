@@ -1,4 +1,4 @@
-import { buildDerivedGoalTree, parseDataNodeId } from "./derivedGoalTree";
+import { buildDerivedGoalTree, isMissingGraphGoal, parseDataNodeId, resolveFocusTarget } from "./derivedGoalTree";
 import type { GoalModelView } from "@/modules/teleology/teleologyApi";
 
 const model = {
@@ -85,6 +85,74 @@ describe("derived goal tree", () => {
       ["Arencia项目", "serves", "提升 Arencia 项目盈利能力"],
       ["项目利润分", "serves", "提升 Arencia 项目盈利能力"],
     ]);
-    expect(parseDataNodeId(focus!.children[0].id)).toEqual({ goalId: "profit", nodeId: "project" });
+    expect(focus?.children.map((child) => child.candidate_id)).toEqual(["accuracy"]);
+    expect(parseDataNodeId(focus!.relations[0].sourceId)).toEqual({ goalId: "profit", nodeId: "project" });
+  });
+
+  it("keeps the snapshot candidate id apart from the visual id", () => {
+    const root = tree.byId.get("profit");
+    expect(root?.candidate_id).toBe("profit");
+    expect(root?.id).toBe("profit");
+    expect(root?.visual_id).toBe("visual:profit");
+    expect(root?.graph_id).toBeNull();
+    expect(resolveFocusTarget(tree, "visual:profit")).toEqual({
+      candidateId: "profit",
+      graphId: null,
+      visualId: "visual:profit",
+    });
+    expect(resolveFocusTarget(tree, "data:profit:project").candidateId).toBe("profit");
+    expect(resolveFocusTarget(tree, "data:profit:project").graphId).toBeNull();
+    expect(resolveFocusTarget(tree, "project")).toEqual({
+      candidateId: "profit",
+      graphId: null,
+      visualId: "visual:profit",
+    });
+    expect(tree.path("profit")).toHaveLength(1);
+    expect(isMissingGraphGoal("'Goal not found in dataset graph'")).toBe(true);
+  });
+
+  it("resolves the canonical root from the snapshot without a graph id", () => {
+    const rootId = "f873e41a-99cb-590e-aace-ef1531c2e964";
+    const names = [
+      "提升公司整体经营利润",
+      "保障财务健康与资金安全",
+      "提升组织能力与人才健康度",
+      "保障经营合规与风险可控",
+      "提升 AI 与知识资产能力",
+    ];
+    const root = buildDerivedGoalTree({
+      ...model,
+      candidates: [
+        {
+          ...model.candidates[0],
+          id: rootId,
+          name: "实现公司长期可持续经营与利润最大化",
+          parent_candidate_id: null,
+          graph_id: null,
+          source_node_ids: ["4ad0b6f7-83b6-5fa2-8ab3-50fa89300cdc"],
+          evidence: [{ node_id: "4ad0b6f7-83b6-5fa2-8ab3-50fa89300cdc", name: "公司树节点", source_class: "Other" }],
+        },
+        ...names.map((name, index) => ({
+          ...model.candidates[1],
+          id: `child-${index}`,
+          name,
+          parent_candidate_id: rootId,
+          evidence: [],
+          source_node_ids: [],
+        })),
+      ],
+    }, "zh");
+    const focus = root.focus(rootId);
+    expect(root.path(rootId)).toHaveLength(1);
+    expect(focus?.goal.candidate_id).toBe(rootId);
+    expect(focus?.goal.id).toBe(rootId);
+    expect(focus?.goal.graph_id).toBeNull();
+    expect(focus?.children.map((child) => child.name)).toEqual(names);
+    expect(resolveFocusTarget(root, "4ad0b6f7-83b6-5fa2-8ab3-50fa89300cdc")).toEqual({
+      candidateId: rootId,
+      graphId: null,
+      visualId: `visual:${rootId}`,
+    });
+    expect(resolveFocusTarget(root, `visual:${rootId}`).candidateId).toBe(rootId);
   });
 });

@@ -41,6 +41,12 @@ export interface TeleologyNodeInput {
 
 export interface GraphNodeSummary {
   id: string;
+  /** Goal Model candidate id. Never a canvas-only id. */
+  candidate_id?: string | null;
+  /** Formal dataset-graph Goal id. Absent until the candidate is committed. */
+  graph_id?: string | null;
+  /** Canvas identity. Not a backend goal id. */
+  visual_id?: string | null;
   name: string;
   type: string;
   description: string;
@@ -608,6 +614,8 @@ export interface GoalEvidence {
 
 export interface GoalCandidate {
   id: string;
+  candidate_id?: string | null;
+  graph_id?: string | null;
   dataset_id: string;
   name: string;
   description: string;

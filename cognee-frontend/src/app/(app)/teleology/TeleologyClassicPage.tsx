@@ -48,7 +48,7 @@ import PurposeLensGraph, {
 import { notifications } from "@mantine/notifications";
 import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 import GoalNav, { type GoalPage } from "./browser/NavPanel";
-import { buildDerivedGoalTree, parseDataNodeId, type DerivedGoalTree } from "./browser/derivedGoalTree";
+import { buildDerivedGoalTree, parseDataNodeId, resolveFocusTarget, type DerivedGoalTree } from "./browser/derivedGoalTree";
 import GoalFocusDetail from "./browser/GoalFocusDetail";
 import { shouldShowFocusDetail } from "./browser/TeleologyFocusMap";
 import PurposeReview from "./browser/PurposeReview";
@@ -188,13 +188,15 @@ export default function TeleologyClassicPage() {
   useEffect(() => {
     if (!cogniInstance || !datasetId || !lensGoalId) return;
     const tree = derivedTreeRef.current;
-    if (tree?.byId.get(lensGoalId)?.source === "derived_goal") {
-      const focus = tree.focus(lensGoalId);
+    const resolved = resolveFocusTarget(tree, lensGoalId);
+    const candidateId = resolved.candidateId;
+    if (candidateId && tree) {
+      const focus = tree.focus(candidateId);
       if (!focus) return;
       setFocusContext({
         dataset_id: datasetId,
         goal: focus.goal,
-        ancestors: tree.path(lensGoalId).slice(0, -1),
+        ancestors: tree.path(candidateId).slice(0, -1),
         children: focus.children,
         children_total: focus.children.length,
         note: focus.goal.description,
@@ -204,7 +206,7 @@ export default function TeleologyClassicPage() {
         entities: focus.children,
         documents: [],
         source: "ai_goal_model",
-        revision: lensGoalId,
+        revision: candidateId,
         missing_purpose: focus.purposes.length === 0,
       });
       setFocusRelations(focus.relations);
@@ -370,14 +372,15 @@ export default function TeleologyClassicPage() {
 
   const pickNavGoal = useCallback(async (id: string) => {
     const data = parseDataNodeId(id);
-    const goalId = data?.goalId || id;
     const tree = derivedTreeRef.current;
+    const resolved = resolveFocusTarget(tree, id);
+    const goalId = resolved.candidateId || data?.goalId || id;
     const goal = tree?.byId.get(goalId);
     if (goal?.source === "derived_goal" && tree) {
-      setLensGoalId(goalId);
-      setSelectedNodeId(data ? id : goalId);
+      setLensGoalId(goal.candidate_id || goalId);
+      setSelectedNodeId(data ? id : goal.candidate_id || goalId);
       setSelectedGoal(goal);
-      setNavPath(tree.pathIds(goalId));
+      setNavPath(tree.pathIds(goal.candidate_id || goalId));
       return;
     }
     setLensGoalId(id);
@@ -750,16 +753,35 @@ export default function TeleologyClassicPage() {
 
   const detailGoalId = useMemo(() => {
     if (!shouldShowFocusDetail(selectedNodeId) || !lensGoalId) return null;
-    if (selectedNodeId === lensGoalId) return lensGoalId;
-    if (focusContext?.purposes.some((item) => item.id === selectedNodeId) || focusContext?.constraints.some((item) => item.id === selectedNodeId)) return lensGoalId;
-    if (focusProposal?.items.some((item) => item.id === selectedNodeId)) return lensGoalId;
-    if (selectedNode?.kind === "entity" || selectedNode?.kind === "other") return lensGoalId;
+    const resolved = resolveFocusTarget(derivedTreeRef.current, selectedNodeId);
+    if (resolved.candidateId) return resolved.candidateId;
+    const focusCandidate = focusContext?.goal.candidate_id || lensGoalId;
+    if (selectedNodeId === lensGoalId || selectedNodeId === focusCandidate) return focusCandidate;
+    if (focusContext?.purposes.some((item) => item.id === selectedNodeId) || focusContext?.constraints.some((item) => item.id === selectedNodeId)) return focusCandidate;
+    if (focusProposal?.items.some((item) => item.id === selectedNodeId)) return focusCandidate;
+    if (selectedNode?.kind === "entity" || selectedNode?.kind === "other") return focusCandidate;
     return selectedNodeId;
   }, [selectedNodeId, lensGoalId, focusContext, focusProposal, selectedNode]);
 
   const classicPreset = useMemo(() => {
+    if (detailGoalId) {
+      const snapshot = derivedTreeRef.current?.focus(detailGoalId);
+      if (snapshot) {
+        const same = detailGoalId === (focusContext?.goal.candidate_id || focusContext?.goal.id || lensGoalId);
+        return {
+          goal: snapshot.goal,
+          purposes: snapshot.purposes,
+          constraints: snapshot.constraints,
+          relations: snapshot.relations,
+          proposal: same ? focusProposal : null,
+          children: snapshot.children,
+          childTotal: snapshot.children.length,
+        };
+      }
+    }
     const goal = focusContext?.goal || selectedGoal;
-    if (!goal || goal.id !== lensGoalId) return null;
+    const key = goal?.candidate_id || goal?.id;
+    if (!goal || (key !== lensGoalId && goal.id !== lensGoalId && goal.visual_id !== lensGoalId)) return null;
     return {
       goal,
       purposes: focusContext?.purposes || [],
@@ -769,7 +791,7 @@ export default function TeleologyClassicPage() {
       children: focusContext?.children || [],
       childTotal: focusContext?.children_total || 0,
     };
-  }, [focusContext, selectedGoal, lensGoalId, focusRelations, focusProposal]);
+  }, [detailGoalId, focusContext, selectedGoal, lensGoalId, focusRelations, focusProposal]);
 
   const edgesForSelected = useMemo(() => {
     if (!selectedNodeId) return [] as GraphAnnotation[];
@@ -1256,7 +1278,7 @@ export default function TeleologyClassicPage() {
             instance={cogniInstance}
             datasetId={datasetId}
             goalId={detailGoalId}
-            preset={detailGoalId === lensGoalId ? classicPreset : null}
+            preset={classicPreset}
             language={language === "zh" ? "zh" : "en"}
             selectedProposalItem={focusProposal?.items.find((item) => item.id === selectedNodeId) || null}
             onSelectProposal={(item) => setSelectedNodeId(item.id)}

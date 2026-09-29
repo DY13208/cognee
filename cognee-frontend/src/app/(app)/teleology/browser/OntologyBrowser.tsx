@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CogneeInstance } from "@/modules/instances/types";
 import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveGoalCandidate, moveWorkspaceGoal, reviewGoalCandidate, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GoalModelView, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
-import { buildDerivedGoalTree, parseDataNodeId, type DerivedGoalTree } from "./derivedGoalTree";
+import { buildDerivedGoalTree, parseDataNodeId, resolveFocusTarget, type DerivedGoalTree } from "./derivedGoalTree";
 import { confirmGoalCandidates } from "./confirmGoalCandidates";
 import { notifications } from "@mantine/notifications";
 import NavPanel, { type GoalMovePlacement, type GoalPage } from "./NavPanel";
@@ -104,17 +104,19 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const enter = useCallback(async (id: string, preview?: GraphNodeSummary) => {
     if (!datasetId) return;
     const dataNode = parseDataNodeId(id);
-    const goalId = dataNode && derivedRef.current?.byId.get(dataNode.goalId)?.source === "derived_goal" ? dataNode.goalId : id;
-    const derived = derivedRef.current?.byId.get(goalId)?.source === "derived_goal" ? derivedRef.current?.focus(goalId) : null;
-    if (derived && derivedRef.current) {
+    const resolved = resolveFocusTarget(derivedRef.current, id);
+    const derived = resolved.candidateId ? derivedRef.current?.focus(resolved.candidateId) : null;
+    if (derived && derivedRef.current && resolved.candidateId) {
       const serial = ++requestId.current;
+      const chain = derivedRef.current.path(resolved.candidateId);
       setLoading(false); setError(null); setPendingId(null);
-      setFocusId(goalId); setSelectedId(dataNode ? id : goalId); setFocusGoal(derived.goal); setParent(null);
-      setPath(derivedRef.current.path(goalId));
+      setFocusId(resolved.candidateId); setSelectedId(dataNode ? id : resolved.candidateId); setFocusGoal(derived.goal);
+      setParent(chain.length > 1 ? chain[chain.length - 2] : null);
+      setPath(chain);
       setChildren(derived.children); setChildTotal(derived.children.length);
       setWhy(derived.purposes); setConstraints(derived.constraints); setProposal(null); setSelectedProposalItem(null);
       setRelations(derived.relations);
-      setRelationCounts({ serves: derived.relations.length, advances: 0, blocks: 0 });
+      setRelationCounts({ serves: derived.relations.filter((edge) => edge.relationship === "serves").length, advances: derived.relations.filter((edge) => edge.relationship === "advances").length, blocks: derived.relations.filter((edge) => edge.relationship === "blocks").length });
       setRelationTotal(derived.relations.length); setRelationOffset(0);
       if (serial !== requestId.current) return;
       return;
@@ -263,10 +265,33 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
 
   const detailGoalId = useMemo(() => {
     if (!selectedId || !focus) return null;
-    if (proposal?.items.some((item) => item.id === selectedId)) return focus.id;
-    if (why.some((item) => item.id === selectedId) || constraints.some((item) => item.id === selectedId)) return focus.id;
+    const resolved = resolveFocusTarget(derivedRef.current, selectedId);
+    if (resolved.candidateId) return resolved.candidateId;
+    const focusCandidate = focus.candidate_id || focus.id;
+    if (proposal?.items.some((item) => item.id === selectedId)) return focusCandidate;
+    if (why.some((item) => item.id === selectedId) || constraints.some((item) => item.id === selectedId)) return focusCandidate;
     return selectedId;
-  }, [selectedId, focus, proposal, why, constraints]);
+  }, [selectedId, focus, proposal, why, constraints, goalModel]);
+
+  const detailPreset = useMemo(() => {
+    if (detailGoalId) {
+      const snapshot = derivedRef.current?.focus(detailGoalId);
+      if (snapshot) {
+        const same = detailGoalId === (focus?.candidate_id || focus?.id);
+        return {
+          goal: snapshot.goal,
+          purposes: snapshot.purposes,
+          constraints: snapshot.constraints,
+          relations: snapshot.relations,
+          counts: same ? relationCounts : undefined,
+          proposal: same ? proposal : null,
+          children: snapshot.children,
+          childTotal: snapshot.children.length,
+        };
+      }
+    }
+    return focus && detailGoalId === focus.id ? focusPreset : null;
+  }, [detailGoalId, focus, proposal, relationCounts, goalModel, focusPreset]);
 
   const selectedCandidate = goalModel?.candidates.find((candidate) => candidate.id === detailGoalId) || null;
   const proposedGoalIds = goalModel?.candidates.filter((candidate) => candidate.status === "proposed").map((candidate) => candidate.id) || [];
@@ -281,9 +306,16 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
 
   async function viewSelectedPath(id = selectedId) {
     try {
-      let goal = [focus, parent, ...children, ...path, ...roots].find((item) => item?.id === id);
-      if (!goal && id) {
-        goal = await getGoalDetail(instance, datasetId, id);
+      const resolved = resolveFocusTarget(derivedRef.current, id);
+      if (resolved.candidateId && derivedRef.current && !resolved.graphId) {
+        setDrawerPath(derivedRef.current.path(resolved.candidateId));
+        setDrawer("path");
+        return;
+      }
+      const lookupId = resolved.graphId || id;
+      let goal = [focus, parent, ...children, ...path, ...roots].find((item) => item?.id === lookupId || item?.candidate_id === lookupId);
+      if (!goal && lookupId) {
+        goal = await getGoalDetail(instance, datasetId, lookupId);
       }
       if (!goal) return;
       setDrawerPath(await loadPath(goal));
@@ -609,7 +641,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
               instance={instance}
               datasetId={datasetId}
               goalId={detailGoalId}
-              preset={detailGoalId === focus.id ? focusPreset : null}
+              preset={detailPreset}
               language={language}
               selectedProposalItem={selectedProposalItem}
               onSelectProposal={(item) => { setSelectedProposalItem(item); setSelectedId(item.id); }}

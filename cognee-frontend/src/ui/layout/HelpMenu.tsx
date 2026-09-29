@@ -72,8 +72,7 @@ function ExtractionIcon() {
 }
 
 const MENU_ITEMS = [
-  { label: "Docs", href: "https://docs.cognee.ai", external: true, icon: <DocsIcon /> },
-  { label: "Discord community", href: "https://discord.gg/m63hxKsp4p", external: true, icon: <DiscordIcon /> },
+  { label: "Docs", href: "https://docs.cognee.ai", external: true, icon: <DocsIcon /> }
 ];
 
 const CHANGELOG_ITEMS = [
@@ -128,17 +127,6 @@ export default function HelpMenu() {
             padding: 6,
           }}
         >
-          {/* Onboarding */}
-          <button
-            onClick={startOnboarding}
-            className="flex items-center gap-[10px] rounded-[6px] px-3 py-[10px] w-full cursor-pointer"
-            style={{ fontSize: 13, color: "rgba(237,236,234,0.8)", background: "none", border: "none", textAlign: "left", fontFamily: "inherit" }}
-            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.07)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "none")}
-          >
-            <OnboardingIcon />
-            {label("Onboarding", "入门引导")}
-          </button>
 
           {/* Extraction Settings */}
           <button
@@ -214,34 +202,6 @@ export default function HelpMenu() {
 
           {/* Separator */}
           <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "2px -6px" }} />
-
-          {/* What's new */}
-          <div style={{ padding: "8px 12px 4px", fontSize: 11, fontWeight: 500, color: "rgba(237,236,234,0.35)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            {label("What's new", "更新动态")}
-          </div>
-          {CHANGELOG_ITEMS.map((item) => (
-            <div
-              key={item.label}
-              className="flex items-start gap-[10px] rounded-[6px] px-3 py-[8px] cursor-default"
-              style={{ fontSize: 13, color: "rgba(237,236,234,0.7)" }}
-            >
-              <span
-                className="mt-[5px] rounded-full flex-shrink-0"
-                style={{
-                  width: 6,
-                  height: 6,
-                  border: "1.5px solid rgba(188,155,255,0.60)",
-                  background: "transparent",
-                }}
-              />
-              <div>
-                <div>{language === "zh" ? item.date === "May 8" ? "完整代理支持：创建代理、跟踪会话与状态，并查看代理指标" : "自定义图模型、提示词及本体上传" : item.label}</div>
-                <div style={{ fontSize: 11, color: "rgba(237,236,234,0.35)" }}>
-                  {language === "zh" ? ({ "May 8": "5 月 8 日", "Apr 24": "4 月 24 日" } as Record<string, string>)[item.date] || item.date : item.date}
-                </div>
-              </div>
-            </div>
-          ))}
         </div>
       )}
     </div>

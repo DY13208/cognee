@@ -32,9 +32,15 @@ export type DerivedGoalTree = {
   pathIds: (goalId: string) => string[];
   search: (query: string) => GraphNodeSummary[];
   focus: (goalId: string) => DerivedFocus | null;
+  /** Evidence and source node ids that belong to a candidate. Not graph goal ids. */
+  sourceOwners: Map<string, string>;
 };
 
 type EvidenceRow = GoalEvidence & { semantic_class?: string; id?: string };
+
+export function goalVisualId(candidateId: string) {
+  return `visual:${candidateId}`;
+}
 
 export function dataNodeId(goalId: string, nodeId: string) {
   return `data:${goalId}:${nodeId}`;
@@ -56,17 +62,24 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
   const pages: Record<string, GoalPage> = {};
   const statuses: Record<string, string> = {};
 
-  const summary = (goal: GoalCandidate): GraphNodeSummary => ({
-    id: goal.id,
-    name: goal.name,
-    type: "Goal",
-    description: goal.description || goal.reason || "",
-    source: "derived_goal",
-    status: goal.status,
-    parent_id: goal.parent_candidate_id,
-    parent_name: goal.parent_candidate_id ? byGoal.get(goal.parent_candidate_id)?.name || null : null,
-    child_count: 0,
-  });
+  const summary = (goal: GoalCandidate): GraphNodeSummary => {
+    const candidateId = goal.id;
+    const graphId = goal.graph_id?.trim() || null;
+    return {
+      id: candidateId,
+      candidate_id: candidateId,
+      graph_id: graphId,
+      visual_id: goalVisualId(candidateId),
+      name: goal.name,
+      type: "Goal",
+      description: goal.description || goal.reason || "",
+      source: "derived_goal",
+      status: goal.status,
+      parent_id: goal.parent_candidate_id,
+      parent_name: goal.parent_candidate_id ? byGoal.get(goal.parent_candidate_id)?.name || null : null,
+      child_count: 0,
+    };
+  };
 
   const evidenceNode = (goal: GoalCandidate, entry: EvidenceRow): GraphNodeSummary | null => {
     const nodeId = entry.node_id || entry.id || "";
@@ -75,6 +88,9 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
     const label = CLASS_LABEL[semantic] || CLASS_LABEL.Other;
     const node: GraphNodeSummary = {
       id: dataNodeId(goal.id, nodeId),
+      candidate_id: goal.id,
+      graph_id: null,
+      visual_id: dataNodeId(goal.id, nodeId),
       name: entry.name || nodeId,
       type: semantic,
       description: entry.text || "",
@@ -117,6 +133,17 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
     };
   }
 
+  const sourceOwners = new Map<string, string>();
+  for (const goal of goals) {
+    for (const sourceId of goal.source_node_ids || []) {
+      if (sourceId && !sourceOwners.has(sourceId)) sourceOwners.set(sourceId, goal.id);
+    }
+    for (const entry of goal.evidence || []) {
+      const nodeId = entry.node_id || "";
+      if (nodeId && !sourceOwners.has(nodeId)) sourceOwners.set(nodeId, goal.id);
+    }
+  }
+
   const roots = goals
     .filter((goal) => !goal.parent_candidate_id || !byGoal.has(goal.parent_candidate_id))
     .map((goal) => byId.get(goal.id)!)
@@ -141,6 +168,7 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
     byId,
     path,
     pathIds: (goalId) => path(goalId).map((goal) => goal.id),
+    sourceOwners,
     search: (query) => {
       const needle = query.trim().toLowerCase();
       if (!needle) return roots;
@@ -153,8 +181,10 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
       const goal = byGoal.get(goalId);
       const node = byId.get(goalId);
       if (!goal || !node || node.source !== "derived_goal") return null;
-      const children = pages[goalId]?.items.filter((item) => item.source === "company_tree") || [];
-      const relations: OntologyEdge[] = children.map((child) => ({
+      const children = (pages[goalId]?.items || []).filter((item) => item.source === "derived_goal");
+      const evidence = (pages[goalId]?.items || []).filter((item) => item.source === "company_tree");
+      const nameOf = (id: string | null | undefined) => (id && (byGoal.get(id)?.name || byId.get(id)?.name)) || id || "";
+      const evidenceRelations: OntologyEdge[] = evidence.map((child) => ({
         id: `${child.id}|serves|${goal.id}`,
         sourceId: child.id,
         targetId: goal.id,
@@ -164,13 +194,78 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
         targetType: "Goal",
         relationship: "serves",
       }));
+      const semanticRelations: OntologyEdge[] = (model.relations || [])
+        .filter((item) => item.status !== "rejected" && (item.goal_id === goalId || item.source === goalId || item.target === goalId))
+        .filter((item) => item.source && item.target)
+        .map((item) => ({
+          id: item.id,
+          sourceId: item.source || goalId,
+          targetId: item.target || goalId,
+          sourceName: nameOf(item.source),
+          targetName: nameOf(item.target),
+          sourceType: "Goal",
+          targetType: "Goal",
+          relationship: item.relationship || "serves",
+          status: item.status === "confirmed" ? "confirmed" as const : "proposed" as const,
+        }));
       const purposes = (model.purposes || [])
         .filter((item) => item.goal_id === goalId && item.status !== "rejected")
         .map((item) => ({ id: item.id, name: item.name, type: "Purpose", description: item.reason || "" }));
       const constraints = (model.constraints || [])
         .filter((item) => item.goal_id === goalId && item.status !== "rejected")
         .map((item) => ({ id: item.id, name: item.name, type: "Constraint", description: item.reason || "" }));
-      return { goal: node, children, relations, purposes, constraints };
+      return { goal: node, children, relations: [...evidenceRelations, ...semanticRelations], purposes, constraints };
     },
   };
+}
+
+export type FocusTarget = {
+  candidateId: string | null;
+  graphId: string | null;
+  visualId: string | null;
+};
+
+export function resolveFocusTarget(tree: DerivedGoalTree | null, id: string | null | undefined): FocusTarget {
+  const empty: FocusTarget = { candidateId: null, graphId: null, visualId: null };
+  if (!tree || !id) return empty;
+  const data = parseDataNodeId(id);
+  if (data) {
+    const owner = tree.byId.get(data.goalId);
+    if (owner?.source === "derived_goal") {
+      const candidateId = owner.candidate_id || data.goalId;
+      return { candidateId, graphId: owner.graph_id || null, visualId: owner.visual_id || goalVisualId(candidateId) };
+    }
+  }
+  const bare = id.startsWith("visual:") ? id.slice("visual:".length) : id;
+  const direct = tree.byId.get(id) || tree.byId.get(bare);
+  if (direct?.source === "derived_goal") {
+    const candidateId = direct.candidate_id || direct.id;
+    return { candidateId, graphId: direct.graph_id || null, visualId: direct.visual_id || goalVisualId(candidateId) };
+  }
+  for (const node of tree.byId.values()) {
+    if (node.source !== "derived_goal") continue;
+    if (node.candidate_id === id || node.visual_id === id || (node.graph_id && node.graph_id === id)) {
+      return { candidateId: node.candidate_id || node.id, graphId: node.graph_id || null, visualId: node.visual_id || null };
+    }
+  }
+  for (const node of tree.byId.values()) {
+    if (node.source !== "company_tree") continue;
+    const parsed = parseDataNodeId(node.visual_id || node.id);
+    if (parsed?.nodeId !== id) continue;
+    const owner = tree.byId.get(parsed.goalId);
+    if (owner?.source !== "derived_goal") continue;
+    const candidateId = owner.candidate_id || parsed.goalId;
+    return { candidateId, graphId: owner.graph_id || null, visualId: owner.visual_id || goalVisualId(candidateId) };
+  }
+  const ownerId = tree.sourceOwners.get(id);
+  const owner = ownerId ? tree.byId.get(ownerId) : undefined;
+  if (owner?.source === "derived_goal") {
+    const candidateId = owner.candidate_id || ownerId || owner.id;
+    return { candidateId, graphId: owner.graph_id || null, visualId: owner.visual_id || goalVisualId(candidateId) };
+  }
+  return empty;
+}
+
+export function isMissingGraphGoal(message: string) {
+  return /goal not found in dataset graph/i.test(message.replace(/['"]/g, ""));
 }
