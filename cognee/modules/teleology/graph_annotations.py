@@ -170,7 +170,10 @@ def _annotations_from_edges(
 def _index_graph(
     nodes: list, edges: list
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
-    from cognee.modules.teleology.purpose_relations import edge_properties, select_purpose_relations
+    from cognee.modules.teleology.purpose_relations import (
+        edge_properties,
+        select_purpose_relations,
+    )
 
     by_id: dict[str, dict[str, Any]] = {}
     for raw_id, props in nodes:
@@ -436,6 +439,63 @@ async def _attach_child_counts(
     return goals
 
 
+async def _attach_confirmed_counts(
+    graph: Any,
+    goals: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Confirmed purpose relations for the goals on this page, in one query."""
+    from cognee.modules.teleology.purpose_relations import (
+        confirmed_counts_for_goals,
+        edge_properties,
+    )
+
+    if not goals:
+        return goals
+    ids = [g["id"] for g in goals]
+    edges: list[dict[str, Any]] = []
+    tree_pairs: set[tuple[str, str]] = set()
+    try:
+        rows = await graph.query(
+            """
+            MATCH (s:Node)-[r:EDGE]->(t:Node)
+            WHERE (s.id IN $ids OR t.id IN $ids)
+              AND r.relationship_name IN ['serves', 'advances', 'blocks']
+            RETURN s.id, s.type, t.id, t.type, r.relationship_name, r.properties
+            """,
+            {"ids": ids},
+        )
+        pair_rows = await graph.query(
+            """
+            MATCH (p:Node)-[h:EDGE]->(c:Node)
+            WHERE h.relationship_name = 'has_subgoal'
+              AND (p.id IN $ids OR c.id IN $ids)
+            RETURN p.id, c.id
+            """,
+            {"ids": ids},
+        )
+        tree_pairs = {
+            (str(row[0]), str(row[1])) for row in pair_rows or [] if row and len(row) >= 2
+        }
+        edges = [
+            {
+                "source_id": str(row[0]),
+                "source_type": str(row[1] or ""),
+                "target_id": str(row[2]),
+                "target_type": str(row[3] or ""),
+                "relationship": str(row[4]),
+                "properties": edge_properties(row[5] if len(row) > 5 else None),
+            }
+            for row in rows or []
+            if row and len(row) >= 5
+        ]
+    except Exception:
+        edges = []
+    counts = confirmed_counts_for_goals(edges, tree_pairs, ids)
+    for goal in goals:
+        goal["confirmed_count"] = int(counts.get(goal["id"], 0))
+    return goals
+
+
 async def _attach_parent_paths(
     graph: Any,
     goals: list[dict[str, Any]],
@@ -576,6 +636,7 @@ async def _attach_known_fields(
 async def _enrich_goals(graph: Any, goals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     goals = await _attach_parent_paths(graph, goals)
     goals = await _attach_child_counts(graph, goals)
+    goals = await _attach_confirmed_counts(graph, goals)
     return await _attach_known_fields(graph, goals)
 
 

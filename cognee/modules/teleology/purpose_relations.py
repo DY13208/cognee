@@ -122,3 +122,36 @@ def select_purpose_relations(
         if _rank(edge) > _rank(current):
             best[key] = edge
     return [best[key] for key in order]
+
+
+def confirmed_counts_for_goals(
+    edges: list[dict[str, Any]],
+    tree_pairs: set[tuple[str, str]],
+    goal_ids: list[str],
+) -> dict[str, int]:
+    """Match the nav label written after a goal is opened: relations plus linked purposes and constraints."""
+    selected = select_purpose_relations(edges, tree_pairs)
+    grouped: dict[str, list[dict[str, Any]]] = {goal_id: [] for goal_id in goal_ids}
+    for edge in selected:
+        source_id = str(edge.get("source_id") or "")
+        target_id = str(edge.get("target_id") or "")
+        if source_id in grouped:
+            grouped[source_id].append(edge)
+        if target_id in grouped and target_id != source_id:
+            grouped[target_id].append(edge)
+    counts: dict[str, int] = {}
+    for goal_id, items in grouped.items():
+        purposes: set[str] = set()
+        constraints: set[str] = set()
+        for item in items:
+            for prefix in ("source", "target"):
+                node_type = str(item.get(f"{prefix}_type") or "")
+                node_id = str(item.get(f"{prefix}_id") or "")
+                if not node_id:
+                    continue
+                if node_type == "Purpose":
+                    purposes.add(node_id)
+                elif node_type == "Constraint":
+                    constraints.add(node_id)
+        counts[goal_id] = len(items) + len(purposes) + len(constraints)
+    return counts

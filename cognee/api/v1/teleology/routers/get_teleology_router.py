@@ -22,6 +22,13 @@ from cognee.modules.teleology.coverage_service import (
     retry_coverage_failures,
     start_coverage,
 )
+from cognee.modules.teleology.goal_build import start_teleology_build
+from cognee.modules.teleology.goal_model import (
+    GoalBuildError,
+    goal_model_view,
+    set_candidate_status,
+    set_teleology_status,
+)
 from cognee.modules.teleology.goal_workspace import (
     create_goal as create_workspace_goal,
 )
@@ -154,6 +161,25 @@ class PurposeProposalCommit(InDTO):
     dataset_id: UUID
     accepted_item_ids: List[str] = Field(default_factory=list)
     edits: Optional[dict] = None
+
+
+class TeleologyBuildCreate(InDTO):
+    dataset_id: UUID
+    mode: Literal["baseline", "incremental"] = "baseline"
+    batch_size: int = Field(default=20, ge=1, le=100)
+    concurrency: int = Field(default=1, ge=1, le=5)
+    max_sources: Optional[int] = Field(default=None, ge=1)
+
+
+class GoalCandidateReview(InDTO):
+    dataset_id: UUID
+    status: Literal["proposed", "confirmed", "rejected"]
+
+
+class GoalTeleologyReview(InDTO):
+    dataset_id: UUID
+    kind: Literal["purpose", "constraint", "relation"]
+    status: Literal["proposed", "confirmed", "rejected"]
 
 
 class CoverageRunCommit(InDTO):
@@ -780,5 +806,62 @@ def get_teleology_router() -> APIRouter:
     ):
         del user
         return await coverage_state(dataset_id, status=status, limit=limit, offset=offset)
+
+    @router.post("/builds", response_model=dict)
+    async def start_dataset_teleology_build(
+        payload: TeleologyBuildCreate,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Discover canonical goals from one dataset. The result stays a proposal."""
+        try:
+            return await start_teleology_build(
+                payload.dataset_id,
+                user,
+                mode=payload.mode,
+                batch_size=payload.batch_size,
+                concurrency=payload.concurrency,
+                max_sources=payload.max_sources,
+            )
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+
+    @router.get("/goal-model", response_model=dict)
+    async def get_ai_goal_model(
+        dataset_id: UUID,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Read the derived AI Goal Model. Company-tree nodes stay in the evidence."""
+        await _authorized_dataset(dataset_id, user, "read")
+        return goal_model_view(dataset_id)
+
+    @router.post("/goal-model/candidates/{candidate_id}/review", response_model=dict)
+    async def review_ai_goal_candidate(
+        candidate_id: str,
+        payload: GoalCandidateReview,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Accept or reject one derived goal. This does not commit the graph."""
+        await _authorized_dataset(payload.dataset_id, user, "write")
+        try:
+            return set_candidate_status(payload.dataset_id, candidate_id, payload.status)
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/goal-model/items/{item_id}/review", response_model=dict)
+    async def review_ai_goal_teleology(
+        item_id: str,
+        payload: GoalTeleologyReview,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Accept or reject one purpose, constraint, or relation proposal."""
+        await _authorized_dataset(payload.dataset_id, user, "write")
+        try:
+            return set_teleology_status(
+                payload.dataset_id, item_id, payload.status, payload.kind
+            )
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
 
     return router

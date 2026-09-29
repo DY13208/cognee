@@ -1,16 +1,17 @@
-"""Graph and proposal adapters. Analysis still goes through analyze_goal."""
+"""Graph and proposal adapters.
+
+Coverage continues teleology for an existing AI Goal Model. It does not treat
+company-tree nodes as goals. Discovery of goals belongs to the dataset build.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
 
-from cognee.context_global_variables import set_database_global_context_variables
-from cognee.infrastructure.databases.graph import get_graph_engine
-from cognee.modules.teleology.graph_annotations import _authorized_dataset
 from cognee.modules.teleology.proposal_store import load_proposal, load_proposals, save_proposal
 from cognee.modules.teleology.purpose_analyze import analyze_goal
-from cognee.modules.teleology.purpose_layer import _props_dict, get_purpose_context
+from cognee.modules.teleology.purpose_layer import get_purpose_context
 
 
 class ProductionSources:
@@ -21,39 +22,31 @@ class ProductionSources:
     async def goal_page(
         self, dataset_id: Any, user: Any, offset: int, limit: int
     ) -> tuple[list[str], int]:
-        dataset = await _authorized_dataset(UUID(str(dataset_id)), user, "read")
-        async with set_database_global_context_variables(dataset_id, dataset.owner_id):
-            graph = await get_graph_engine()
-            count_rows = await graph.query(
-                "MATCH (n:Node) WHERE n.type = 'Goal' RETURN count(n)",
-                {},
-            )
-            rows = await graph.query(
-                """MATCH (n:Node)
-                WHERE n.type = 'Goal'
-                RETURN n.id, n.properties
-                ORDER BY n.id
-                SKIP $offset
-                LIMIT $limit""",
-                {"offset": int(offset), "limit": int(limit)},
-            )
-        total = int(count_rows[0][0]) if count_rows else 0
-        goal_ids = []
-        for row in rows or []:
-            if not row or row[0] is None:
-                continue
-            props = _props_dict(row[1] if len(row) > 1 else None)
-            if str(props.get("cpd_kind") or "") == "map_reference":
-                continue
-            goal_ids.append(str(row[0]))
-        return goal_ids, total
+        """Page canonical AI goals. Company-tree Goal nodes are not the queue."""
+        del user
+        from cognee.modules.teleology.goal_model import list_canonical_goal_ids
+
+        goal_ids = list_canonical_goal_ids(dataset_id)
+        start = max(0, int(offset))
+        size = max(0, int(limit))
+        return goal_ids[start : start + size], len(goal_ids)
 
     async def context(self, dataset_id: Any, user: Any, goal_id: str) -> dict[str, Any]:
+        from cognee.modules.teleology.goal_model import canonical_context
+
+        derived = canonical_context(dataset_id, goal_id)
+        if derived is not None:
+            return derived
         return await get_purpose_context(UUID(str(dataset_id)), user, goal_id)
 
     async def analyze(
         self, dataset_id: Any, user: Any, goal_id: str, run_id: str
     ) -> dict[str, Any]:
+        from cognee.modules.teleology.goal_model import incremental_teleology_proposal
+
+        derived = incremental_teleology_proposal(dataset_id, goal_id, run_id)
+        if derived is not None:
+            return derived
         return await analyze_goal(UUID(str(dataset_id)), user, goal_id, run_id=run_id)
 
     async def open_proposal(self, dataset_id: Any, goal_id: str) -> dict[str, Any] | None:

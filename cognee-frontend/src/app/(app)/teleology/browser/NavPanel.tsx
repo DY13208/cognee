@@ -67,7 +67,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
         }}>{count ? expanded ? "⌄" : "›" : ""}</button>
         <span className="onto-file-icon" aria-hidden><GoalMark depth={depth} /></span>
         <button type="button" className="onto-file-name" title={goal.name} onClick={() => onPick(goal.id, goal)}>{goal.name}</button>
-        <span className="teleology-nav-status">{statuses[goal.id] || t("Not analyzed", "未分析")}</span>
+        <span className="teleology-nav-status">{statuses[goal.id] || (goal.confirmed_count ? t(`Confirmed ${goal.confirmed_count}`, `已确认 ${goal.confirmed_count}`) : t("Not analyzed", "未分析"))}</span>
       </div>
       {expanded && <div role="group" className="onto-nav-branch">
         {page?.loading && <div className="onto-nav-loading">{t("Loading goals…", "加载目标中…")}</div>}

@@ -50,6 +50,7 @@ export interface GraphNodeSummary {
   parent_id?: string | null;
   parent_name?: string | null;
   child_count?: number;
+  confirmed_count?: number;
   owner?: string | null;
   created_at?: number | string | null;
   progress?: number | null;
@@ -592,6 +593,108 @@ export async function coverageAction(
 export async function getCoverageState(instance: CogneeInstance, datasetId: string): Promise<CoverageStatePage> {
   const params = new URLSearchParams({ dataset_id: datasetId, limit: "1" });
   const resp = await instance.fetch(`/v1/teleology/coverage/state?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export interface GoalEvidence {
+  node_id: string;
+  name: string;
+  source_class: string;
+  layer?: string;
+  text?: string;
+}
+
+export interface GoalCandidate {
+  id: string;
+  dataset_id: string;
+  name: string;
+  description: string;
+  confidence: number;
+  reason: string;
+  source_node_ids: string[];
+  evidence: GoalEvidence[];
+  parent_candidate_id: string | null;
+  status: "proposed" | "confirmed" | "rejected";
+  run_id: string;
+  generated_by: string;
+  semantic_hash: string;
+}
+
+export interface GoalTeleologyItem {
+  id: string;
+  kind: string;
+  name: string;
+  status: string;
+  reason: string;
+  confidence: number;
+  evidence: GoalEvidence[];
+  source_node_ids: string[];
+  goal_id?: string;
+  relationship?: string | null;
+  source?: string | null;
+  target?: string | null;
+}
+
+export interface GoalModelView {
+  dataset_id: string;
+  run_id: string | null;
+  status: string;
+  stage?: string;
+  committed: boolean;
+  graph_committed: boolean;
+  candidates: GoalCandidate[];
+  hierarchy: {
+    id: string;
+    name: string;
+    parent_candidate_id: string | null;
+    status: string;
+    confidence: number;
+    evidence_count: number;
+  }[];
+  purposes: GoalTeleologyItem[];
+  constraints: GoalTeleologyItem[];
+  relations: GoalTeleologyItem[];
+  classifications: { id: string; name: string; source_class: string; layer?: string }[];
+}
+
+export async function getGoalModel(instance: CogneeInstance, datasetId: string): Promise<GoalModelView> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/goal-model?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function startTeleologyBuild(
+  instance: CogneeInstance,
+  input: {
+    dataset_id: string;
+    mode: "baseline" | "incremental";
+    batch_size?: number;
+    concurrency?: number;
+    max_sources?: number | null;
+  },
+): Promise<GoalModelView> {
+  const resp = await instance.fetch("/v1/teleology/builds", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function reviewGoalCandidate(
+  instance: CogneeInstance,
+  datasetId: string,
+  candidateId: string,
+  status: "proposed" | "confirmed" | "rejected",
+): Promise<{ graph_committed: boolean; committed: boolean }> {
+  const resp = await instance.fetch(`/v1/teleology/goal-model/candidates/${encodeURIComponent(candidateId)}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, status }),
+  });
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();
 }

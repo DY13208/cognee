@@ -321,10 +321,10 @@ def register_teleology_tools(registry, get_client) -> None:
         max_goals: int | None = None,
         token_budget: int | None = None,
     ) -> list:
-        """Start a backend coverage run for one dataset. Modes: baseline, incremental, force.
+        """Continue teleology for an existing AI Goal Model. Modes: baseline, incremental, force.
 
-        The server queues goals and calls analyze itself. Do not walk the company tree or call
-        analyze_goal once per goal. This only creates proposals. It never commits them.
+        Coverage does not discover goals and does not walk the company tree as the goal list.
+        Run start_teleology_build first. This only creates proposals. It never commits them.
         Use max_goals for a pilot. Omit it only when a full run is intended.
         """
         body = {
@@ -338,6 +338,40 @@ def register_teleology_tools(registry, get_client) -> None:
         if token_budget:
             body["token_budget"] = token_budget
         return await request("POST", "/api/v1/teleology/coverage/runs", body=body)
+
+    @registry.tool(tags={"teleology"})
+    async def start_teleology_build(
+        dataset_id: str,
+        mode: str = "baseline",
+        batch_size: int = 20,
+        concurrency: int = 1,
+        max_sources: int | None = None,
+    ) -> list:
+        """Discover an AI Goal Model from one dataset. Modes: baseline, incremental.
+
+        Company-tree nodes are evidence, not goals. The run stores proposals only.
+        It never commits them and it never writes the company tree.
+        """
+        body = {
+            "dataset_id": dataset_id,
+            "mode": mode or "baseline",
+            "batch_size": batch_size or 20,
+            "concurrency": concurrency or 1,
+        }
+        if max_sources:
+            body["max_sources"] = max_sources
+        return await request("POST", "/api/v1/teleology/builds", body=body)
+
+    @registry.tool(tags={"teleology"})
+    async def get_teleology_goal_model(dataset_id: str) -> list:
+        """Read the derived AI Goal Model: hierarchy, purpose, constraint, and relations.
+
+        Every goal carries reason, confidence, evidence, and source nodes.
+        This does not write the graph.
+        """
+        return await request(
+            "GET", "/api/v1/teleology/goal-model", params={"dataset_id": dataset_id}
+        )
 
     @registry.tool(tags={"teleology"})
     async def get_teleology_coverage_status(run_id: str) -> list:

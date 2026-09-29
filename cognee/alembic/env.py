@@ -13,6 +13,7 @@ import cognee.modules.provenance.models  # noqa: F401
 import cognee.modules.provenance.edge_evidence.models  # noqa: F401
 import cognee.modules.teleology.proposal_models  # noqa: F401
 import cognee.modules.teleology.coverage_models  # noqa: F401
+import cognee.modules.teleology.goal_model_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

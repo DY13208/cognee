@@ -46,6 +46,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [focus, setFocusGoal] = useState<GraphNodeSummary | null>(null);
   const [parent, setParent] = useState<GraphNodeSummary | null>(null);
@@ -87,54 +88,65 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const enter = useCallback(async (id: string, preview?: GraphNodeSummary) => {
     if (!datasetId) return;
     const serial = ++requestId.current;
-    setLoading(true); setError(null);
-    setFocusId(id); setSelectedId(id); setFocusGoal(preview || null); setParent(null); setPath([]);
-    setChildren([]); setChildTotal(0); setRelations([]); setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null);
-    setRelationCounts({ serves: 0, advances: 0, blocks: 0 });
+    setLoading(true); setError(null); setPendingId(id);
+    let relationPage: Awaited<ReturnType<typeof getGoalRelations>> | null = null;
+    let childPage: Awaited<ReturnType<typeof getGraphAnnotations>> | null = null;
+    try {
+      // Relations and direct children are the canvas. Purpose context walks
+      // every ancestor, so it starts only after this neighborhood is on screen.
+      [relationPage, childPage] = await Promise.all([
+        getGoalRelations(instance, datasetId, id, { limit: 30 }),
+        getGraphAnnotations(instance, datasetId, { parentId: id, goalsLimit: CANVAS_PAGE }),
+      ]);
+    } catch (cause) {
+      if (serial !== requestId.current) return;
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+    if (serial !== requestId.current) return;
+    const named = relationPage?.items.find((edge) => edge.source_id === id || edge.target_id === id);
+    const nextFocus: GraphNodeSummary = preview || {
+      id,
+      name: named ? (named.source_id === id ? named.source_name : named.target_name) : id,
+      type: "Goal",
+      description: "",
+    };
+    const visibleChildren = (childPage?.goals || []).slice(0, (childPage?.goals_total || 0) > 16 ? 12 : 16);
+    setFocusId(id); setSelectedId(id); setFocusGoal(nextFocus); setParent(null);
+    setPath([nextFocus]);
+    setChildren(visibleChildren); setChildTotal(childPage?.goals_total ?? visibleChildren.length);
+    setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null);
+    setRelations(relationPage ? edges(relationPage.items) : []);
+    setRelationCounts(relationPage?.counts || { serves: 0, advances: 0, blocks: 0 });
+    setRelationTotal(relationPage?.total || 0);
+    const loadedChildren = childPage;
+    if (loadedChildren) {
+      setPages((old) => {
+        const incoming = loadedChildren.goals;
+        const prior = old[id];
+        if (!prior?.loaded) {
+          return { ...old, [id]: { items: incoming, total: loadedChildren.goals_total ?? incoming.length, loading: false, loaded: true, nextOffset: incoming.length } };
+        }
+        const items = [...prior.items];
+        incoming.forEach((goal) => { if (!items.some((item) => item.id === goal.id)) items.push(goal); });
+        return { ...old, [id]: { ...prior, items, loading: false, loaded: true } };
+      });
+    }
+    setPendingId(null); setLoading(false);
+
     void getLatestOpenGoalProposal(instance, datasetId, id)
       .then((loaded) => { if (serial === requestId.current) setProposal(loaded); })
       .catch((cause) => { if (serial === requestId.current) setError(cause instanceof Error ? cause.message : String(cause)); });
     void getPurposeContext(instance, datasetId, id)
-      .then((context) => { if (serial === requestId.current) { setWhy(context.purposes || []); setConstraints(context.constraints || []); } })
+      .then((context) => {
+        if (serial !== requestId.current) return;
+        setWhy(context.purposes || []);
+        setConstraints(context.constraints || []);
+        if (context.goal) setFocusGoal(context.goal);
+        const ancestors = context.ancestors || [];
+        setParent(ancestors.length ? ancestors[ancestors.length - 1] : null);
+        if (ancestors.length) setPath([...ancestors, context.goal]);
+      })
       .catch((cause) => { if (serial === requestId.current) setError(cause instanceof Error ? cause.message : String(cause)); });
-    void getGoalRelations(instance, datasetId, id, { limit: 30 })
-      .then((page) => { if (serial === requestId.current) { setRelations(edges(page.items)); setRelationCounts(page.counts); } })
-      .catch((cause) => { if (serial === requestId.current) setError(cause instanceof Error ? cause.message : String(cause)); });
-    try {
-      const current = await getGoalDetail(instance, datasetId, id);
-      if (serial !== requestId.current) return;
-      setFocusGoal(current);
-      const [childPage, chain] = await Promise.all([
-        getGraphAnnotations(instance, datasetId, { parentId: id, goalsLimit: CANVAS_PAGE }),
-        getGoalPath(instance, datasetId, id),
-      ]);
-      if (serial !== requestId.current) return;
-      const parentGoal = chain.length > 1 ? chain[chain.length - 2] : null;
-      const visibleChildren = childPage.goals.slice(0, (childPage.goals_total || 0) > 16 ? 12 : 16);
-      if (chain[0]) setRoots((old) => old.some((root) => root.id === chain[0].id) ? old : [...old, chain[0]]);
-      setFocusId(id); setSelectedId(id); setFocusGoal(current); setParent(parentGoal); setPath(chain);
-      setChildren(visibleChildren); setChildTotal(childPage.goals_total ?? childPage.goals.length);
-      setPages((old) => {
-        const next = { ...old };
-        chain.slice(0, -1).forEach((ancestor, index) => {
-          const child = chain[index + 1];
-          const page = next[ancestor.id];
-          if (!page) next[ancestor.id] = { items: [child], total: ancestor.child_count || 1, loading: false, loaded: false, nextOffset: 0 };
-          else if (!page.items.some((item) => item.id === child.id)) next[ancestor.id] = { ...page, items: [...page.items, child] };
-        });
-        const incoming = childPage.goals;
-        const prior = next[id];
-        if (!prior?.loaded) {
-          next[id] = { items: incoming, total: childPage.goals_total ?? incoming.length, loading: false, loaded: true, nextOffset: incoming.length };
-        } else {
-          const items = [...prior.items];
-          incoming.forEach((goal) => { if (!items.some((item) => item.id === goal.id)) items.push(goal); });
-          next[id] = { ...prior, items, loading: false, loaded: true };
-        }
-        return next;
-      });
-    } catch (cause) { if (serial === requestId.current) setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { if (serial === requestId.current) setLoading(false); }
   }, [instance, datasetId]);
 
   const loadRoots = useCallback(async () => {
@@ -148,7 +160,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [instance, datasetId, enter]);
 
   useEffect(() => {
-    requestId.current += 1; setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]); setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null); setReview(null);
+    requestId.current += 1; setPendingId(null); setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]); setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null); setReview(null);
     if (datasetId) void loadRoots();
   }, [datasetId, loadRoots]);
 
@@ -425,7 +437,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     </header>
     <div className="onto-body">
       <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t("Expand goal tree", "展开目标目录")}>
-        <NavPanel language={language} roots={roots} pages={pages} focusId={focusId} pathIds={path.map((goal) => goal.id)} loading={loading} statuses={navStatuses} onPick={(id, goal) => void enter(id, goal)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
+        <NavPanel language={language} roots={roots} pages={pages} focusId={pendingId || focusId} pathIds={path.map((goal) => goal.id)} loading={loading} statuses={navStatuses} onPick={(id, goal) => void enter(id, goal)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
       </SideRail>
       <main className="onto-main onto-focus-main">
         {error && <div className="onto-focus-error" role="alert">{error}</div>}
@@ -477,7 +489,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
             </div>
             <button type="button" className="onto-panel-close" onClick={() => setRightOpen(false)} aria-label={t("Collapse details", "收起目标详情")}>×</button>
           </div>
-          {detailGoalId && focus ? <>
+          {pendingId && pendingId !== focusId ? <div className="onto-detail-empty">{t("Loading confirmed relations…", "正在载入已确认关系…")}</div> : detailGoalId && focus ? <>
             <div className="teleology-detail-actions">
               <button type="button" disabled={detailGoalId === focusId} onClick={() => void enter(detailGoalId)}>{t("Set as center", "设为中心")}</button>
               <button type="button" onClick={() => relateGoal(detailGoalId)}>{t("Link", "关联")}</button>

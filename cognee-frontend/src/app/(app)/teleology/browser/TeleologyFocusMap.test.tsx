@@ -61,8 +61,10 @@ test("case 7: deep goal navigation uses indentation without repeated child label
   const root = { ...goal, name: "公司" };
   const child = { ...goal, id: "child", name: "部门" };
   const grandchild = { ...goal, id: "grandchild", name: "项目" };
-  render(<NavPanel language="zh" roots={[root]} pages={{ [root.id]: { items: [child], total: 1, loading: false, loaded: true }, [child.id]: { items: [grandchild], total: 1, loading: false, loaded: true } }} focusId={grandchild.id} pathIds={[root.id, child.id, grandchild.id]} loading={false} statuses={{ [root.id]: "AI建议 2", [child.id]: "已确认 1" }} onPick={jest.fn()} onExpand={jest.fn()} onSearch={async () => []} />);
+  const confirmed = { ...goal, id: "confirmed", name: "已确认目标", confirmed_count: 2 };
+  render(<NavPanel language="zh" roots={[root, confirmed]} pages={{ [root.id]: { items: [child], total: 1, loading: false, loaded: true }, [child.id]: { items: [grandchild], total: 1, loading: false, loaded: true } }} focusId={grandchild.id} pathIds={[root.id, child.id, grandchild.id]} loading={false} statuses={{ [root.id]: "AI建议 2", [child.id]: "已确认 1" }} onPick={jest.fn()} onExpand={jest.fn()} onSearch={async () => []} />);
   expect(screen.getByText("AI建议 2")).toBeInTheDocument();
+  expect(screen.getByText("已确认 2")).toBeInTheDocument();
   expect(screen.getByText("项目")).toBeInTheDocument();
   expect(screen.queryByText("下级")).not.toBeInTheDocument();
 });

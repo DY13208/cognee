@@ -1,4 +1,7 @@
-from cognee.modules.teleology.purpose_relations import select_purpose_relations
+from cognee.modules.teleology.purpose_relations import (
+    confirmed_counts_for_goals,
+    select_purpose_relations,
+)
 
 PAIRS = {("parent", "child")}
 
@@ -73,3 +76,24 @@ def test_duplicate_real_edges_collapse_and_system_derived_never_counts():
     )
     assert len(selected) == 1
     assert selected[0]["properties"]["reason"] == "服务于稳定经营"
+
+
+def test_confirmed_counts_ignore_structural_advances_and_include_purpose_nodes():
+    counts = confirmed_counts_for_goals(
+        [
+            _edge("child", "parent", "advances", {"origin": "system_derived"}),
+            _edge("goal", "other", "advances", {"origin": "manual", "reason": "推进利润"}),
+            {
+                "source_id": "goal",
+                "source_type": "Goal",
+                "target_id": "purpose",
+                "target_type": "Purpose",
+                "relationship": "serves",
+                "properties": {"origin": "manual", "reason": "为了利润"},
+            },
+        ],
+        PAIRS,
+        ["goal", "child"],
+    )
+    assert counts["goal"] == 3
+    assert counts["child"] == 0
