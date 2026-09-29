@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CogneeInstance } from "@/modules/instances/types";
 import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveWorkspaceGoal, reviewGoalCandidate, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GoalModelView, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
 import { buildDerivedGoalTree, parseDataNodeId, type DerivedGoalTree } from "./derivedGoalTree";
@@ -71,6 +72,12 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const { leftOpen, rightOpen, setLeftOpen, setRightOpen } = useSideOpen();
   const [dialog, setDialog] = useState<GoalDialog | null>(null);
   const [topOpen, setTopOpen] = useState(true);
+  const [viewActionsHost, setViewActionsHost] = useState<HTMLElement | null>(null);
+  const [dataActionsHost, setDataActionsHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setViewActionsHost(document.getElementById("teleology-browser-view-actions"));
+    setDataActionsHost(document.getElementById("teleology-browser-data-actions"));
+  }, [topOpen]);
   const [datasetMenu, setDatasetMenu] = useState(false);
   const [why, setWhy] = useState<GraphNodeSummary[]>([]);
   const [constraints, setConstraints] = useState<GraphNodeSummary[]>([]);
@@ -441,17 +448,18 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     : undefined;
 
   return <div className="onto-root">
-    <header className={`onto-top${topOpen ? "" : " is-collapsed"}`}>
-      {topOpen ? <>
-        <div style={{ position: "relative" }}><button type="button" className="onto-select" onClick={() => setDatasetMenu(!datasetMenu)}>{selectedDataset?.name || datasets[0]?.name || t("No dataset", "暂无数据集")} ▾</button>
+    {viewActionsHost && createPortal(<>
+      <button type="button" className="onto-btn onto-collapse-btn" onClick={() => { setTopOpen(!topOpen); onHeaderCollapsedChange?.(topOpen); }}>{topOpen ? t("Collapse ↑", "收起 ↑") : t("Expand ↓", "展开 ↓")}</button>
+    </>, viewActionsHost)}
+    {topOpen && dataActionsHost && createPortal(<>
+        <div className="teleology-dataset-picker" style={{ position: "relative" }}><span className="teleology-dataset-label">{t("Ontology", "本体")}</span><button type="button" className="onto-select" onClick={() => setDatasetMenu(!datasetMenu)}>{selectedDataset?.name || datasets[0]?.name || t("No dataset", "暂无数据集")} ▾</button>
           {datasetMenu && <div className="onto-search-menu">{datasets.map((dataset) => <button type="button" className="onto-search-item" key={dataset.id} onClick={() => { onSelectDataset(dataset); setDatasetMenu(false); }}>{dataset.name}</button>)}</div>}
         </div>
+        <span className="teleology-toolbar-divider" aria-hidden="true" />
         <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncTree()}>{t("Sync company tree", "同步公司树")}</button>
         <button type="button" className="onto-btn onto-btn-primary" title={t("Analyze this goal only. The result stays a proposal until you confirm.", "只分析当前目标。确认前都是候选。")} disabled={!focusId || busy || analyzing} onClick={() => void analyzeCurrentGoal()}>{analyzing ? t("Analyzing…", "分析中…") : t("Analyze purpose relations", "分析目的关系")}</button>
-        <button type="button" className="onto-btn" disabled={busy || !datasetId} onClick={() => void syncYaml()}>{t("Sync YAML", "同步 YAML")}</button>
-      </> : <span className="onto-collapsed-title">{t("Teleology", "目的论")} · {selectedDataset?.name || datasets[0]?.name}</span>}
-      <button type="button" className="onto-btn onto-collapse-btn" onClick={() => { setTopOpen(!topOpen); onHeaderCollapsedChange?.(topOpen); }}>{topOpen ? t("Collapse ↑", "收起 ↑") : t("Expand ↓", "展开 ↓")}</button>
-    </header>
+        <button type="button" className="onto-btn onto-btn-code" disabled={busy || !datasetId} onClick={() => void syncYaml()}>{t("Sync YAML", "同步 YAML")}</button>
+    </>, dataActionsHost)}
     <div className="onto-body">
       <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t("Expand goal tree", "展开目标目录")}>
         <NavPanel language={language} roots={roots} pages={pages} focusId={pendingId || focusId} pathIds={path.map((goal) => goal.id)} loading={loading} statuses={navStatuses} emptyLabel={t("No derived goals yet. The company tree stays as data and is not listed as goals.", "还没有派生目标。公司树留在数据层，不会被列成目标。")} onPick={(id, goal) => void enter(id, goal)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
