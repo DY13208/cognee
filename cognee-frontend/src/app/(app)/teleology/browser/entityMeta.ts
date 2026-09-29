@@ -3,6 +3,8 @@ import type { EntityKind } from "./types";
 /** Quiet type stripe — not large fills. */
 export const KIND_STRIPE: Record<EntityKind, string> = {
   Goal: "#7C8CFF",
+  Purpose: "#7eb6e8",
+  Constraint: "#e0b15a",
   Project: "#A78BFA",
   Metric: "#34D399",
   Department: "#60A5FA",
@@ -17,6 +19,9 @@ export const REL_PILL: Record<string, string> = {
   advances: "#34D399",
   blocks: "#F87171",
   has_subgoal: "#A78BFA",
+  purpose: "#7eb6e8",
+  constrains: "#e0b15a",
+  suggests: "#b1a3f4",
   depends_on: "#FBBF24",
   contributes: "#2DD4BF",
 };
@@ -24,6 +29,8 @@ export const REL_PILL: Record<string, string> = {
 /** UI labels — keep API keys in English, show Chinese when language=zh. */
 export const KIND_LABEL_ZH: Record<EntityKind, string> = {
   Goal: "目标",
+  Purpose: "目的",
+  Constraint: "约束",
   Project: "项目",
   Metric: "指标",
   Department: "部门",
@@ -38,6 +45,9 @@ export const REL_LABEL_ZH: Record<string, string> = {
   advances: "推进",
   blocks: "阻碍",
   has_subgoal: "含子目标",
+  purpose: "目的",
+  constrains: "约束",
+  suggests: "建议",
   has_detail_reference: "细节引用",
   depends_on: "依赖",
   contributes: "贡献于",
@@ -56,7 +66,9 @@ export function relLabel(rel: string, language: "zh" | "en"): string {
 export function classifyKind(type: string, cpdKind?: string | null): EntityKind {
   const t = (type || "").toLowerCase();
   const c = (cpdKind || "").toLowerCase();
-  if (c === "goal" || t === "goal" || t === "purpose" || t === "constraint") return "Goal";
+  if (t === "purpose") return "Purpose";
+  if (t === "constraint") return "Constraint";
+  if (c === "goal" || t === "goal") return "Goal";
   if (t.includes("project")) return "Project";
   if (t.includes("metric") || t.includes("kpi") || t.includes("indicator")) return "Metric";
   if (t.includes("department") || t.includes("org") || t.includes("team")) return "Department";

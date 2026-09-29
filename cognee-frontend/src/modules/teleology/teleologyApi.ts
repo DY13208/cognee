@@ -399,6 +399,52 @@ export interface TeleologyProposal {
   context_hash?: string;
 }
 
+export interface TeleologyProposalSummary {
+  id: string;
+  source_goal_id: string;
+  status: string;
+  generated_by: string;
+  run_id: string | null;
+  created_at: string;
+  analysis_summary?: string;
+  items_count: number;
+}
+
+export async function listTeleologyProposals(
+  instance: CogneeInstance,
+  datasetId: string,
+  filters: { sourceGoalId?: string; status?: string; generatedBy?: string; limit?: number; offset?: number } = {},
+): Promise<{ items: TeleologyProposalSummary[]; total: number }> {
+  const params = new URLSearchParams({ dataset_id: datasetId, limit: String(filters.limit ?? 50), offset: String(filters.offset ?? 0) });
+  if (filters.sourceGoalId) params.set("source_goal_id", filters.sourceGoalId);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.generatedBy) params.set("generated_by", filters.generatedBy);
+  const resp = await instance.fetch(`/v1/teleology/proposals?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function getTeleologyProposal(instance: CogneeInstance, datasetId: string, proposalId: string): Promise<TeleologyProposal> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/proposals/${encodeURIComponent(proposalId)}?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  const raw = await resp.json();
+  const items: ProposalItem[] = (raw.items || []).map((item: ProposalItem & { review_status?: ProposalItem["status"] }) => ({ ...item, status: item.review_status || item.status || "proposed" }));
+  const count = (kind: ProposalItem["kind"]) => items.filter((item) => item.kind === kind && item.status !== "ignored").length;
+  const relationCount = (relationship: string) => items.filter((item) => item.kind === "relation" && item.relationship === relationship && item.status !== "ignored").length;
+  return {
+    ...raw,
+    items,
+    summary: raw.summary || { purposes: count("purpose"), goals: count("goal"), constraints: count("constraint"), serves: relationCount("serves"), advances: relationCount("advances"), blocks: relationCount("blocks"), missing_purpose: count("gap") },
+  };
+}
+
+export async function getLatestOpenGoalProposal(instance: CogneeInstance, datasetId: string, goalId: string): Promise<TeleologyProposal | null> {
+  const preferred = await listTeleologyProposals(instance, datasetId, { sourceGoalId: goalId, status: "open", generatedBy: "purpose-agent", limit: 1 });
+  const latest = preferred.items[0] || (await listTeleologyProposals(instance, datasetId, { sourceGoalId: goalId, status: "open", limit: 1 })).items[0];
+  return latest ? getTeleologyProposal(instance, datasetId, latest.id) : null;
+}
+
 export async function getPurposeContext(instance: CogneeInstance, datasetId: string, goalId: string): Promise<PurposeContext> {
   const params = new URLSearchParams({ dataset_id: datasetId });
   const resp = await instance.fetch(`/v1/teleology/annotations/goals/${encodeURIComponent(goalId)}/purpose-context?${params}`);
@@ -492,6 +538,41 @@ export async function startCoverageRun(
 
 export async function getCoverageRun(instance: CogneeInstance, runId: string): Promise<CoverageRun> {
   const resp = await instance.fetch(`/v1/teleology/coverage/runs/${encodeURIComponent(runId)}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export interface CoverageRunCommitResult {
+  run_id: string;
+  dry_run: boolean;
+  proposals_total: number;
+  proposals_committable: number;
+  empty_proposals: number;
+  conflict_proposals: number;
+  stale_proposals: string[];
+  items_total: number;
+  purpose_count: number;
+  constraint_count: number;
+  goal_count: number;
+  serves_count: number;
+  advances_count: number;
+  blocks_count: number;
+  proposal_details: { proposal_id: string; source_goal_id: string; accepted_item_ids: string[]; would_commit_count: number; status: string }[];
+  committed_proposals: string[];
+  failed_proposals: { proposal_id: string; source_goal_id: string; error_code: string; error_message: string }[];
+  skipped_empty: string[];
+  already_committed: string[];
+  committed_nodes: number;
+  committed_relations: number;
+  skipped_items: number;
+}
+
+export async function commitCoverageRun(instance: CogneeInstance, datasetId: string, runId: string, dryRun: boolean): Promise<CoverageRunCommitResult> {
+  const resp = await instance.fetch(`/v1/teleology/coverage/runs/${encodeURIComponent(runId)}/commit-all`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, dry_run: dryRun }),
+  });
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();
 }

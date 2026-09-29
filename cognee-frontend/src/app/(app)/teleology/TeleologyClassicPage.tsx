@@ -15,6 +15,11 @@ import {
   loadSampleTeleology,
   clearTeleology,
   getGraphAnnotations,
+  analyzePurpose,
+  getGoalRelations,
+  getPurposeContext,
+  getLatestOpenGoalProposal,
+  listTeleologyProposals,
   getGoalPath,
   syncTeleologyGoals,
   syncTeleologyFromCompanyTree,
@@ -28,6 +33,9 @@ import {
   type GraphAnnotationsPayload,
   type GraphAnnotation,
   type GraphNodeSummary,
+  type PurposeContext,
+  type TeleologyProposal,
+  type TeleologyProposalSummary,
 } from "@/modules/teleology/teleologyApi";
 import PageLoading from "@/ui/elements/PageLoading";
 import DeleteConfirmModal from "@/ui/elements/DeleteConfirmModal";
@@ -41,6 +49,10 @@ import PurposeLensGraph, {
 import { notifications } from "@mantine/notifications";
 import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 import GoalNav, { type GoalPage } from "./browser/NavPanel";
+import GoalFocusDetail from "./browser/GoalFocusDetail";
+import { shouldShowFocusDetail } from "./browser/TeleologyFocusMap";
+import PurposeReview from "./browser/PurposeReview";
+import type { OntologyEdge } from "./browser/types";
 import SideRail from "./browser/SideRail";
 import { useSideOpen } from "./browser/useSideOpen";
 import "./browser/ontology.css";
@@ -138,6 +150,12 @@ export default function TeleologyClassicPage() {
 
   const [datasetMenuOpen, setDatasetMenuOpen] = useState(false);
   const [lensGoalId, setLensGoalId] = useState("");
+  const [focusContext, setFocusContext] = useState<PurposeContext | null>(null);
+  const [focusRelations, setFocusRelations] = useState<OntologyEdge[]>([]);
+  const [focusProposal, setFocusProposal] = useState<TeleologyProposal | null>(null);
+  const [reviewProposal, setReviewProposal] = useState<TeleologyProposal | null>(null);
+  const [focusRevision, setFocusRevision] = useState(0);
+  const [classicNavStatuses, setClassicNavStatuses] = useState<Record<string, string>>({});
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [addRel, setAddRel] = useState<TeleologyRelationship>("serves");
 
@@ -163,6 +181,61 @@ export default function TeleologyClassicPage() {
   } | null>(null);
 
   const datasetId = selectedDataset?.id || datasets[0]?.id || "";
+
+  useEffect(() => {
+    if (!cogniInstance || !datasetId || !lensGoalId) return;
+    let active = true;
+    setFocusContext(null); setFocusRelations([]); setFocusProposal(null);
+    void getPurposeContext(cogniInstance, datasetId, lensGoalId)
+      .then((context) => { if (active) setFocusContext(context); })
+      .catch((cause) => { if (active) setLoadError(cause instanceof Error ? cause.message : String(cause)); });
+    void getGoalRelations(cogniInstance, datasetId, lensGoalId, { limit: 100 })
+      .then((result) => { if (active) setFocusRelations(result.items.map((edge) => ({ id: `${edge.source_id}|${edge.relationship}|${edge.target_id}`, sourceId: edge.source_id, targetId: edge.target_id, sourceName: edge.source_name, targetName: edge.target_name, sourceType: edge.source_type, targetType: edge.target_type, relationship: edge.relationship }))); })
+      .catch((cause) => { if (active) setLoadError(cause instanceof Error ? cause.message : String(cause)); });
+    void getLatestOpenGoalProposal(cogniInstance, datasetId, lensGoalId)
+      .then((proposal) => { if (active) setFocusProposal(proposal); })
+      .catch((cause) => { if (active) setLoadError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { active = false; };
+  }, [cogniInstance, datasetId, lensGoalId, focusRevision]);
+
+  useEffect(() => {
+    if (!cogniInstance || !datasetId) return;
+    let active = true;
+    setClassicNavStatuses({});
+    void (async () => {
+      const summaries: TeleologyProposalSummary[] = [];
+      let offset = 0;
+      let total = 0;
+      do {
+        const page = await listTeleologyProposals(cogniInstance, datasetId, { status: "open", limit: 200, offset });
+        summaries.push(...page.items);
+        total = page.total;
+        offset += page.items.length;
+      } while (active && offset < total && offset < 2000 && total > offset);
+      if (!active) return;
+      const latest = new Map<string, TeleologyProposalSummary>();
+      for (const item of summaries) {
+        const prior = latest.get(item.source_goal_id);
+        if (!prior || (prior.generated_by !== "purpose-agent" && item.generated_by === "purpose-agent")) latest.set(item.source_goal_id, item);
+      }
+      const statuses: Record<string, string> = {};
+      const committed = await listTeleologyProposals(cogniInstance, datasetId, { status: "committed", limit: 200 });
+      for (const item of committed.items) statuses[item.source_goal_id] = t(language, "Confirmed", "已确认");
+      for (const [id, item] of latest) statuses[id] = item.items_count ? t(language, `AI suggestions ${item.items_count}`, `AI建议 ${item.items_count}`) : t(language, "Insufficient evidence", "无充分证据");
+      if (active) setClassicNavStatuses((old) => ({ ...statuses, ...old }));
+    })().catch((cause) => { if (active) setLoadError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { active = false; };
+  }, [cogniInstance, datasetId, language]);
+
+  useEffect(() => {
+    if (!lensGoalId) return;
+    const confirmed = (focusContext?.purposes.length || 0) + (focusContext?.constraints.length || 0) + focusRelations.length;
+    const candidates = focusProposal?.items.filter((item) => item.status !== "ignored" && item.kind !== "gap").length || 0;
+    const confirmedLabel = confirmed ? t(language, `Confirmed ${confirmed}`, `已确认 ${confirmed}`) : "";
+    const candidateLabel = candidates ? t(language, `AI suggestions ${candidates}`, `AI建议 ${candidates}`) : "";
+    const label = [confirmedLabel, candidateLabel].filter(Boolean).join(" · ") || (focusProposal ? t(language, "Insufficient evidence", "无充分证据") : null);
+    if (label) setClassicNavStatuses((old) => ({ ...old, [lensGoalId]: label }));
+  }, [lensGoalId, focusContext, focusRelations, focusProposal, language]);
 
   const [goalQuery, setGoalQuery] = useState("");
   const [goalHits, setGoalHits] = useState<GraphNodeSummary[]>([]);
@@ -464,6 +537,7 @@ export default function TeleologyClassicPage() {
     const out: GraphAnnotation[] = [];
     for (const edge of annotations) {
       if (edge.origin === "system_derived") continue;
+      if (!["serves", "advances", "blocks"].includes(String(edge.relationship))) continue;
       const k = key(edge.source_id, edge.target_id, String(edge.relationship));
       if (seen.has(k)) continue;
       seen.add(k);
@@ -481,8 +555,18 @@ export default function TeleologyClassicPage() {
         ids.add(edge.target_id);
       }
     }
+    for (const edge of focusRelations) { ids.add(edge.sourceId); ids.add(edge.targetId); }
+    for (const node of [...(focusContext?.purposes || []), ...(focusContext?.constraints || [])]) ids.add(node.id);
+    for (const item of focusProposal?.items || []) {
+      if (item.status === "ignored") continue;
+      if (item.kind !== "relation") ids.add(item.id);
+      if (item.kind === "relation") {
+        if (item.source) ids.add(item.source);
+        if (item.target) ids.add(item.target);
+      }
+    }
     return ids;
-  }, [purposeEdges, lensGoalId]);
+  }, [purposeEdges, lensGoalId, focusProposal, focusContext, focusRelations]);
 
   const lensGoals = useMemo((): GraphNodeSummary[] => {
     return (graph?.goals ?? []).map((g) => ({
@@ -501,6 +585,18 @@ export default function TeleologyClassicPage() {
       byId.set(node.id, node);
     };
 
+    const center = focusContext?.goal || selectedGoal;
+    if (center) {
+      add({
+        id: center.id,
+        name: displayName(center.name, center.id),
+        type: center.type || "Goal",
+        kind: "goal",
+        dimmed: false,
+        status: "confirmed",
+      });
+    }
+
     for (const g of lensGoals) {
       if (!linkedIdsForLens && purposeEdges.length > 0) {
         const onPurposeEdge = purposeEdges.some(
@@ -517,6 +613,13 @@ export default function TeleologyClassicPage() {
       });
     }
 
+    for (const node of focusContext?.purposes || []) {
+      add({ id: node.id, name: node.name, type: node.type || "Purpose", kind: "purpose", dimmed: false, status: "confirmed" });
+    }
+    for (const node of focusContext?.constraints || []) {
+      add({ id: node.id, name: node.name, type: node.type || "Constraint", kind: "constraint", dimmed: false, status: "confirmed" });
+    }
+
     for (const edge of purposeEdges) {
       if (linkedIdsForLens) {
         const touches =
@@ -527,16 +630,33 @@ export default function TeleologyClassicPage() {
         id: edge.source_id,
         name: displayName(edge.source_name, edge.source_id),
         type: edge.source_type,
-        kind: ["Goal", "Purpose", "Constraint"].includes(edge.source_type) ? "goal" : "entity",
+        kind: edge.source_type === "Purpose" ? "purpose" : edge.source_type === "Constraint" ? "constraint" : ["Goal", "Purpose", "Constraint"].includes(edge.source_type) ? "goal" : "entity",
         dimmed: false,
       });
       add({
         id: edge.target_id,
         name: displayName(edge.target_name, edge.target_id),
         type: edge.target_type,
-        kind: ["Goal", "Purpose", "Constraint"].includes(edge.target_type) ? "goal" : "entity",
+        kind: edge.target_type === "Purpose" ? "purpose" : edge.target_type === "Constraint" ? "constraint" : ["Goal", "Purpose", "Constraint"].includes(edge.target_type) ? "goal" : "entity",
         dimmed: false,
       });
+    }
+    for (const edge of focusRelations) {
+      add({ id: edge.sourceId, name: edge.sourceName, type: edge.sourceType, kind: "goal", dimmed: false });
+      add({ id: edge.targetId, name: edge.targetName, type: edge.targetType, kind: "goal", dimmed: false });
+    }
+
+    for (const item of focusProposal?.items || []) {
+      if (item.status === "ignored" || item.kind === "gap" || item.kind === "relation") continue;
+      add({ id: item.id, name: item.name, type: item.kind, kind: item.kind === "purpose" ? "purpose" : item.kind === "constraint" ? "constraint" : "goal", dimmed: false, status: "proposed" });
+    }
+    for (const item of focusProposal?.items || []) {
+      if (item.status === "ignored" || item.kind !== "relation") continue;
+      for (const ref of [item.source, item.target]) {
+        if (!ref) continue;
+        const candidate = focusProposal?.items.find((entry) => entry.id === ref);
+        add({ id: ref, name: candidate?.name || (ref === lensGoalId ? selectedGoal?.name || ref : ref), type: candidate?.kind || "Goal", kind: "goal", dimmed: false, status: candidate ? "proposed" : "confirmed" });
+      }
     }
 
     if (purposeEdges.length === 0 && !linkedIdsForLens) {
@@ -567,11 +687,12 @@ export default function TeleologyClassicPage() {
         .slice(0, MAX_LENS_NODES);
     }
     return nodes;
-  }, [lensGoals, purposeEdges, brainNodes, linkedIdsForLens]);
+  }, [lensGoals, purposeEdges, brainNodes, linkedIdsForLens, focusContext, focusRelations, focusProposal, lensGoalId, selectedGoal]);
 
   const graphLinks: PurposeGraphLink[] = useMemo(() => {
     const nodeIds = new Set(graphNodes.map((n) => n.id));
-    return purposeEdges
+    const confirmedEdges = [...purposeEdges, ...focusRelations.map((edge) => ({ source_id: edge.sourceId, target_id: edge.targetId, relationship: edge.relationship }))];
+    const confirmed = confirmedEdges
       .filter((edge) => {
         if (!nodeIds.has(edge.source_id) || !nodeIds.has(edge.target_id)) return false;
         if (!linkedIdsForLens) return true;
@@ -584,13 +705,68 @@ export default function TeleologyClassicPage() {
         target: edge.target_id,
         relationship: edge.relationship,
         color: relationshipColor(edge.relationship),
-      }));
-  }, [purposeEdges, graphNodes, linkedIdsForLens]);
+        status: "confirmed" as const,
+      })).filter((edge, index, all) => all.findIndex((candidate) => candidate.source === edge.source && candidate.target === edge.target && candidate.relationship === edge.relationship) === index);
+    const proposed: PurposeGraphLink[] = (focusProposal?.items || [])
+      .filter((item) => item.kind === "relation" && item.status !== "ignored" && item.source && item.target && nodeIds.has(item.source) && nodeIds.has(item.target))
+      .map((item) => ({ source: item.source!, target: item.target!, relationship: item.relationship || "relation", color: "#a99bf0", status: "proposed" as const }));
+    const semantic: PurposeGraphLink[] = [];
+    const seen = new Set(confirmed.map((edge) => `${edge.source}|${edge.target}|${edge.relationship}`));
+    const pushSemantic = (link: PurposeGraphLink) => {
+      const key = `${link.source}|${link.target}|${link.relationship}`;
+      if (!nodeIds.has(String(link.source)) || !nodeIds.has(String(link.target)) || seen.has(key)) return;
+      seen.add(key);
+      semantic.push(link);
+    };
+    if (lensGoalId) {
+      for (const node of focusContext?.purposes || []) {
+        pushSemantic({ source: node.id, target: lensGoalId, relationship: "purpose", color: relationshipColor("purpose"), status: "confirmed" });
+      }
+      for (const node of focusContext?.constraints || []) {
+        pushSemantic({ source: node.id, target: lensGoalId, relationship: "constrains", color: relationshipColor("constrains"), status: "confirmed" });
+      }
+      for (const item of focusProposal?.items || []) {
+        if (item.status === "ignored" || item.kind === "gap" || item.kind === "relation") continue;
+        const toward = item.kind === "purpose" || item.kind === "constraint";
+        pushSemantic({
+          source: toward ? item.id : lensGoalId,
+          target: toward ? lensGoalId : item.id,
+          relationship: item.kind === "purpose" ? "purpose" : item.kind === "constraint" ? "constrains" : "suggests",
+          color: "#a99bf0",
+          status: "proposed",
+        });
+      }
+    }
+    return [...confirmed, ...semantic, ...proposed];
+  }, [purposeEdges, focusRelations, graphNodes, linkedIdsForLens, focusProposal, focusContext, lensGoalId]);
 
   const selectedNode = useMemo(
     () => graphNodes.find((n) => n.id === selectedNodeId) || null,
     [graphNodes, selectedNodeId],
   );
+
+  const detailGoalId = useMemo(() => {
+    if (!shouldShowFocusDetail(selectedNodeId) || !lensGoalId) return null;
+    if (selectedNodeId === lensGoalId) return lensGoalId;
+    if (focusContext?.purposes.some((item) => item.id === selectedNodeId) || focusContext?.constraints.some((item) => item.id === selectedNodeId)) return lensGoalId;
+    if (focusProposal?.items.some((item) => item.id === selectedNodeId)) return lensGoalId;
+    if (selectedNode?.kind === "entity" || selectedNode?.kind === "other") return lensGoalId;
+    return selectedNodeId;
+  }, [selectedNodeId, lensGoalId, focusContext, focusProposal, selectedNode]);
+
+  const classicPreset = useMemo(() => {
+    const goal = focusContext?.goal || selectedGoal;
+    if (!goal || goal.id !== lensGoalId) return null;
+    return {
+      goal,
+      purposes: focusContext?.purposes || [],
+      constraints: focusContext?.constraints || [],
+      relations: focusRelations,
+      proposal: focusProposal,
+      children: focusContext?.children || [],
+      childTotal: focusContext?.children_total || 0,
+    };
+  }, [focusContext, selectedGoal, lensGoalId, focusRelations, focusProposal]);
 
   const edgesForSelected = useMemo(() => {
     if (!selectedNodeId) return [] as GraphAnnotation[];
@@ -1059,6 +1235,7 @@ export default function TeleologyClassicPage() {
             focusId={lensGoalId || null}
             pathIds={navPath}
             loading={loading}
+            statuses={classicNavStatuses}
             onPick={(id) => { void pickNavGoal(id); }}
             onExpand={(id, more) => { void expandNav(id, more); }}
             onSearch={searchNav}
@@ -1067,32 +1244,17 @@ export default function TeleologyClassicPage() {
         </SideRail>
         <div className="onto-main" style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative" }}>
           {graphNodes.length === 0 ? (
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "rgba(237,236,234,0.4)",
-                fontSize: 14,
-                padding: 24,
-                textAlign: "center",
-              }}
-            >
-              {t(
-                language,
-                "Default view shows a connected goal-tree slice with advances lines.",
-                "默认展示连通的目标树切片，并带 advances 连线。",
-              )}
-            </div>
+            <div className="teleology-canvas-empty">{t(language, "Pick a goal from the tree. Its purpose relations open on the canvas.", "从左侧目标树选择一个目标，目的关系会在画布上展开。")}</div>
           ) : (
             <PurposeLensGraph
               className="teleology-graph-host"
               nodes={graphNodes}
               links={graphLinks}
               selectedNodeId={selectedNodeId}
-              onSelectNode={(n) => setSelectedNodeId(n?.id ?? null)}
+              onSelectNode={(n) => {
+                setSelectedNodeId(n?.id ?? null);
+                if (n) setRightOpen(true);
+              }}
             />
           )}
         </div>
@@ -1104,15 +1266,19 @@ export default function TeleologyClassicPage() {
             <button type="button" className="onto-panel-close" onClick={() => setRightOpen(false)} aria-label={t(language, "Collapse details", "收起详情")}>×</button>
           </div>
           <div className="teleology-classic-inspector-body">
-          {!selectedNode ? (
-            <div style={{ color: "rgba(237,236,234,0.4)", fontSize: 13, lineHeight: 1.5 }}>
-              {t(
-                language,
-                "Click a node to inspect what it is for.",
-                "点击节点，查看它为了什么。",
-              )}
-            </div>
-          ) : (
+          {cogniInstance && detailGoalId ? <GoalFocusDetail
+            instance={cogniInstance}
+            datasetId={datasetId}
+            goalId={detailGoalId}
+            preset={detailGoalId === lensGoalId ? classicPreset : null}
+            language={language === "zh" ? "zh" : "en"}
+            selectedProposalItem={focusProposal?.items.find((item) => item.id === selectedNodeId) || null}
+            onSelectProposal={(item) => setSelectedNodeId(item.id)}
+            onSelectGoal={(id) => void pickNavGoal(id)}
+            onAnalyze={detailGoalId === lensGoalId ? () => { void analyzePurpose(cogniInstance, datasetId, lensGoalId).then((result) => { setFocusProposal(result); setReviewProposal(result); }).catch((cause) => setLoadError(cause instanceof Error ? cause.message : String(cause))); } : undefined}
+            onReviewProposal={(next) => setReviewProposal(next)}
+          /> : <div style={{ color: "rgba(237,236,234,0.4)", fontSize: 13, lineHeight: 1.5 }}>{t(language, "Click a node to inspect what it is for.", "点击节点，查看它为了什么。")}</div>}
+          {!selectedNode ? null : (
             <>
               <div>
                 <div style={{ fontSize: 11, color: "rgba(237,236,234,0.45)", fontWeight: 700, letterSpacing: 0.3 }}>
@@ -1475,6 +1641,7 @@ export default function TeleologyClassicPage() {
         />
       ) : null}
 
+      {reviewProposal && cogniInstance && <PurposeReview instance={cogniInstance} datasetId={datasetId} proposal={reviewProposal} language={language === "zh" ? "zh" : "en"} onClose={() => setReviewProposal(null)} onCommitted={() => { setReviewProposal(null); setFocusProposal(null); setFocusRevision((value) => value + 1); void refresh(); }} />}
       <DeleteConfirmModal
         opened={!!deleteTarget}
         title={t(language, "Delete goal?", "删除目标？")}

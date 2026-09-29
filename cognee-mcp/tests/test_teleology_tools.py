@@ -76,6 +76,21 @@ async def test_review_tools_omit_absent_filters():
 
 
 @pytest.mark.asyncio
+async def test_run_commit_tools_are_scoped_to_one_run_and_preview_first():
+    registry = FakeRegistry()
+    client = FakeClient()
+    register_teleology_tools(registry, lambda: client)
+
+    await registry.tools["preview_teleology_run_commit"]("dataset-1", "run-1")
+    await registry.tools["commit_teleology_run"]("dataset-1", "run-1")
+
+    assert client.calls == [
+        ("POST", "/api/v1/teleology/coverage/runs/run-1/commit-all", {"dataset_id": "dataset-1", "dry_run": True}, None),
+        ("POST", "/api/v1/teleology/coverage/runs/run-1/commit-all", {"dataset_id": "dataset-1", "dry_run": False}, None),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_teleology_tools_route_to_api():
     registry = FakeRegistry()
     client = FakeClient()

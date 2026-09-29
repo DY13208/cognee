@@ -48,6 +48,7 @@ from cognee.modules.teleology.graph_annotations import (
     sync_goals_to_graph,
 )
 from cognee.modules.teleology.proposal_review import get_proposal, list_proposals
+from cognee.modules.teleology.run_commit import commit_coverage_run
 from cognee.modules.teleology.purpose_analyze import analyze_goal
 from cognee.modules.teleology.purpose_layer import (
     ProposalCommitIncomplete,
@@ -68,6 +69,7 @@ logger = get_logger(__name__)
 
 def _optional_query(value: Optional[str]) -> Optional[str]:
     return value.strip() or None if value is not None else None
+
 
 # Bundled with the teleology package (present in Docker images; examples/ is not).
 _SAMPLE_PATH = Path(__file__).resolve().parents[4] / "modules" / "teleology" / "sample_goals.yaml"
@@ -152,6 +154,11 @@ class PurposeProposalCommit(InDTO):
     dataset_id: UUID
     accepted_item_ids: List[str] = Field(default_factory=list)
     edits: Optional[dict] = None
+
+
+class CoverageRunCommit(InDTO):
+    dataset_id: UUID
+    dry_run: bool = False
 
 
 def get_teleology_router() -> APIRouter:
@@ -637,10 +644,13 @@ def get_teleology_router() -> APIRouter:
     ):
         await _authorized_dataset(dataset_id, user, "read")
         return await list_proposals(
-            dataset_id, run_id=_optional_query(run_id),
+            dataset_id,
+            run_id=_optional_query(run_id),
             source_goal_id=_optional_query(source_goal_id),
-            status=_optional_query(status), generated_by=_optional_query(generated_by),
-            limit=limit, offset=offset,
+            status=_optional_query(status),
+            generated_by=_optional_query(generated_by),
+            limit=limit,
+            offset=offset,
         )
 
     @router.get("/proposals/{proposal_id}", response_model=dict)
@@ -669,6 +679,22 @@ def get_teleology_router() -> APIRouter:
             )
         except CoverageServiceError as exc:
             return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/coverage/runs/{run_id}/commit-all", response_model=dict)
+    async def commit_all_coverage_proposals(
+        run_id: str,
+        payload: CoverageRunCommit,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Preview or confirm all valid formal items for one reviewed Coverage Run."""
+        try:
+            return await commit_coverage_run(
+                run_id, payload.dataset_id, user, dry_run=payload.dry_run
+            )
+        except CoverageServiceError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
 
     @router.post("/coverage/runs", response_model=dict)
     async def start_coverage_run(

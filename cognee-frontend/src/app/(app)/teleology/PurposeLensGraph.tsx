@@ -11,9 +11,12 @@ export const REL_COLOR: Record<string, string> = {
   serves: "#60A5FA",
   advances: "#34D399",
   blocks: "#F87171",
+  purpose: "#7eb6e8",
+  constrains: "#e0b15a",
+  suggests: "#b1a3f4",
 };
 
-export type PurposeNodeKind = "goal" | "entity" | "other";
+export type PurposeNodeKind = "goal" | "purpose" | "constraint" | "entity" | "other";
 
 export interface PurposeGraphNode extends NodeObject {
   id: string;
@@ -21,6 +24,7 @@ export interface PurposeGraphNode extends NodeObject {
   type?: string;
   kind: PurposeNodeKind;
   dimmed?: boolean;
+  status?: "proposed" | "confirmed";
 }
 
 export interface PurposeGraphLink extends LinkObject {
@@ -28,6 +32,7 @@ export interface PurposeGraphLink extends LinkObject {
   target: string | PurposeGraphNode;
   relationship: string;
   color: string;
+  status?: "proposed" | "confirmed";
 }
 
 export interface PurposeLensGraphProps {
@@ -75,6 +80,11 @@ export default function PurposeLensGraph({
 
   useEffect(() => {
     if (!graphRef.current || dimensions.width === 0) return;
+    if (nodes.length === 1 && links.length === 0) {
+      graphRef.current.centerAt(0, 0, 300);
+      graphRef.current.zoom(1.2, 300);
+      return;
+    }
     const timer = setTimeout(() => graphRef.current?.zoomToFit(400, 48), 280);
     return () => clearTimeout(timer);
   }, [nodes, links, dimensions.width, dimensions.height]);
@@ -135,6 +145,7 @@ export default function PurposeLensGraph({
           graphData={graphData}
           backgroundColor="rgba(0,0,0,0)"
           linkDirectionalArrowLength={5}
+          linkLineDash={(link) => (link as PurposeGraphLink).status === "proposed" ? [6, 4] : []}
           linkDirectionalArrowRelPos={0.92}
           linkCurvature={0.12}
           cooldownTicks={100}
@@ -146,23 +157,28 @@ export default function PurposeLensGraph({
             const y = n.y ?? 0;
             const selected = selectedNodeId === n.id;
             const dim = Boolean(n.dimmed) && !selected;
-            const isGoal = n.kind === "goal";
+            const isPurpose = n.kind === "purpose";
+            const isConstraint = n.kind === "constraint";
+            const isGoal = n.kind === "goal" || isPurpose || isConstraint;
             const r = isGoal ? 9 : 6;
             const alpha = dim ? 0.22 : 1;
+            const confirmedColor = isPurpose ? "#7eb6e8" : isConstraint ? "#e0b15a" : "#BC9BFF";
 
             ctx.save();
             ctx.globalAlpha = alpha;
 
             if (isGoal) {
               // Target / bullseye style for purpose nodes
+              if (n.status === "proposed") ctx.setLineDash([4 / Math.max(globalScale, 0.6), 3 / Math.max(globalScale, 0.6)]);
               ctx.beginPath();
               ctx.arc(x, y, r + 4, 0, Math.PI * 2);
-              ctx.strokeStyle = selected ? "#EDECEA" : "rgba(188,155,255,0.9)";
+              ctx.strokeStyle = selected ? "#EDECEA" : n.status === "proposed" ? "#a99bf0" : confirmedColor;
               ctx.lineWidth = 1.5 / Math.max(globalScale, 0.6);
               ctx.stroke();
+              ctx.setLineDash([]);
               ctx.beginPath();
               ctx.arc(x, y, r, 0, Math.PI * 2);
-              ctx.fillStyle = selected ? "#BC9BFF" : "rgba(188,155,255,0.55)";
+              ctx.fillStyle = selected ? confirmedColor : `${confirmedColor}88`;
               ctx.fill();
               ctx.beginPath();
               ctx.arc(x, y, 2.5, 0, Math.PI * 2);
@@ -198,13 +214,15 @@ export default function PurposeLensGraph({
             ctx.textAlign = "center";
             ctx.textBaseline = "top";
             ctx.fillStyle = dim ? "rgba(237,236,234,0.35)" : "rgba(237,236,234,0.9)";
-            ctx.fillText(label.length > 28 ? `${label.slice(0, 26)}…` : label, x, y + r + 3);
+            const prefix = isPurpose ? "WHY · " : isConstraint ? "Constraint · " : "";
+            const markedLabel = n.status === "proposed" ? `${prefix}${label} · AI建议` : `${prefix}${label}`;
+            ctx.fillText(markedLabel.length > 28 ? `${markedLabel.slice(0, 26)}…` : markedLabel, x, y + r + 3);
             ctx.restore();
           }}
           nodePointerAreaPaint={(node, color, ctx) => {
             const n = node as PurposeGraphNode;
             ctx.beginPath();
-            ctx.arc(n.x ?? 0, n.y ?? 0, n.kind === "goal" ? 14 : 10, 0, Math.PI * 2);
+            ctx.arc(n.x ?? 0, n.y ?? 0, n.kind === "goal" || n.kind === "purpose" || n.kind === "constraint" ? 14 : 10, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
           }}

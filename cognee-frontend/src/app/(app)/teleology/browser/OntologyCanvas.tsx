@@ -523,6 +523,7 @@ export default function OntologyCanvas({
               const midX = (e.x1 + e.x2) / 2;
               const midY = (e.y1 + e.y2) / 2;
               const color = REL_PILL[e.relationship] || "rgba(232,231,228,0.45)";
+              const proposed = e.status === "proposed";
               return (
                 <g key={e.id} opacity={muted ? 0.15 : hi && activeChain.size ? 1 : 0.55}>
                   <path
@@ -532,8 +533,9 @@ export default function OntologyCanvas({
                         : `M ${e.x1} ${e.y1} C ${e.x1 + 40} ${e.y1}, ${e.x2 - 40} ${e.y2}, ${e.x2} ${e.y2}`
                     }
                     fill="none"
-                    stroke={hi && activeChain.size ? "rgba(232,231,228,0.55)" : "rgba(232,231,228,0.22)"}
-                    strokeWidth={hi && activeChain.size ? 1.5 : 1}
+                    stroke={proposed ? "#b1a3f4" : color}
+                    strokeWidth={proposed || (hi && activeChain.size) ? 1.6 : 1.25}
+                    strokeDasharray={proposed ? "6 4" : undefined}
                     markerEnd={hi && activeChain.size ? "url(#onto-arrow-hi)" : "url(#onto-arrow)"}
                   />
                   <foreignObject x={midX - 36} y={midY - 9} width={72} height={18}>
@@ -543,9 +545,9 @@ export default function OntologyCanvas({
                         fontWeight: 600,
                         letterSpacing: "0.02em",
                         textAlign: "center",
-                        color: muted ? "rgba(232,231,228,0.2)" : color,
+                        color: muted ? "rgba(232,231,228,0.2)" : proposed ? "#b1a3f4" : color,
                         background: "rgba(14,14,16,0.85)",
-                        border: "1px solid rgba(255,255,255,0.06)",
+                        border: proposed ? "1px dashed #9181d9" : "1px solid rgba(255,255,255,0.06)",
                         borderRadius: 999,
                         padding: "1px 6px",
                         lineHeight: "14px",

@@ -2,6 +2,7 @@
 
 import { KIND_STRIPE, kindLabel, relLabel, shortId } from "./entityMeta";
 import type { OntologyEdge, OntologyEntity } from "./types";
+import type { GraphNodeSummary, ProposalItem, TeleologyProposal } from "@/modules/teleology/teleologyApi";
 
 export default function DetailPanel({
   entity,
@@ -20,6 +21,12 @@ export default function DetailPanel({
   onEdit,
   onExport,
   onClose,
+  purposes = [],
+  constraints = [],
+  proposal,
+  selectedProposalItem,
+  onSelectProposalItem,
+  onReviewProposal,
 }: {
   entity: OntologyEntity | null;
   edges: OntologyEdge[];
@@ -37,6 +44,12 @@ export default function DetailPanel({
   onEdit?: (id: string) => void;
   onExport?: (id: string) => void;
   onClose: () => void;
+  purposes?: GraphNodeSummary[];
+  constraints?: GraphNodeSummary[];
+  proposal?: TeleologyProposal | null;
+  selectedProposalItem?: ProposalItem | null;
+  onSelectProposalItem?: (item: ProposalItem) => void;
+  onReviewProposal?: () => void;
 }) {
   const t = (en: string, zh: string) => (language === "zh" ? zh : en);
 
@@ -87,6 +100,15 @@ export default function DetailPanel({
           {t("View path", "查看路径")}
         </button>
       </div>
+
+      <section className="onto-detail-section teleology-detail-semantic">
+        <h3>{t("Teleology", "目的论")}</h3>
+        <div className="teleology-detail-group"><strong>{t("Confirmed purpose", "已确认 Purpose")}</strong>{purposes.length ? purposes.map((item) => <p key={item.id}>{item.name}</p>) : <p className="onto-muted">{t("None", "暂无")}</p>}</div>
+        <div className="teleology-detail-group"><strong>{t("Confirmed constraints", "已确认 Constraint")}</strong>{constraints.length ? constraints.map((item) => <p key={item.id}>{item.name}</p>) : <p className="onto-muted">{t("None", "暂无")}</p>}</div>
+        <div className="teleology-detail-group"><strong>{t("AI suggestions", "AI 建议")}</strong>{proposal?.items.filter((item) => item.status !== "ignored").length ? proposal.items.filter((item) => item.status !== "ignored").map((item) => <button type="button" key={item.id} className="teleology-detail-candidate" onClick={() => onSelectProposalItem?.(item)}>{item.kind === "goal" ? t("Suggested Goal", "建议目标") : item.kind === "relation" ? item.relationship : item.kind} · {item.name || `${item.source} → ${item.target}`}</button>) : <p className="onto-muted">{proposal ? t("Analyzed · insufficient evidence", "已分析 · 无充分证据") : t("No open proposal", "暂无待审建议")}</p>}</div>
+        {selectedProposalItem && proposal && <div className="teleology-detail-selected"><strong>{selectedProposalItem.name || `${selectedProposalItem.source} → ${selectedProposalItem.target}`}</strong><dl className="onto-kv"><dt>proposal_id</dt><dd className="onto-mono">{proposal.id}</dd><dt>run_id</dt><dd className="onto-mono">{proposal.run_id || "—"}</dd><dt>{t("Reason", "理由")}</dt><dd>{selectedProposalItem.reason || "—"}</dd><dt>{t("Confidence", "置信度")}</dt><dd>{selectedProposalItem.confidence == null ? "—" : `${Math.round(selectedProposalItem.confidence * 100)}%`}</dd><dt>{t("Evidence", "证据")}</dt><dd>{selectedProposalItem.evidence?.map((entry) => `${entry.name} (${entry.type || entry.id})`).join("、") || selectedProposalItem.evidence_node_ids?.join("、") || "—"}</dd><dt>review_status</dt><dd>{selectedProposalItem.status}</dd><dt>generated_by</dt><dd>{proposal.generated_by}</dd></dl></div>}
+        {proposal && <button type="button" className="onto-btn onto-btn-primary" onClick={onReviewProposal}>{t("Review · Accept / Ignore / Edit and accept", "审核 · 接受 / 忽略 / 编辑后接受")}</button>}
+      </section>
 
       <section className="onto-detail-section">
         <h3>{t("Basics", "基本信息")}</h3>

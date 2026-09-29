@@ -4,6 +4,8 @@
 .onto-nav-search:focus, .onto-drawer input:focus { border-color: #6888f5; }
 .onto-nav-target { color: #668aff; font-size: 18px; line-height: 1; }
 .onto-nav-structural { color: #7b90b7; font-size: 10px; white-space: nowrap; }
+.teleology-nav-status { margin-left: auto; flex: none; color: #9f9abd; font-size: 10px; white-space: nowrap; }
+.onto-file-row .onto-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .onto-nav-count { border-radius: 10px; padding: 2px 6px; background: #29303b; color: #c8d0e0; font-size: 10px; }
 .onto-nav-branch { margin-left: 16px; border-left: 1px solid #334057; }
 .onto-nav-loading, .onto-nav-more { padding: 9px 15px; color: #8793a9; font-size: 12px; }
@@ -54,6 +56,57 @@
 .onto-drawer-list { flex: 1; overflow: auto; }.onto-drawer-list button { display: flex; width: 100%; justify-content: space-between; border: 0; border-bottom: 1px solid #29384f; background: transparent; padding: 12px 7px; color: #dce8ff; text-align: left; cursor: pointer; }.onto-drawer-list button:hover { background: #22395b; }.onto-drawer-list small { color: #8ca8d7; }
 .onto-detail-quick { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }.onto-detail-quick button { border: 1px solid #3a4b65; border-radius: 6px; padding: 8px 5px; background: #202a3a; color: #cbd9f2; cursor: pointer; }.onto-detail-quick button:hover { border-color: #6f94e7; }
 .onto-detail-path { color: #acc4f5; line-height: 1.7; margin-bottom: 6px; }
+
+/* Purpose map: facts, proposals, and confirmed semantics remain visually separate. */
+.teleology-focus-map { width: min(100%, 980px); margin: 0 auto; display: flex; flex-direction: column; gap: clamp(18px, 3vh, 34px); padding: 12px 0 40px; }
+.teleology-focus-map.is-detail { width: 100%; margin: 0; gap: 14px; padding: 0 0 8px; }
+.teleology-focus-map.is-detail .teleology-semantic-card,
+.teleology-focus-map.is-detail .teleology-current-goal,
+.teleology-focus-map.is-detail .teleology-how-card { width: 100%; }
+.teleology-focus-map.is-detail .teleology-current-goal { padding: 12px 14px; }
+.teleology-focus-map.is-detail .teleology-current-goal strong { font-size: 15px; }
+.teleology-node-detail { overflow: auto; }
+.teleology-detail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.teleology-detail-actions button { border: 1px solid rgba(255,255,255,.12); border-radius: 6px; background: #1b1b1f; color: #e8e7e4; padding: 5px 8px; font: inherit; font-size: 11px; cursor: pointer; }
+.teleology-detail-actions button:disabled { opacity: .45; cursor: default; }
+.teleology-canvas-legend { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: rgba(20,20,22,.88); border: 1px solid rgba(255,255,255,.08); color: rgba(232,231,228,.68); font-size: 11px; }
+.teleology-canvas-legend i { width: 18px; height: 0; border-top: 2px solid #63a8db; }
+.teleology-canvas-legend i.is-proposed { border-top-style: dashed; border-top-color: #9181d9; }
+.teleology-canvas-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: rgba(237,236,234,.45); font-size: 14px; }
+.teleology-focus-lane, .teleology-focus-center, .teleology-how { width: 100%; }
+.teleology-focus-lane > .onto-lane-caption, .teleology-how > .onto-lane-caption { text-align: center; }
+.teleology-focus-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.teleology-semantic-card { width: min(100%, 300px); min-height: 64px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 9px; text-align: left; color: #e9e9f1; background: #15151b; }
+button.teleology-semantic-card { cursor: pointer; font: inherit; }
+.teleology-semantic-card small, .teleology-relation-item small { font-size: 10px; letter-spacing: .02em; }
+.teleology-semantic-card span { font-size: 11px; opacity: .7; }
+.teleology-semantic-card.is-confirmed, .teleology-relation-item.is-confirmed { border: 1px solid #63a8db; }
+.teleology-semantic-card.is-proposed, .teleology-relation-item.is-proposed { border: 1px dashed #9181d9; background: #1b1927; }
+.teleology-semantic-card.is-proposed small, .teleology-relation-item.is-proposed small { color: #b1a3f4; }
+.teleology-focus-empty { color: #8e8d99; font-size: 12px; }
+.teleology-focus-center { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.teleology-current-goal { width: min(100%, 440px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border: 1px solid #7c8397; border-radius: 10px; background: #17181c; }
+.teleology-current-goal.is-loading { opacity: .8; }
+.teleology-current-goal small { color: #8e909d; }.teleology-current-goal strong { font-size: 18px; }.teleology-current-goal p { margin: 0; color: #a4a6b3; font-size: 12px; }
+.teleology-relation-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #a5a5b2; font-size: 12px; text-align: center; }
+.teleology-relation-empty button, .teleology-how-more { border: 1px solid #6d629d; border-radius: 6px; background: #211d31; color: #c6b9ff; padding: 7px 11px; cursor: pointer; }
+.teleology-relation-grid { width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; align-items: start; }
+.teleology-relation-group { padding: 12px; border-radius: 9px; background: rgba(255,255,255,.025); }
+.teleology-relation-group h3 { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 10px; color: #d3d9e6; font-size: 12px; }.teleology-relation-group h3 small { color: #8e90a2; font-weight: 400; }
+.teleology-relation-item { box-sizing: border-box; width: 100%; display: flex; flex-direction: column; gap: 5px; padding: 9px; margin-top: 7px; border-radius: 6px; color: #d5d8e0; font-size: 11px; text-align: left; }
+button.teleology-relation-item { cursor: pointer; font: inherit; }
+.teleology-how { border-top: 1px solid #29292f; padding-top: 18px; }.teleology-how-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.teleology-how-card { width: min(100%, 420px); max-width: 420px; padding: 9px 12px; border: 1px solid #393a40; border-radius: 7px; background: #121315; color: #a0a2aa; text-align: left; cursor: pointer; }
+.teleology-how-more { display: block; margin: 12px auto 0; }
+.teleology-detail-semantic { border-left: 2px solid #8070c0; }.teleology-detail-group { margin: 12px 0; }.teleology-detail-group > strong { color: #bac4dc; font-size: 11px; }.teleology-detail-group p { margin: 5px 0; font-size: 12px; }
+.teleology-detail-candidate { display: block; width: 100%; padding: 7px 0; border: 0; border-bottom: 1px dashed #655a85; background: transparent; color: #b8aaf4; text-align: left; cursor: pointer; font-size: 11px; }
+.teleology-detail-selected { padding: 10px; margin-bottom: 10px; border: 1px dashed #9181d9; border-radius: 7px; overflow-wrap: anywhere; }
+.teleology-view-toggle { position: relative; z-index: 1; display: flex; justify-content: center; gap: 6px; padding: 12px 12px 0; }
+.teleology-view-toggle button { padding: 6px 12px; border: 1px solid #44414f; border-radius: 6px; background: #1c1c21; color: #a5a3af; cursor: pointer; }
+.teleology-view-toggle button.is-active { color: #e4ddff; border-color: #8f80cc; background: #29243b; }
+.teleology-classic-proposal { display: flex; flex-direction: column; gap: 6px; padding: 12px; margin-bottom: 14px; border: 1px dashed #9181d9; border-radius: 8px; color: #d2c8f5; overflow-wrap: anywhere; }
+.teleology-classic-proposal p { margin: 0; font-size: 11px; }
+.teleology-classic-proposal.is-confirmed { border-style: solid; border-color: #63a8db; color: #d6e7f4; }
 
 .teleology-mode-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 1px solid rgba(255,255,255,0.08); background: #141416; flex-shrink: 0; }
 @media (min-width: 640px) { .teleology-crumb { margin-left: var(--teleology-sidebar, 240px); } }
@@ -498,7 +551,7 @@
 .onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: #141416; box-shadow: none; overflow: hidden; transition: width 180ms ease; }
 .onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: #141416; }
 .onto-side-left .onto-nav { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 12px 12px 8px; background: #141416; color: var(--onto-ink); overflow: hidden; }
-.onto-side-right { width: 272px; border-right: 0; border-left: 1px solid var(--onto-border); }
+.onto-side-right { width: 340px; border-right: 0; border-left: 1px solid var(--onto-border); }
 .onto-side-right .onto-detail { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 14px; background: #141416; }
 .onto-side-rail { display: flex; flex: none; flex-direction: column; align-items: center; width: 100%; height: 100%; padding: 10px 0; background: #141416; }
 .onto-panel-close { margin-left: auto; width: 28px; height: 28px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: rgba(232,231,228,.55); font-size: 18px; line-height: 1; cursor: pointer; }

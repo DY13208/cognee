@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import type { CogneeInstance } from "@/modules/instances/types";
 import {
   coverageAction,
+  commitCoverageRun,
   getCoverageRun,
   getCoverageState,
   startCoverageRun,
   type CoverageRun,
   type CoverageStatePage,
+  type CoverageRunCommitResult,
 } from "@/modules/teleology/teleologyApi";
 
 const ACTIVE = new Set(["pending", "running", "paused", "paused_budget"]);
@@ -32,6 +34,9 @@ export default function CoveragePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [advanced, setAdvanced] = useState(false);
+  const [reviewedRunId, setReviewedRunId] = useState("");
+  const [commitPreview, setCommitPreview] = useState<CoverageRunCommitResult | null>(null);
+  const [commitResult, setCommitResult] = useState<CoverageRunCommitResult | null>(null);
 
   const refreshState = useCallback(async () => {
     const page = await getCoverageState(instance, datasetId);
@@ -92,6 +97,30 @@ export default function CoveragePanel({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function previewRunCommit() {
+    const runId = reviewedRunId.trim();
+    if (!runId) return;
+    setBusy(true); setError(""); setCommitPreview(null); setCommitResult(null);
+    try {
+      const selected = await getCoverageRun(instance, runId);
+      if (selected.dataset_id !== datasetId) throw new Error("该 Run 不属于当前数据集。");
+      if (selected.status !== "completed") throw new Error("请先选择已经完成并人工验收的 Coverage Run。");
+      setCommitPreview(await commitCoverageRun(instance, datasetId, runId, true));
+    } catch (exc) { setError(exc instanceof Error ? exc.message : "预览失败"); }
+    finally { setBusy(false); }
+  }
+
+  async function confirmRunCommit() {
+    if (!commitPreview) return;
+    setBusy(true); setError("");
+    try {
+      const result = await commitCoverageRun(instance, datasetId, commitPreview.run_id, false);
+      setCommitResult(result); setCommitPreview(null);
+      await refreshState();
+    } catch (exc) { setError(exc instanceof Error ? exc.message : "确认失败"); }
+    finally { setBusy(false); }
   }
 
   async function act(action: "pause" | "resume" | "cancel" | "retry-failures") {
@@ -182,6 +211,69 @@ export default function CoveragePanel({
           <button type="button" disabled={busy} style={quietButton} onClick={() => begin("force")}>强制重新分析</button>
         </div>
       ) : null}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+        <label style={{ fontSize: 12, color: "rgba(237,236,234,0.7)" }}>
+          已人工验收的 Coverage Run
+          <input
+            value={reviewedRunId}
+            onChange={(event) => setReviewedRunId(event.target.value)}
+            placeholder="Run ID"
+            style={field}
+          />
+        </label>
+        {run?.status === "completed" ? (
+          <button type="button" style={quietButton} onClick={() => setReviewedRunId(run.id)}>填入当前 Run</button>
+        ) : null}
+        <button type="button" disabled={busy || !reviewedRunId.trim()} style={button} onClick={() => void previewRunCommit()}>
+          一键确认本次 AI 建议
+        </button>
+      </div>
+      {commitPreview ? (
+        <div role="presentation" style={overlay} onClick={() => { if (!busy) setCommitPreview(null); }}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="run-commit-title"
+            style={dialog}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={{ fontSize: 11, letterSpacing: "0.16em", color: "#D4AF74" }}>CONFIRM</div>
+            <h3 id="run-commit-title" style={{ margin: "4px 0 8px", fontSize: 18 }}>确认本次 AI 建议</h3>
+            <p style={{ margin: "0 0 10px", color: "rgba(237,236,234,0.72)", fontSize: 13 }}>
+              只写入 Run {commitPreview.run_id} 里的合法正式项。弱线索、冲突和整个 dataset 的历史 open Proposal 都不会写入。
+            </p>
+            <p style={{ margin: "0 0 6px" }}>本次将确认：</p>
+            <ul style={{ margin: "0 0 12px", paddingLeft: 18, lineHeight: 1.7 }}>
+              <li>{commitPreview.purpose_count} 个 Purpose</li>
+              <li>{commitPreview.constraint_count} 个 Constraint</li>
+              <li>{commitPreview.goal_count} 个 Suggested Goal</li>
+              <li>{commitPreview.serves_count} 个 serves</li>
+              <li>{commitPreview.advances_count} 个 advances</li>
+              <li>{commitPreview.blocks_count} 个 blocks</li>
+              <li>{commitPreview.empty_proposals} 个空 Proposal 将跳过</li>
+              <li>{commitPreview.stale_proposals.length} 个 stale</li>
+              <li>{commitPreview.conflict_proposals} 个冲突</li>
+              {commitPreview.already_committed.length ? <li>{commitPreview.already_committed.length} 个已确认，保持不变</li> : null}
+            </ul>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" style={quietButton} onClick={() => setCommitPreview(null)}>取消</button>
+              <button type="button" disabled={busy || !commitPreview.proposals_committable} style={button} onClick={() => void confirmRunCommit()}>
+                确认全部写入
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {commitResult ? (
+        <div role="status" style={{ marginTop: 10, fontSize: 13, lineHeight: 1.6 }}>
+          已提交 {commitResult.committed_proposals.length} 个 Proposal，跳过空项 {commitResult.skipped_empty.length}，stale {commitResult.stale_proposals.length}，已确认 {commitResult.already_committed.length}，失败 {commitResult.failed_proposals.length}。
+          {commitResult.failed_proposals.map((failure) => (
+            <p key={failure.proposal_id} style={{ margin: "4px 0", color: "#E7B3A1" }}>
+              {failure.proposal_id} · {failure.error_code} · {failure.error_message}
+            </p>
+          ))}
+        </div>
+      ) : null}
       {error ? <div style={{ marginTop: 8, color: "#E7B3A1", fontSize: 13 }}>{error}</div> : null}
     </section>
   );
@@ -212,4 +304,35 @@ const quietButton: CSSProperties = {
   borderRadius: 8,
   padding: "7px 12px",
   cursor: "pointer",
+};
+
+const field: CSSProperties = {
+  display: "block",
+  marginTop: 6,
+  width: 280,
+  background: "#18191d",
+  color: "#EDECEA",
+  border: "1px solid rgba(255,255,255,0.14)",
+  borderRadius: 8,
+  padding: "6px 8px",
+};
+
+const overlay: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 40,
+  display: "grid",
+  placeItems: "center",
+  padding: 24,
+  background: "rgba(8, 8, 9, 0.72)",
+};
+
+const dialog: CSSProperties = {
+  width: "min(440px, 100%)",
+  padding: "18px 18px 16px",
+  background: "#141518",
+  color: "#EDECEA",
+  border: "1px solid rgba(212, 175, 116, 0.55)",
+  borderRadius: 14,
+  boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
 };

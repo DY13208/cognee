@@ -246,6 +246,10 @@ def test_hierarchy_only_context_prompt_expects_no_relations():
         "child_evidence": [],
     }
     prompt = purpose_analyze._prompt_context(context, [])
+    assert purpose_analyze.PROMPT_VERSION == "purpose-analyze-v3"
+    assert prompt["relation_evidence_available"] is False
+    assert prompt["independent_relation_evidence"] == []
+    assert all(not node["eligible_for_relation_evidence"] for node in prompt["evidence_nodes"])
     assert prompt["documents"] == []
     assert prompt["entities"] == []
     assert prompt["purposes"] == []
@@ -258,6 +262,92 @@ def test_hierarchy_only_context_prompt_expects_no_relations():
     obeyed = purpose_analyze.normalize_analysis(context, {"relations": []})
     assert obeyed["relations"] == []
     assert obeyed["weak_signals"] == []
+
+
+def test_goal_only_ancestors_cannot_enable_relations():
+    context = _context()
+    context.update(
+        purposes=[], constraints=[], entities=[], documents=[], child_evidence=[], relations=[]
+    )
+    prompt = purpose_analyze._prompt_context(context, [])
+    assert prompt["relation_evidence_available"] is False
+    assert {node["scope"] for node in prompt["evidence_nodes"]} == {"goal", "ancestor", "child"}
+    blocked = purpose_analyze.normalize_analysis(
+        context, _draft("current", "serves", "parent", ["current", "parent"], "层级关系")
+    )
+    assert blocked["relations"] == []
+    assert blocked["weak_signals"][0]["weak_reason"] == "structural_hierarchy_only"
+
+
+def test_independent_evidence_allows_but_does_not_require_relation():
+    context = _context()
+    context.update(
+        purposes=[],
+        constraints=[],
+        entities=[],
+        documents=[{"id": "document", "name": "Decision", "type": "Document"}],
+        child_evidence=[],
+    )
+    prompt = purpose_analyze._prompt_context(context, [])
+    assert prompt["relation_evidence_available"] is True
+    assert prompt["independent_relation_evidence"] == [
+        {
+            "id": "document",
+            "name": "Decision",
+            "type": "Document",
+            "scope": "document",
+            "eligible_for_relation_evidence": True,
+        }
+    ]
+    assert purpose_analyze.normalize_analysis(context, {"relations": []})["relations"] == []
+    assert purpose_analyze.normalize_analysis(
+        context, _draft("current", "serves", "other", ["document"], "决策文档明确支持跨目标贡献")
+    )["relations"]
+
+
+def test_entity_evidence_supports_relation():
+    context = _context()
+    context["entities"] = [{"id": "entity", "name": "Business outcome", "type": "Entity"}]
+    prompt = purpose_analyze._prompt_context(context, [])
+    assert any(node["id"] == "entity" for node in prompt["independent_relation_evidence"])
+    assert purpose_analyze.normalize_analysis(
+        context, _draft("current", "advances", "other", ["entity"], "实体明确连接两个业务结果")
+    )["relations"]
+
+
+def test_hierarchy_summary_is_allowed_and_purpose_constraint_survive_without_relation_evidence():
+    context = _context()
+    context.update(
+        purposes=[], constraints=[], entities=[], documents=[], child_evidence=[], relations=[]
+    )
+    summary = "当前仅有层级信息，因此不足以推断关系"
+    body = purpose_analyze.normalize_analysis(
+        context,
+        {
+            "summary": summary,
+            "relations": [],
+            "purposes": [
+                {
+                    "name": "提高会员留存",
+                    "reason": "当前目标追求留存价值",
+                    "confidence": 0.8,
+                    "evidence_node_ids": ["current"],
+                }
+            ],
+            "constraints": [
+                {
+                    "name": "会员期限限制",
+                    "reason": "当前目标定义了期限边界",
+                    "confidence": 0.8,
+                    "evidence_node_ids": ["current"],
+                }
+            ],
+        },
+    )
+    assert body["analysis_summary"] == summary
+    assert body["relations"] == []
+    assert len(body["purposes"]) == 1
+    assert len(body["constraints"]) == 1
 
 
 def test_document_context_can_keep_a_semantic_relation():

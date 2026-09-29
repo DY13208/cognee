@@ -7,6 +7,8 @@ import type { LaidOutNode } from "./types";
 
 const KIND_ICON: Record<string, string> = {
   Goal: "◎",
+  Purpose: "✦",
+  Constraint: "⊥",
   Project: "▣",
   Metric: "▦",
   Department: "☰",
@@ -42,6 +44,8 @@ export default function EntityCard({
   relationshipCount: number;
 }) {
   const stripe = KIND_STRIPE[node.kind] || KIND_STRIPE.Other;
+  const proposed = node.reviewStatus === "proposed";
+  const semantic = node.kind === "Purpose" || node.kind === "Constraint";
   const style: CSSProperties = {
     position: "absolute",
     left: node.x,
@@ -55,11 +59,15 @@ export default function EntityCard({
     padding: "11px 12px 10px 14px",
     borderRadius: 10,
     background: isFocus ? "#1a1a1a" : "#101010",
-    border: isFocus
-      ? "1px solid rgba(232,231,228,0.72)"
-      : selected
-        ? "1px solid rgba(232,231,228,0.55)"
-        : "1px solid rgba(255,255,255,0.12)",
+    border: proposed
+      ? "1px dashed #9181d9"
+      : isFocus
+        ? "1px solid rgba(232,231,228,0.72)"
+        : semantic
+          ? "1px solid #63a8db"
+          : selected
+            ? "1px solid rgba(232,231,228,0.55)"
+            : "1px solid rgba(255,255,255,0.12)",
     boxShadow: isFocus
       ? "0 0 0 1px rgba(255,255,255,0.16), 0 10px 24px rgba(0,0,0,0.45)"
       : selected
@@ -177,7 +185,8 @@ export default function EntityCard({
             padding: "1px 7px",
           }}
         >
-          {kindLabel(node.kind, language)}
+          {node.kind === "Purpose" ? "WHY" : kindLabel(node.kind, language)}
+          {proposed ? (language === "zh" ? " · AI建议" : " · Proposal") : semantic ? (language === "zh" ? " · 已确认" : " · Confirmed") : ""}
         </span>
       </div>
 

@@ -2,6 +2,8 @@ export type ViewMode = "relation" | "chain" | "hierarchy" | "path";
 
 export type EntityKind =
   | "Goal"
+  | "Purpose"
+  | "Constraint"
   | "Project"
   | "Metric"
   | "Department"
@@ -9,6 +11,8 @@ export type EntityKind =
   | "Document"
   | "Entity"
   | "Other";
+
+export type ReviewStatus = "proposed" | "confirmed";
 
 export interface OntologyEntity {
   id: string;
@@ -26,6 +30,8 @@ export interface OntologyEntity {
   createdAt?: number | string | null;
   progress?: number | null;
   source?: string | null;
+  /** Confirmed graph fact, or an AI suggestion that is not committed yet. */
+  reviewStatus?: ReviewStatus;
 }
 
 export interface OntologyEdge {
@@ -37,6 +43,7 @@ export interface OntologyEdge {
   targetName: string;
   sourceType: string;
   targetType: string;
+  status?: ReviewStatus;
 }
 
 export interface LaidOutNode extends OntologyEntity {

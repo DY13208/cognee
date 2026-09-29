@@ -19,7 +19,7 @@ from cognee.modules.teleology.purpose_layer import get_purpose_context, propose_
 from cognee.modules.users.models import User
 
 _RELATIONS = frozenset({"serves", "advances", "blocks"})
-PROMPT_VERSION = "purpose-analyze-v2"
+PROMPT_VERSION = "purpose-analyze-v3"
 
 _SYSTEM = """You infer why one company goal exists. The company tree is fact. You only propose a teleology layer.
 
@@ -39,6 +39,14 @@ Before emitting a relation, ask: "Is there evidence beyond the company-tree hier
 If no: DO NOT emit the relation.
 Do not emit it as a weak guess either.
 Simply omit it.
+If relation_evidence_available is false, relations MUST be an empty list.
+Do not propose serves, advances, or blocks without independent evidence.
+Do not emit a structural relation as a weak guess.
+Hierarchy may be used to understand the goal, but never as sufficient evidence for a relation.
+Only emit a relation when at least one independent_relation_evidence id supports that specific relation.
+Every emitted relation must include at least one non-Goal evidence id.
+relation_evidence_available=true only permits considering relations; irrelevant evidence does not require a relation. An empty relations list is valid.
+This gate applies only to relations. Continue considering Purpose, Constraint, and Suggested Goal under their existing evidence rules.
 A real relation needs evidence outside the goal chain, such as a Document, Entity, Purpose, Constraint, or MapReference id from the context.
 Open/uncommitted proposals are not evidence.
 Never cite, summarize, reinforce, or imitate another open proposal.
@@ -201,7 +209,60 @@ def _prompt_context(context: dict[str, Any], open_items: list[dict[str, Any]]) -
         }
 
     goal = context.get("goal") or {}
+    evidence_nodes: dict[str, dict[str, Any]] = {}
+
+    def add_evidence(node: dict[str, Any], scope: str) -> None:
+        node_id = str(node.get("id") or "").strip()
+        if not node_id:
+            return
+        node_type = str(node.get("type") or "").strip()
+        evidence_nodes[node_id] = {
+            "id": node_id,
+            "name": str(node.get("name") or node_id),
+            "type": node_type,
+            "scope": scope,
+            "eligible_for_relation_evidence": bool(node_type) and node_type.casefold() != "goal",
+        }
+
+    add_evidence(goal, "goal")
+    for key, scope in (
+        ("ancestors", "ancestor"),
+        ("children", "child"),
+        ("purposes", "purpose"),
+        ("constraints", "constraint"),
+        ("entities", "entity"),
+        ("documents", "document"),
+    ):
+        for node in context.get(key) or []:
+            if isinstance(node, dict):
+                add_evidence(node, scope)
+    for entry in context.get("child_evidence") or []:
+        if not isinstance(entry, dict):
+            continue
+        add_evidence(
+            {"id": entry.get("goal_id"), "name": entry.get("goal_name"), "type": "Goal"}, "child"
+        )
+        for bucket in ("entities", "documents"):
+            for node in entry.get(bucket) or []:
+                if isinstance(node, dict):
+                    add_evidence(node, "child")
+    for relation in context.get("relations") or []:
+        for side in ("source", "target"):
+            add_evidence(
+                {
+                    "id": relation.get(f"{side}_id"),
+                    "name": relation.get(f"{side}_name"),
+                    "type": relation.get(f"{side}_type"),
+                },
+                "relation_endpoint",
+            )
+    independent_evidence = [
+        node for node in evidence_nodes.values() if node["eligible_for_relation_evidence"]
+    ]
     return {
+        "relation_evidence_available": bool(independent_evidence),
+        "independent_relation_evidence": independent_evidence,
+        "evidence_nodes": list(evidence_nodes.values()),
         "goal": brief(goal) | {"note": str(context.get("note") or "")[:500]},
         "ancestors": [brief(node) for node in context.get("ancestors") or []],
         "children": [brief(node) for node in context.get("children") or []],
