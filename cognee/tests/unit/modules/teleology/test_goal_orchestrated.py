@@ -6,9 +6,10 @@ from uuid import uuid4
 
 import pytest
 
-from cognee.modules.teleology.goal_model import STORE, GoalBuildError, candidate_id
+from cognee.modules.teleology.goal_model import STORE, GoalBuildError
 from cognee.modules.teleology.goal_orchestrated import (
     compose_orchestrated_proposal,
+    orchestrated_candidate_id,
     submit_orchestrated_goal_model,
 )
 from cognee.modules.teleology.goal_store import MemoryGoalRunStore, use_goal_store
@@ -127,7 +128,7 @@ def test_legal_proposal_creates_three_proposed_goals():
     for goal in model["candidates"]:
         assert goal["status"] == "proposed"
         assert goal["id"] != goal.get("client_id")
-        assert goal["id"] == candidate_id(dataset_id, goal["name"])
+        assert goal["id"] == orchestrated_candidate_id(dataset_id, goal["name"])
         assert goal["generated_by"] == "workbuddy_orchestrated"
         by_client[goal["name"]] = goal
     child = by_client["提升 Arencia 项目盈利能力"]
@@ -140,7 +141,16 @@ def test_legal_proposal_creates_three_proposed_goals():
 def test_goal_without_evidence_is_rejected_and_the_batch_continues():
     payload = _sample()
     payload["goals"].append(
-        _goal("g4", "提升会员复购贡献", ["repurchase"], evidence=[], source_node_ids=["repurchase"])
+        {
+            "client_id": "g4",
+            "name": "提升会员复购贡献",
+            "description": "提升会员复购贡献",
+            "reason": "由证据归纳出的业务结果",
+            "confidence": 0.86,
+            "source_node_ids": [],
+            "evidence_node_ids": [],
+            "evidence": [],
+        }
     )
     model, summary = _compose(payload)
 
@@ -184,7 +194,7 @@ def test_metric_only_name_is_rejected_and_outcome_metric_text_is_kept():
     assert "提升库存周转健康度与资金效率" in names
 
 
-def test_duplicate_goal_is_not_created_again():
+def test_profit_evidence_does_not_merge_distinct_goal_names():
     payload = {
         "goals": [
             _goal(
@@ -203,36 +213,49 @@ def test_duplicate_goal_is_not_created_again():
         ]
     }
     model, summary = _compose(payload)
-    issue = next(item for item in summary["issues"] if item["client_id"] == "b")
 
-    assert summary["accepted"]["goals"] == 1
-    assert summary["duplicates"] == 2
-    assert len(model["candidates"]) == 1
-    assert issue["reason"] == "duplicate"
-    assert issue["duplicate_of"] == model["candidates"][0]["id"]
-    assert issue["existing_candidate_id"] == model["candidates"][0]["id"]
+    assert summary["accepted"]["goals"] == 3
+    assert summary["duplicates"] == []
+    assert summary["critical_errors"] == []
+    assert len(model["candidates"]) == 3
+    assert {goal["name"] for goal in model["candidates"]} == {
+        "提升 Arencia 项目盈利能力",
+        "提高 Arencia 项目利润表现",
+        "改善 Arencia 盈利能力",
+    }
 
 
-def test_duplicate_goal_merges_new_evidence():
+def test_exact_name_duplicate_keeps_the_original_name_and_merges_evidence():
     payload = {
         "goals": [
             _goal(
                 "a",
                 "提升 Arencia 项目盈利能力",
-                ["arencia", "profit"],
-                evidence=[_evidence("arencia", "Project"), _evidence("profit", "Metric")],
+                ["arencia"],
+                evidence=[_evidence("arencia", "Project")],
             ),
-            _goal("c", "改善 Arencia 盈利能力", ["repurchase"], semantic="GoalSignal"),
+            _goal(
+                "b",
+                "提升 Arencia 项目盈利能力",
+                ["profit"],
+                evidence=[_evidence("profit", "Metric")],
+                reason="补充利润指标",
+            ),
         ]
     }
     model, summary = _compose(payload)
+    goal = model["candidates"][0]
 
-    assert summary["duplicates"] == 1
-    assert {entry["node_id"] for entry in model["candidates"][0]["evidence"]} >= {
-        "arencia",
-        "profit",
-        "repurchase",
-    }
+    assert summary["accepted"]["goals"] == 1
+    assert len(summary["duplicates"]) == 1
+    assert summary["duplicates"][0]["client_id"] == "b"
+    assert summary["duplicates"][0]["duplicate_of_client_id"] == "a"
+    assert summary["duplicates"][0]["existing_candidate_id"] == goal["id"]
+    assert len(model["candidates"]) == 1
+    assert goal["name"] == "提升 Arencia 项目盈利能力"
+    assert goal["reason"] == "由证据归纳出的业务结果"
+    assert "补充利润指标" in goal["reason_provenance"]
+    assert {entry["node_id"] for entry in goal["evidence"]} == {"arencia", "profit"}
 
 
 def test_hierarchy_self_loop_is_rejected():

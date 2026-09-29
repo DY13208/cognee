@@ -199,7 +199,10 @@ class OrchestratedGoalIn(InDTO):
     description: str = ""
     reason: str = ""
     confidence: Optional[float] = None
+    business_object: str = ""
+    scope: str = ""
     source_node_ids: List[str] = Field(default_factory=list)
+    evidence_node_ids: List[str] = Field(default_factory=list)
     evidence: List[OrchestratedEvidenceIn] = Field(default_factory=list)
 
 
@@ -220,6 +223,7 @@ class OrchestratedEndpointIn(InDTO):
     reason: str = ""
     confidence: Optional[float] = None
     source_node_ids: List[str] = Field(default_factory=list)
+    evidence_node_ids: List[str] = Field(default_factory=list)
     evidence: List[OrchestratedEvidenceIn] = Field(default_factory=list)
 
 
@@ -231,12 +235,16 @@ class OrchestratedRelationIn(InDTO):
     reason: str = ""
     confidence: Optional[float] = None
     source_node_ids: List[str] = Field(default_factory=list)
+    evidence_node_ids: List[str] = Field(default_factory=list)
     evidence: List[OrchestratedEvidenceIn] = Field(default_factory=list)
 
 
 class OrchestratedGoalModelProposal(InDTO):
     dataset_id: UUID
     generated_by: str = "workbuddy_orchestrated"
+    dry_run: bool = False
+    strict: bool = True
+    submission_mode: Literal["replace", "merge"] = "replace"
     goals: List[OrchestratedGoalIn] = Field(default_factory=list)
     hierarchy: List[OrchestratedHierarchyIn] = Field(default_factory=list)
     purposes: List[OrchestratedEndpointIn] = Field(default_factory=list)

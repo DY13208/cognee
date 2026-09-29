@@ -519,6 +519,7 @@ def _candidate_dict(record: Any) -> dict[str, Any]:
         "evidence": evidence,
         "parent_candidate_id": record.parent_candidate_id,
         "status": record.status,
+        "outside_current_snapshot": record.status == "legacy_confirmed",
         "run_id": record.run_id,
         "generated_by": record.generated_by,
         "semantic_hash": record.semantic_hash,

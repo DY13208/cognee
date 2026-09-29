@@ -365,6 +365,47 @@ def register_teleology_tools(registry, get_client) -> None:
         return await request("POST", "/api/v1/teleology/builds", body=body)
 
     @registry.tool(tags={"teleology"})
+    async def validate_teleology_goal_model(
+        dataset_id: str,
+        goals: list,
+        hierarchy: list | None = None,
+        purposes: list | None = None,
+        constraints: list | None = None,
+        relations: list | None = None,
+        generated_by: str = "workbuddy_orchestrated",
+        submission_mode: str = "replace",
+    ) -> list:
+        """Validate one AI Goal Model snapshot and write nothing.
+
+        Goal, purpose, constraint, and relation items accept any one of:
+        evidence objects, evidence_node_ids, or source_node_ids.
+        evidence_node_ids alone is enough. The server hydrates node id, name,
+        type, source layer, and description from the dataset.
+        A goal is identified by its canonical name and optional business_object.
+        Shared evidence words such as 利润 do not make two goals the same.
+        Returns valid, critical_errors, duplicates, hierarchy_preview, and the
+        relation/purpose/constraint previews. saved is false. No run is created.
+        Call propose_teleology_goal_model only when valid is true and
+        critical_errors is empty.
+        """
+        return await request(
+            "POST",
+            "/api/v1/teleology/goal-model/proposals",
+            body={
+                "dataset_id": dataset_id,
+                "generated_by": generated_by or "workbuddy_orchestrated",
+                "dry_run": True,
+                "strict": True,
+                "submission_mode": submission_mode or "replace",
+                "goals": goals or [],
+                "hierarchy": hierarchy or [],
+                "purposes": purposes or [],
+                "constraints": constraints or [],
+                "relations": relations or [],
+            },
+        )
+
+    @registry.tool(tags={"teleology"})
     async def propose_teleology_goal_model(
         dataset_id: str,
         goals: list,
@@ -373,10 +414,23 @@ def register_teleology_tools(registry, get_client) -> None:
         constraints: list | None = None,
         relations: list | None = None,
         generated_by: str = "workbuddy_orchestrated",
+        dry_run: bool = False,
+        strict: bool = True,
+        submission_mode: str = "replace",
     ) -> list:
-        """Submit a WorkBuddy mind-map analysis as an AI Goal Model proposal.
+        """Submit one complete AI Goal Model snapshot as proposals.
 
-        Cognee validates evidence and stores derived proposals only.
+        Standard flow: call with dry_run=true, strict=true, submission_mode=replace.
+        Write only the second call, with dry_run=false, after valid is true and
+        critical_errors is empty. strict=true saves the whole snapshot or nothing.
+        submission_mode=replace installs this payload as the current proposed model.
+        Previous proposed goals disappear from the current model. Confirmed goals
+        keep their review. Historical runs stay for audit.
+        Goal, purpose, constraint, and relation items accept evidence objects,
+        evidence_node_ids, or source_node_ids. evidence_node_ids alone is enough;
+        the server hydrates node id, name, type, source layer, and description.
+        Hierarchy uses parent_client_id, child_client_id, reason, and evidence_node_ids.
+        A missing endpoint, cycle, self-parent, or identity collision rejects the save.
         This does not confirm, commit, write the company tree, or write the formal graph.
         """
         return await request(
@@ -385,6 +439,9 @@ def register_teleology_tools(registry, get_client) -> None:
             body={
                 "dataset_id": dataset_id,
                 "generated_by": generated_by or "workbuddy_orchestrated",
+                "dry_run": dry_run,
+                "strict": strict,
+                "submission_mode": submission_mode or "replace",
                 "goals": goals or [],
                 "hierarchy": hierarchy or [],
                 "purposes": purposes or [],
