@@ -810,7 +810,7 @@ export default function TeleologyClassicPage() {
           flexShrink: 0,
           width: "100%",
           alignItems: "stretch",
-          background: "#141416",
+          background: "rgba(20, 20, 22, 0.72)",
           borderBottom: "1px solid rgba(255,255,255,0.08)",
           display: "flex",
           flexDirection: "column",

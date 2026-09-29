@@ -59,7 +59,9 @@
 .onto-detail-quick { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }.onto-detail-quick button { border: 1px solid #3a4b65; border-radius: 6px; padding: 8px 5px; background: #202a3a; color: #cbd9f2; cursor: pointer; }.onto-detail-quick button:hover { border-color: #6f94e7; }
 .onto-detail-path { color: #acc4f5; line-height: 1.7; margin-bottom: 6px; }
 
-.teleology-mode-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 1px solid rgba(255,255,255,0.08); background: #141416; flex-shrink: 0; }
+/* Kept translucent (matching TopBar's rgba(0,0,0,0.65) treatment) so the shell
+   grid stays continuous across the teleology header rows. */
+.teleology-mode-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(20, 20, 22, 0.72); flex-shrink: 0; }
 /* The goal tree sidebar starts below the header, so the header breadcrumb is
    pinned to the left edge instead of being offset by the sidebar width. */
 .teleology-mode-tabs { display: flex; gap: 6px; flex: none; }
@@ -70,8 +72,8 @@
 .teleology-mode-tab:focus-visible { outline: 2px solid #b0bcff; outline-offset: 2px; }
 
 .onto-root {
-  --onto-bg: #0e0e10;
-  --onto-panel: #141416;
+  --onto-bg: transparent;
+  --onto-panel: rgba(20, 20, 22, 0.72);
   --onto-panel-2: #1a1a1e;
   --onto-border: rgba(255, 255, 255, 0.08);
   --onto-ink: #e8e7e4;
@@ -83,7 +85,7 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--onto-bg);
+  background: transparent;
   color: var(--onto-ink);
   font-size: 13px;
 }
@@ -499,20 +501,25 @@
 .onto-more-menu button { width: 100%; border: 0; border-radius: 5px; background: transparent; color: var(--onto-ink); text-align: left; padding: 8px; cursor: pointer; }
 .onto-more-menu button:hover:not(:disabled) { background: #222; }
 .onto-more-menu button:disabled { opacity: .5; cursor: default; }
-.onto-body { gap: 0; padding: 0; background: #0e0e10; }
-.onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: #141416; box-shadow: none; overflow: hidden; transition: width 180ms ease; }
-.onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: #141416; }
-.onto-side-left .onto-nav { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 12px 12px 8px; background: #141416; color: var(--onto-ink); overflow: hidden; }
+.onto-body { gap: 0; padding: 0; background: transparent; }
+/* Panels are translucent rather than painted #141416, so the shell's grid reads
+   through them exactly like the navbar / search panels do. */
+.onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: rgba(20, 20, 22, 0.72); box-shadow: none; overflow: hidden; transition: width 180ms ease; }
+.onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: rgba(20, 20, 22, 0.72); }
+.onto-side-left .onto-nav { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 12px 12px 8px; background: transparent; color: var(--onto-ink); overflow: hidden; }
 .onto-side-right { width: 272px; border-right: 0; border-left: 1px solid var(--onto-border); }
-.onto-side-right .onto-detail { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 14px; background: #141416; }
-.onto-side-rail { display: flex; flex: none; flex-direction: column; align-items: center; width: 100%; height: 100%; padding: 10px 0; background: #141416; }
+.onto-side-right .onto-detail { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 14px; background: transparent; }
+.onto-side-rail { display: flex; flex: none; flex-direction: column; align-items: center; width: 100%; height: 100%; padding: 10px 0; background: transparent; }
 .onto-panel-close { margin-left: auto; width: 28px; height: 28px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: rgba(232,231,228,.55); font-size: 18px; line-height: 1; cursor: pointer; }
 .onto-panel-close:hover { background: rgba(255,255,255,.08); color: #fff; }
 .onto-panel-close + .onto-goal-search { margin-left: 4px; }
 .onto-panel-reopen { position: static; flex: none; z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; background: #141416; color: rgba(232,231,228,.7); cursor: pointer; }
 .onto-panel-reopen:hover { background: #222; color: #fff; }
 .onto-detail-head { display: flex; align-items: flex-start; gap: 8px; }
-.onto-main, .onto-main.onto-focus-main { position: relative; border: 0; border-radius: 0; overflow: hidden; background-color: #050505; background-image: radial-gradient(circle, rgba(255,255,255,.07) .75px, transparent 1px); background-size: 20px 20px; }
+/* The workspace canvas keeps the app shell's 33px grid instead of painting its
+   own dot lattice, so /teleology matches /search and every other route. The
+   shell gradient shows through because nothing here is opaque any more. */
+.onto-main, .onto-main.onto-focus-main { position: relative; border: 0; border-radius: 0; overflow: hidden; background: transparent; }
 .onto-canvas-toolbar { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 12; gap: 8px; flex-wrap: nowrap; min-height: 0; padding: 0; border: 0; background: transparent; pointer-events: none; }
 .onto-canvas-toolbar > * { pointer-events: auto; }
 .onto-canvas-toolbar .onto-btn { padding: 6px 9px; font-size: 11px; }
@@ -890,14 +897,16 @@
 }
 
 /* Main teleology workspace: contained panels, restrained indigo emphasis. */
-.onto-root { --onto-bg: #050505; --onto-panel: #0c0c0c; --onto-panel-2: #141414; --onto-border: rgba(255, 255, 255, .1); --onto-ink: #e8e7e4; --onto-muted: rgba(232, 231, 228, .48); --onto-accent: #e8e7e4; background: var(--onto-bg); color: var(--onto-ink); }
+.onto-root { --onto-bg: transparent; --onto-panel: rgba(20, 20, 22, 0.72); --onto-panel-2: #141414; --onto-border: rgba(255, 255, 255, .1); --onto-ink: #e8e7e4; --onto-muted: rgba(232, 231, 228, .48); --onto-accent: #e8e7e4; background: transparent; color: var(--onto-ink); }
 .onto-root .onto-btn { border-color: rgba(255,255,255,.12); background: #161616; color: #e8e7e4; }
 .onto-root .onto-btn:hover:not(:disabled) { border-color: rgba(255,255,255,.28); background: #222; }
 .onto-root .onto-btn-primary { background: #e8e7e4; border-color: #e8e7e4; color: #111; box-shadow: none; }
 .onto-root .onto-btn-primary:hover:not(:disabled) { background: #fff; }
 .onto-root .onto-input, .onto-root .onto-select { background: #141414; border-color: rgba(255,255,255,.12); color: #f2f2f2; }
-.onto-top { flex-wrap: nowrap; gap: 10px; min-height: 0; padding: 8px 16px; background: #141416; border-bottom: 1px solid rgba(255,255,255,0.08); }
-.onto-detail-head { position: sticky; top: 0; z-index: 1; background: #141416; }
+.onto-top { flex-wrap: nowrap; gap: 10px; min-height: 0; padding: 8px 16px; background: rgba(20, 20, 22, 0.72); border-bottom: 1px solid rgba(255,255,255,0.08); }
+/* Sticky header inside the right-hand detail panel: translucent so the grid
+   continues behind it. */
+.onto-detail-head { position: sticky; top: 0; z-index: 1; background: rgba(20, 20, 22, 0.92); backdrop-filter: blur(6px); }
 .teleology-graph-host { flex: 1; min-height: 0; height: 100%; }
 .onto-title-block { flex: none; margin-right: 8px; }
 .onto-title { font-size: 18px; line-height: 1.2; color: #fff; }
@@ -934,7 +943,7 @@
 .onto-review-actions button { border: 1px solid rgba(255,255,255,.12); background: transparent; color: #e8e7e4; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; }
 .onto-review-actions button.is-on { background: #e8e7e4; color: #111; }
 
-.teleology-classic-inspector { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: #141416; color: #e8e7e4; }
+.teleology-classic-inspector { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: transparent; color: #e8e7e4; }
 .teleology-classic-inspector-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
 .onto-dialog { background: #161618; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; box-shadow: 0 18px 40px rgba(0,0,0,0.45); padding: 18px 18px 14px; color: #e8e7e4; }
 .onto-dialog h2 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }

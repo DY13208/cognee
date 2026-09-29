@@ -47,7 +47,7 @@ export default function TeleologyPage() {
   const zh = language === "zh";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", background: "#0e0e10" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", background: "transparent" }}>
       <TrackPageView page="teleology" />
       <div className="teleology-mode-bar">
         <div className="teleology-mode-tabs">

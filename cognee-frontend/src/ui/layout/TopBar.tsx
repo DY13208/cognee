@@ -117,8 +117,8 @@ export default function TopBar() {
       style={{
         position: "relative",
         zIndex: 300,
-        background: onTeleology ? "#141416" : "rgba(0,0,0,0.65)",
-        backdropFilter: onTeleology ? undefined : "blur(12px)",
+        background: "rgba(0,0,0,0.65)",
+        backdropFilter: "blur(12px)",
         borderBottom: "1px solid rgba(255,255,255,0.08)",
         ...(onTeleology
           ? { minHeight: 48, height: "auto", padding: "10px 16px" }
