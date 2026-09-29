@@ -60,11 +60,15 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
     const count = goal.child_count ?? page?.total ?? 0;
     return <div key={goal.id} role="treeitem" aria-expanded={count ? expanded : undefined} aria-selected={focusId === goal.id}>
       <div className={`onto-file-row${focusId === goal.id ? " is-selected" : ""}`} style={{ paddingLeft: depth * 16 + 8 }}>
-        <button type="button" className="onto-file-chevron" aria-label={expanded ? t("Collapse", "收起") : t("Expand", "展开")} onClick={() => {
-          const next = new Set(open);
-          if (expanded) next.delete(goal.id); else { next.add(goal.id); if (!page?.loaded) onExpand(goal.id); }
-          setOpen(next);
-        }}>{count ? expanded ? "⌄" : "›" : ""}</button>
+        {count ? (
+          <button type="button" className={`onto-file-chevron${expanded ? " is-open" : ""}`} aria-label={expanded ? t("Collapse", "收起") : t("Expand", "展开")} onClick={() => {
+            const next = new Set(open);
+            if (expanded) next.delete(goal.id); else { next.add(goal.id); if (!page?.loaded) onExpand(goal.id); }
+            setOpen(next);
+          }}>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden><path d="M3.2 1.6L6.8 5L3.2 8.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        ) : <span className="onto-file-chevron" aria-hidden />}
         <span className="onto-file-icon" aria-hidden><GoalMark depth={depth} /></span>
         <button type="button" className="onto-file-name" title={goal.name} onClick={() => onPick(goal.id, goal)}>{goal.name}</button>
         <span className="teleology-nav-status">{statuses[goal.id] || (goal.confirmed_count ? t(`Confirmed ${goal.confirmed_count}`, `已确认 ${goal.confirmed_count}`) : t("Not analyzed", "未分析"))}</span>
