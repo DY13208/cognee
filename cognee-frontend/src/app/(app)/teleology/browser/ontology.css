@@ -135,14 +135,14 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 /* Two-row toolbar shared by the goal browser and purpose-relations view. */
 .teleology-toolbar { --onto-ink: #e8e7e4; position: relative; z-index: 20; margin: 8px 10px 0; flex-shrink: 0; overflow: visible; border: 1px solid #2c3037; border-radius: 10px; background: linear-gradient(180deg, #15171b, #121418); box-shadow: 0 10px 30px rgba(0,0,0,.28); }
 .teleology-toolbar-row { min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 7px 10px; }
-.teleology-toolbar-top { flex-wrap: nowrap; overflow-x: auto; }
+.teleology-toolbar-top { min-height: 56px; padding: 9px 12px; justify-content: space-between; gap: 16px; border-bottom: 1px solid #20242b; flex-wrap: nowrap; overflow-x: auto; }
 .teleology-toolbar-top .teleology-mode-tabs, .teleology-toolbar-top .teleology-classic-actions, .teleology-toolbar-top .teleology-toolbar-view-actions { flex-shrink: 0; }
-.teleology-toolbar-bottom { border-top: 1px solid #21242a; }
+.teleology-toolbar-bottom { min-height: 58px; }
 .teleology-toolbar-view-actions, .teleology-toolbar-data-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .teleology-toolbar-view-actions { margin-left: auto; }
 .teleology-toolbar-data-actions { flex: 1; flex-wrap: wrap; }
 .teleology-toolbar .teleology-mode-tabs, .teleology-toolbar .onto-view-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #2d3138; border-radius: 8px; background: #0e1013; margin: 0; }
-.teleology-toolbar .teleology-mode-tab, .teleology-toolbar .onto-view-switch button { height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #9ea4ae; font-size: 13px; font-weight: 600; box-shadow: none; }
+.teleology-toolbar .teleology-mode-tab, .teleology-toolbar .onto-view-switch button { height: 32px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #9ea4ae; font-size: 13px; font-weight: 700; box-shadow: none; }
 .teleology-toolbar .teleology-mode-tab.is-active { background: #2b355f; color: #dce5ff; box-shadow: inset 0 0 0 1px #42548b; }
 .teleology-toolbar .onto-view-switch button.is-active { background: #1d2d5c; color: #aac0ff; box-shadow: inset 0 0 0 1px #3856a7; }
 .teleology-toolbar .onto-btn { height: 32px; padding: 0 12px; border: 1px solid #30343b; border-radius: 7px; background: #17191e; color: #c9cdd4; font-size: 13px; font-weight: 600; white-space: nowrap; }
@@ -157,6 +157,40 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .teleology-toolbar-divider { height: 22px; width: 1px; flex: none; background: #2a2d34; }
 .teleology-toolbar .teleology-classic-actions { margin-left: auto; }
 @media (max-width: 900px) { .teleology-toolbar-bottom, .teleology-toolbar-data-actions { flex-wrap: wrap; } }
+
+/* Purpose relations toolbar: the reference layout uses one shell and two rows. */
+.teleology-toolbar.is-classic .teleology-toolbar-top { overflow: visible; }
+.teleology-toolbar.is-classic .teleology-classic-actions { flex-wrap: wrap; justify-content: flex-end; }
+.teleology-classic-action { height: 34px; padding: 0 13px; border: 1px solid #31353e; border-radius: 7px; background: #191c21; color: #cbd0d8; font-family: inherit; font-size: 13px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.teleology-classic-action:hover:not(:disabled) { background: #22262d; border-color: #404650; color: #fff; }
+.teleology-classic-action.is-strong { background: #25282e; border-color: #3a3f48; color: #f4f5f7; }
+.teleology-classic-action.is-purple { background: #2a234a; border-color: #5d4b90; color: #e2d9ff; }
+.teleology-classic-action.is-purple:hover:not(:disabled) { background: #34295a; border-color: #735cb0; }
+.teleology-classic-action:disabled { opacity: .45; cursor: not-allowed; }
+.teleology-classic-action:focus-visible { outline: 2px solid #b0bcff; outline-offset: 2px; }
+.teleology-classic-info-row { min-height: 58px; padding: 9px 12px; background: #0f1115; }
+.teleology-classic-info { display: grid; grid-template-columns: minmax(230px, 320px) minmax(360px, 1fr) auto; align-items: center; gap: 14px; width: 100%; min-width: 0; }
+.teleology-classic-dataset { display: flex; align-items: center; gap: 10px; min-width: 0; height: 38px; padding: 0 11px; border: 1px solid #2a2e35; border-radius: 8px; background: #121419; }
+.teleology-classic-context-label { color: #6f7680; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.teleology-classic-dataset > div > button { height: 36px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.teleology-classic-truncate, .teleology-classic-purpose-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.teleology-classic-purpose { display: flex; align-items: center; gap: 10px; min-width: 0; height: 38px; padding: 0 11px; border-left: 1px solid #2a2e35; }
+.teleology-classic-purpose-value { color: #d9dde3; font-size: 13px; font-weight: 600; }
+.teleology-classic-purpose-value span { color: #7a818c; font-weight: 700; }
+.teleology-classic-purpose button { flex: 0 0 auto; height: 32px; }
+.teleology-classic-legend { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; color: #8a919c; }
+.teleology-classic-feedback { display: flex; flex-direction: column; gap: 12px; padding: 10px 16px; background: #0f1115; border-bottom: 1px solid #20242b; }
+@media (max-width: 1200px) {
+  .teleology-classic-info { grid-template-columns: minmax(200px, 300px) minmax(280px, 1fr); }
+  .teleology-classic-legend { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 900px) {
+  .teleology-toolbar.is-classic .teleology-toolbar-top { align-items: flex-start; flex-direction: column; }
+  .teleology-toolbar.is-classic .teleology-classic-actions { margin-left: 0; justify-content: flex-start; }
+  .teleology-classic-info { grid-template-columns: 1fr; }
+  .teleology-classic-purpose { border-left: 0; padding-left: 0; }
+  .teleology-classic-legend { grid-column: auto; }
+}
 
 .onto-root {
   --onto-bg: transparent;
@@ -597,6 +631,9 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .onto-more-menu button:hover:not(:disabled) { background: #222; }
 .onto-more-menu button:disabled { opacity: .5; cursor: default; }
 .onto-body { gap: 0; padding: 0; background: transparent; }
+/* Side panels share the canvas background so the shell grid stays continuous. */
+.onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: transparent; box-shadow: none; overflow: hidden; transition: width 180ms ease; }
+.onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: transparent; }
 /* Panels are translucent rather than painted #141416, so the shell's grid reads
    through them exactly like the navbar / search panels do. */
 .onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: rgba(20, 20, 22, 0.72); box-shadow: none; overflow: hidden; transition: width 180ms ease; }
