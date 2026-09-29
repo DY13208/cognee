@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CogneeInstance } from "@/modules/instances/types";
-import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveWorkspaceGoal, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
+import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveWorkspaceGoal, reviewGoalCandidate, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GoalModelView, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
 import { buildDerivedGoalTree, parseDataNodeId, type DerivedGoalTree } from "./derivedGoalTree";
 import { notifications } from "@mantine/notifications";
 import NavPanel, { type GoalPage } from "./NavPanel";
@@ -77,6 +77,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const [proposal, setProposal] = useState<TeleologyProposal | null>(null);
   const [selectedProposalItem, setSelectedProposalItem] = useState<ProposalItem | null>(null);
   const [navStatuses, setNavStatuses] = useState<Record<string, string>>({});
+  const [goalModel, setGoalModel] = useState<GoalModelView | null>(null);
+  const [reviewingGoal, setReviewingGoal] = useState(false);
   const [review, setReview] = useState<TeleologyProposal | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -174,6 +176,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
       const model = await getGoalModel(instance, datasetId);
       const tree = buildDerivedGoalTree(model, language);
       derivedRef.current = tree;
+      setGoalModel(model);
       setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
       if (tree.roots.length) await enter(tree.roots[0].id, tree.roots[0]);
       else setLoading(false);
@@ -181,7 +184,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [instance, datasetId, enter, language]);
 
   useEffect(() => {
-    requestId.current += 1; setPendingId(null); setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]); setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null); setReview(null);
+    requestId.current += 1; derivedRef.current = null; setGoalModel(null); setPendingId(null); setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]); setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null); setReview(null);
     if (datasetId) void loadRoots();
   }, [datasetId, loadRoots]);
 
@@ -253,6 +256,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     return selectedId;
   }, [selectedId, focus, proposal, why, constraints]);
 
+  const selectedCandidate = goalModel?.candidates.find((candidate) => candidate.id === detailGoalId) || null;
+
   const selectedEntity = useMemo(() => {
     const found = [focus, parent, ...why, ...children, ...path, ...roots].find((goal) => goal?.id === selectedId);
     if (found) return entity(found);
@@ -281,6 +286,27 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
       else if (focusId) await enter(focusId);
       notifications.show({ title: t("Goal updated", "目标已更新"), message: "", color: "green" });
     } catch (cause) { notifications.show({ title: t("Operation failed", "操作失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" }); }
+  }
+
+  async function reviewSelectedGoal(status: "confirmed" | "rejected") {
+    if (!selectedCandidate || reviewingGoal) return;
+    const candidateId = selectedCandidate.id;
+    const parentId = selectedCandidate.parent_candidate_id;
+    setReviewingGoal(true);
+    try {
+      await reviewGoalCandidate(instance, datasetId, candidateId, status);
+      const model = await getGoalModel(instance, datasetId);
+      const tree = buildDerivedGoalTree(model, language);
+      derivedRef.current = tree;
+      setGoalModel(model);
+      setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
+      const nextId = status === "rejected" ? (parentId && tree.byId.has(parentId) ? parentId : tree.roots[0]?.id) : candidateId;
+      if (nextId) await enter(nextId);
+      else { setFocusId(null); setSelectedId(null); setFocusGoal(null); setPath([]); setChildren([]); }
+      notifications.show({ title: status === "confirmed" ? t("Goal confirmed", "目标已确认") : t("Goal rejected", "目标已驳回"), message: "", color: "green" });
+    } catch (cause) {
+      notifications.show({ title: t("Review failed", "审核失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" });
+    } finally { setReviewingGoal(false); }
   }
 
   function createChild(id: string) {
@@ -458,12 +484,6 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
           onHover={setHoverId}
         />
         <div className="onto-canvas-toolbar">
-          <div className="teleology-canvas-legend">
-            <i />{t("Confirmed", "已确认")}
-            <i className="is-proposed" />{t("AI suggestion", "AI建议")}
-            <span>WHY · Purpose · Constraint</span>
-          </div>
-          <span className="onto-toolbar-spacer" />
           <div className="onto-zoom-group">
             <button type="button" onClick={() => setZoom((value) => Math.max(0.5, Math.round((value - 0.1) * 10) / 10))}>−</button>
             <button type="button" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
@@ -481,6 +501,16 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
             <button type="button" className="onto-panel-close" onClick={() => setRightOpen(false)} aria-label={t("Collapse details", "收起目标详情")}>×</button>
           </div>
           {pendingId && pendingId !== focusId ? <div className="onto-detail-empty">{t("Loading confirmed relations…", "正在载入已确认关系…")}</div> : detailGoalId && focus ? <>
+            {selectedCandidate && <section className="teleology-goal-review" aria-label={t("Review AI goal", "审核 AI 目标")}>
+              <div className="teleology-goal-review-status">{selectedCandidate.status === "confirmed" ? t("Confirmed goal", "目标已确认") : t("Goal awaiting confirmation", "目标待确认")}</div>
+              {selectedCandidate.reason && <p><strong>{t("Reason", "生成理由")}</strong>{selectedCandidate.reason}</p>}
+              {selectedCandidate.evidence.length > 0 && <div><strong>{t("Evidence", "来源证据")}</strong><ul>{selectedCandidate.evidence.map((entry) => <li key={entry.node_id}>{entry.name}{entry.text ? ` · ${entry.text}` : ""}</li>)}</ul></div>}
+              <div className="teleology-goal-review-actions">
+                {selectedCandidate.status !== "confirmed" && <button type="button" disabled={reviewingGoal} onClick={() => void reviewSelectedGoal("confirmed")}>{reviewingGoal ? t("Saving…", "保存中…") : t("Confirm goal", "确认目标")}</button>}
+                <button type="button" disabled={reviewingGoal} onClick={() => void reviewSelectedGoal("rejected")}>{t("Reject goal", "驳回目标")}</button>
+              </div>
+              <small>{t("Review changes the derived goal only. It does not edit the company tree or commit purpose relations.", "审核只改变派生目标状态，不修改公司树，也不提交目的关系。")}</small>
+            </section>}
             <div className="teleology-detail-actions">
               <button type="button" disabled={detailGoalId === focusId} onClick={() => void enter(detailGoalId)}>{t("Set as center", "设为中心")}</button>
               <button type="button" onClick={() => relateGoal(detailGoalId)}>{t("Link", "关联")}</button>
@@ -507,6 +537,11 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
             />
           </> : <div className="onto-detail-empty">{t("Click a node on the canvas to inspect its purpose.", "在画布上点一个节点，查看它的目的。")}</div>}
         </aside>
+        <div className="teleology-detail-legend" aria-label={t("Relation legend", "关系图例")}>
+          <i />{t("Confirmed", "已确认")}
+          <i className="is-proposed" />{t("AI suggestion", "AI建议")}
+          <span>WHY · Purpose · Constraint</span>
+        </div>
       </SideRail>
     </div>
     {review && <PurposeReview instance={instance} datasetId={datasetId} proposal={review} language={language} onClose={() => setReview(null)} onCommitted={() => { setReview(null); if (focusId) void enter(focusId); }} />}

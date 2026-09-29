@@ -69,9 +69,19 @@
 .teleology-detail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .teleology-detail-actions button { border: 1px solid rgba(255,255,255,.12); border-radius: 6px; background: #1b1b1f; color: #e8e7e4; padding: 5px 8px; font: inherit; font-size: 11px; cursor: pointer; }
 .teleology-detail-actions button:disabled { opacity: .45; cursor: default; }
-.teleology-canvas-legend { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: rgba(20,20,22,.88); border: 1px solid rgba(255,255,255,.08); color: rgba(232,231,228,.68); font-size: 11px; }
-.teleology-canvas-legend i { width: 18px; height: 0; border-top: 2px solid #63a8db; }
-.teleology-canvas-legend i.is-proposed { border-top-style: dashed; border-top-color: #9181d9; }
+.teleology-goal-review { margin: 14px 0; padding: 12px; border: 1px solid #615a83; border-radius: 8px; background: #201e29; color: #e8e7ef; font-size: 12px; }
+.teleology-goal-review-status { color: #baa8ff; font-weight: 700; margin-bottom: 10px; }
+.teleology-goal-review p { display: grid; gap: 4px; margin: 0 0 10px; line-height: 1.5; }
+.teleology-goal-review ul { margin: 6px 0 10px; padding-left: 18px; max-height: 130px; overflow: auto; }
+.teleology-goal-review li { margin: 4px 0; line-height: 1.4; }
+.teleology-goal-review-actions { display: flex; gap: 8px; margin: 12px 0 8px; }
+.teleology-goal-review-actions button { border: 1px solid #7568af; border-radius: 6px; background: #574a91; color: #fff; padding: 7px 10px; cursor: pointer; }
+.teleology-goal-review-actions button + button { background: transparent; }
+.teleology-goal-review-actions button:disabled { opacity: .5; cursor: default; }
+.teleology-goal-review small { color: #aaa7b7; line-height: 1.4; }
+.teleology-detail-legend { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 7px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,.08); color: rgba(232,231,228,.68); font-size: 11px; }
+.teleology-detail-legend i { width: 18px; height: 0; border-top: 2px solid #63a8db; }
+.teleology-detail-legend i.is-proposed { border-top-style: dashed; border-top-color: #9181d9; }
 .teleology-canvas-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: rgba(237,236,234,.45); font-size: 14px; }
 .teleology-focus-lane, .teleology-focus-center, .teleology-how { width: 100%; }
 .teleology-focus-lane > .onto-lane-caption, .teleology-how > .onto-lane-caption { text-align: center; }
@@ -553,6 +563,7 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .onto-side-left .onto-nav { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 12px 12px 8px; background: #141416; color: var(--onto-ink); overflow: hidden; }
 .onto-side-right { width: 340px; border-right: 0; border-left: 1px solid var(--onto-border); }
 .onto-side-right .onto-detail { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 14px; background: #141416; }
+.onto-side-right .teleology-node-detail { flex: 1; height: auto; }
 .onto-side-rail { display: flex; flex: none; flex-direction: column; align-items: center; width: 100%; height: 100%; padding: 10px 0; background: #141416; }
 .onto-panel-close { margin-left: auto; width: 28px; height: 28px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: rgba(232,231,228,.55); font-size: 18px; line-height: 1; cursor: pointer; }
 .onto-panel-close:hover { background: rgba(255,255,255,.08); color: #fff; }
@@ -566,6 +577,7 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .onto-canvas-toolbar .onto-btn { padding: 6px 9px; font-size: 11px; }
 .onto-toolbar-spacer { flex: 1; }
 .onto-zoom-group { display: inline-flex; border: 1px solid var(--onto-border); border-radius: 7px; overflow: hidden; flex: none; }
+.onto-canvas-toolbar .onto-zoom-group { margin-left: auto; }
 .onto-zoom-group button { border: 0; border-right: 1px solid var(--onto-border); background: transparent; color: #e8e7e4; min-width: 30px; height: 28px; cursor: pointer; }
 .onto-zoom-group button:nth-child(2) { min-width: 48px; font-size: 11px; }
 .onto-zoom-group button:last-child { border-right: 0; }
