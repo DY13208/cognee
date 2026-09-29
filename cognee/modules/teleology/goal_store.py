@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from cognee.modules.teleology.goal_model import GoalBuildError
+from cognee.modules.teleology.goal_tree import move_candidate, ordered_candidates
 
 
 def _now() -> datetime:
@@ -49,7 +50,12 @@ def present_run(row: dict[str, Any]) -> dict[str, Any]:
 
 def dataset_view(row: dict[str, Any] | None, candidates: list[dict[str, Any]]) -> dict[str, Any]:
     payload = dict((row or {}).get("payload") or {})
-    payload["candidates"] = _merge_candidate_flags(candidates, payload.get("candidates") or [])
+    merged = _merge_candidate_flags(candidates, payload.get("candidates") or [])
+    original_ids = {
+        str(goal.get("id")): index for index, goal in enumerate(payload.get("candidates") or [])
+    }
+    merged.sort(key=lambda goal: original_ids.get(str(goal.get("id")), len(original_ids)))
+    payload["candidates"] = ordered_candidates(merged)
     payload["committed"] = False
     payload["graph_committed"] = False
     payload.setdefault("dataset_id", str((row or {}).get("dataset_id") or ""))
@@ -70,21 +76,19 @@ def dataset_view(row: dict[str, Any] | None, candidates: list[dict[str, Any]]) -
         "relations",
         list((payload.get("teleology") or {}).get("relations") or payload.get("relations") or []),
     )
-    payload.setdefault(
-        "hierarchy",
-        [
-            {
-                "id": goal.get("id"),
-                "name": goal.get("name"),
-                "parent_candidate_id": goal.get("parent_candidate_id"),
-                "status": goal.get("status"),
-                "confidence": goal.get("confidence"),
-                "evidence_count": len(goal.get("evidence") or []),
-            }
-            for goal in candidates
-            if goal.get("status") != "rejected"
-        ],
-    )
+    payload["hierarchy"] = [
+        {
+            "id": goal.get("id"),
+            "name": goal.get("name"),
+            "parent_candidate_id": goal.get("parent_candidate_id"),
+            "status": goal.get("status"),
+            "confidence": goal.get("confidence"),
+            "evidence_count": len(goal.get("evidence") or []),
+            "sort_order": goal.get("sort_order"),
+        }
+        for goal in payload["candidates"]
+        if goal.get("status") != "rejected"
+    ]
     payload.setdefault("classifications", list(payload.get("classifications") or []))
     return payload
 
@@ -128,6 +132,21 @@ class MemoryGoalRunStore:
 
     async def save_result(self, result: dict[str, Any]) -> None:
         run_id = str(result["run_id"])
+        previous_run = self.runs.get(self.by_dataset.get(str(result["dataset_id"]), "")) or {}
+        previous = {str(goal["id"]): goal for goal in previous_run.get("candidates") or []}
+        candidates = [dict(goal) for goal in result.get("candidates") or []]
+        current_ids = {str(goal["id"]) for goal in candidates}
+        for goal in candidates:
+            prior = previous.get(str(goal["id"])) or {}
+            goal["sort_order"] = prior.get("sort_order")
+            goal["parent_override"] = bool(prior.get("parent_override"))
+            if goal["parent_override"] and (
+                not prior.get("parent_candidate_id")
+                or str(prior["parent_candidate_id"]) in current_ids
+            ):
+                goal["parent_candidate_id"] = prior.get("parent_candidate_id")
+            elif goal["parent_override"]:
+                goal["parent_override"] = False
         row = self.runs.get(run_id) or {
             "id": run_id,
             "dataset_id": str(result["dataset_id"]),
@@ -143,7 +162,7 @@ class MemoryGoalRunStore:
                 "source_count": result.get("source_count") or 0,
                 "candidate_count": result.get("canonical_goal_count") or 0,
                 "payload": payload,
-                "candidates": [dict(goal) for goal in result.get("candidates") or []],
+                "candidates": candidates,
             }
         )
         row.setdefault("created_at", _now())
@@ -236,6 +255,16 @@ class MemoryGoalRunStore:
         self.runs[run_id]["candidates"] = list(view["candidates"])
         self.runs[run_id]["payload"]["candidates"] = list(view["candidates"])
         return {"item": found, "graph_committed": False, "committed": False}
+
+    async def move_candidate(
+        self, dataset_id: Any, candidate_id: str, target_id: str | None, placement: str
+    ) -> dict[str, Any]:
+        run_id = self.by_dataset.get(str(dataset_id))
+        row = self.runs.get(run_id or "")
+        if row is None or row.get("status") != "completed":
+            raise GoalBuildError("AI Goal Model has not been built for this dataset", 404)
+        result = move_candidate(row["candidates"], candidate_id, target_id, placement)
+        return {**result, "graph_committed": False, "committed": False}
 
     async def set_teleology_status(
         self, dataset_id: Any, item_id: str, status: str, kind: str
@@ -379,7 +408,18 @@ class SqlGoalModelStore:
                 current.reason = goal.get("reason") or ""
                 current.source_node_ids = json.dumps(goal.get("source_node_ids") or [])
                 current.evidence = json.dumps(goal.get("evidence") or [], ensure_ascii=False)
-                current.parent_candidate_id = goal.get("parent_candidate_id")
+                kept_order = current.sort_order
+                if current.parent_override and (
+                    not current.parent_candidate_id or str(current.parent_candidate_id) in kept
+                ):
+                    pass
+                else:
+                    current.parent_candidate_id = goal.get("parent_candidate_id")
+                    current.parent_override = bool(goal.get("parent_override"))
+                if kept_order is not None:
+                    current.sort_order = kept_order
+                elif goal.get("sort_order") is not None:
+                    current.sort_order = int(goal["sort_order"])
                 current.status = goal.get("status") or "proposed"
                 current.run_id = str(result["run_id"])
                 current.generated_by = goal.get("generated_by") or "dataset_goal_build"
@@ -531,6 +571,48 @@ class SqlGoalModelStore:
             }
         raise GoalBuildError("Review item not found", 404)
 
+    async def move_candidate(
+        self, dataset_id: Any, candidate_id: str, target_id: str | None, placement: str
+    ) -> dict[str, Any]:
+        from cognee.modules.teleology.goal_model_models import TeleologyGoalCandidateRecord
+
+        dataset_uuid = _uuid(dataset_id)
+        if dataset_uuid is None:
+            raise GoalBuildError("dataset id must be a UUID")
+        view = await self.get_dataset(dataset_id)
+        if view is None:
+            raise GoalBuildError("AI Goal Model has not been built for this dataset", 404)
+        display_order = {
+            str(goal["id"]): index for index, goal in enumerate(view.get("candidates") or [])
+        }
+        async for session in self._session():
+            records = (
+                (
+                    await session.execute(
+                        select(TeleologyGoalCandidateRecord)
+                        .where(TeleologyGoalCandidateRecord.dataset_id == dataset_uuid)
+                        .with_for_update()
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if not records:
+                raise GoalBuildError("AI Goal Model has not been built for this dataset", 404)
+            candidates = [_candidate_dict(record) for record in records]
+            candidates.sort(key=lambda goal: display_order.get(str(goal["id"]), len(display_order)))
+            result = move_candidate(candidates, candidate_id, target_id, placement)
+            by_id = {str(goal["id"]): goal for goal in candidates}
+            for record in records:
+                goal = by_id[str(record.id)]
+                record.parent_candidate_id = goal.get("parent_candidate_id")
+                record.parent_override = bool(goal.get("parent_override"))
+                record.sort_order = goal.get("sort_order")
+                record.updated_at = _now()
+            await session.commit()
+            return {**result, "graph_committed": False, "committed": False}
+        raise GoalBuildError("AI Goal Model has not been built for this dataset", 404)
+
     async def set_teleology_status(
         self, dataset_id: Any, item_id: str, status: str, kind: str
     ) -> dict[str, Any]:
@@ -680,6 +762,8 @@ def _candidate_dict(record: Any) -> dict[str, Any]:
         "source_node_ids": source_ids,
         "evidence": evidence,
         "parent_candidate_id": record.parent_candidate_id,
+        "parent_override": bool(record.parent_override),
+        "sort_order": record.sort_order,
         "status": record.status,
         "outside_current_snapshot": record.status == "legacy_confirmed",
         "run_id": record.run_id,

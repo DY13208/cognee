@@ -124,6 +124,13 @@ async def review_goal_candidate(dataset_id: UUID, candidate_id: str, status: str
     return await get_goal_store().set_candidate_status(dataset_id, candidate_id, status)
 
 
+async def move_goal_candidate(
+    dataset_id: UUID, candidate_id: str, target_id: str | None, placement: str
+) -> dict[str, Any]:
+    """Persist a manual edit of the derived goal tree only."""
+    return await get_goal_store().move_candidate(dataset_id, candidate_id, target_id, placement)
+
+
 async def review_teleology_item(
     dataset_id: UUID, item_id: str, status: str, kind: str
 ) -> dict[str, Any]:

@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CogneeInstance } from "@/modules/instances/types";
-import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveWorkspaceGoal, reviewGoalCandidate, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GoalModelView, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
+import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveGoalCandidate, moveWorkspaceGoal, reviewGoalCandidate, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GoalModelView, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
 import { buildDerivedGoalTree, parseDataNodeId, type DerivedGoalTree } from "./derivedGoalTree";
+import { confirmGoalCandidates } from "./confirmGoalCandidates";
 import { notifications } from "@mantine/notifications";
-import NavPanel, { type GoalPage } from "./NavPanel";
+import NavPanel, { type GoalMovePlacement, type GoalPage } from "./NavPanel";
 import OntologyCanvas from "./OntologyCanvas";
 import GoalFocusDetail from "./GoalFocusDetail";
 import { buildPurposeNeighborhood } from "./purposeCanvas";
@@ -86,6 +87,10 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const [navStatuses, setNavStatuses] = useState<Record<string, string>>({});
   const [goalModel, setGoalModel] = useState<GoalModelView | null>(null);
   const [reviewingGoal, setReviewingGoal] = useState(false);
+  const [batchReviewOpen, setBatchReviewOpen] = useState(false);
+  const [batchProgress, setBatchProgress] = useState(0);
+  const [moveDialog, setMoveDialog] = useState<{ sourceId: string; targetId: string | null; placement: GoalMovePlacement; sourceName: string; parentName: string } | null>(null);
+  const [movingGoal, setMovingGoal] = useState(false);
   const [review, setReview] = useState<TeleologyProposal | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -191,7 +196,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [instance, datasetId, enter, language]);
 
   useEffect(() => {
-    requestId.current += 1; derivedRef.current = null; setGoalModel(null); setPendingId(null); setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]); setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null); setReview(null);
+    requestId.current += 1; derivedRef.current = null; setGoalModel(null); setBatchReviewOpen(false); setMoveDialog(null); setPendingId(null); setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]); setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null); setReview(null);
     if (datasetId) void loadRoots();
   }, [datasetId, loadRoots]);
 
@@ -264,6 +269,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [selectedId, focus, proposal, why, constraints]);
 
   const selectedCandidate = goalModel?.candidates.find((candidate) => candidate.id === detailGoalId) || null;
+  const proposedGoalIds = goalModel?.candidates.filter((candidate) => candidate.status === "proposed").map((candidate) => candidate.id) || [];
 
   const selectedEntity = useMemo(() => {
     const found = [focus, parent, ...why, ...children, ...path, ...roots].find((goal) => goal?.id === selectedId);
@@ -314,6 +320,72 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     } catch (cause) {
       notifications.show({ title: t("Review failed", "审核失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" });
     } finally { setReviewingGoal(false); }
+  }
+
+  async function reviewAllProposedGoals() {
+    if (!datasetId || reviewingGoal || proposedGoalIds.length === 0) return;
+    const ids = [...proposedGoalIds];
+    const currentFocusId = focusId;
+    setBatchReviewOpen(false);
+    setBatchProgress(0);
+    setReviewingGoal(true);
+    try {
+      const result = await confirmGoalCandidates(instance, datasetId, ids, setBatchProgress);
+      const model = await getGoalModel(instance, datasetId);
+      const tree = buildDerivedGoalTree(model, language);
+      derivedRef.current = tree;
+      setGoalModel(model);
+      setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
+      if (currentFocusId && tree.byId.has(currentFocusId)) await enter(currentFocusId);
+      notifications.show({
+        title: result.failed.length ? t("Batch review partly completed", "批量确认部分完成") : t("Batch review complete", "批量确认完成"),
+        message: result.failed.length
+          ? t(`${result.confirmed} confirmed, ${result.failed.length} failed. ${result.failed[0].error}`, `已确认 ${result.confirmed} 个，失败 ${result.failed.length} 个：${result.failed[0].error}`)
+          : t(`${result.confirmed} goals confirmed`, `已确认 ${result.confirmed} 个目标`),
+        color: result.failed.length ? "red" : "green",
+      });
+    } catch (cause) {
+      notifications.show({ title: t("Batch review failed", "批量确认失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" });
+    } finally { setReviewingGoal(false); setBatchProgress(0); }
+  }
+
+  function requestGoalMove(sourceId: string, targetId: string | null, placement: GoalMovePlacement) {
+    if (!goalModel || movingGoal || sourceId === targetId) return;
+    const candidates = new Map(goalModel.candidates.map((candidate) => [candidate.id, candidate]));
+    const source = candidates.get(sourceId);
+    const target = targetId ? candidates.get(targetId) : null;
+    if (!source || (targetId && !target)) return;
+    const parentId = placement === "inside" ? targetId : placement === "root" ? null : target?.parent_candidate_id || null;
+    const oldParentId = source.parent_candidate_id || null;
+    const move = { sourceId, targetId, placement, sourceName: source.name, parentName: parentId ? candidates.get(parentId)?.name || parentId : t("Top level", "顶层") };
+    let ancestor = parentId;
+    const seen = new Set<string>();
+    while (ancestor && !seen.has(ancestor)) {
+      if (ancestor === sourceId) {
+        notifications.show({ title: t("Cannot move goal", "无法移动目标"), message: t("A goal cannot become its own descendant.", "不能将目标移动到自己的子级下面。"), color: "red" });
+        return;
+      }
+      seen.add(ancestor);
+      ancestor = candidates.get(ancestor)?.parent_candidate_id || null;
+    }
+    if (oldParentId !== parentId) setMoveDialog(move);
+    else void applyGoalMove(move);
+  }
+
+  async function applyGoalMove(move: { sourceId: string; targetId: string | null; placement: GoalMovePlacement }) {
+    setMovingGoal(true);
+    try {
+      await moveGoalCandidate(instance, datasetId, move.sourceId, { target_id: move.targetId, placement: move.placement });
+      const model = await getGoalModel(instance, datasetId);
+      const tree = buildDerivedGoalTree(model, language);
+      derivedRef.current = tree;
+      setGoalModel(model);
+      setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
+      await enter(move.sourceId);
+      notifications.show({ title: t("Goal moved", "目标位置已更新"), message: "", color: "green" });
+    } catch (cause) {
+      notifications.show({ title: t("Move failed", "移动失败"), message: cause instanceof Error ? cause.message : String(cause), color: "red" });
+    } finally { setMovingGoal(false); }
   }
 
   function createChild(id: string) {
@@ -461,8 +533,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
         <button type="button" className="onto-btn onto-btn-code" disabled={busy || !datasetId} onClick={() => void syncYaml()}>{t("Sync YAML", "同步 YAML")}</button>
     </>, dataActionsHost)}
     <div className="onto-body">
-      <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t("Expand goal tree", "展开目标目录")}>
-        <NavPanel language={language} roots={roots} pages={pages} focusId={pendingId || focusId} pathIds={path.map((goal) => goal.id)} loading={loading} statuses={navStatuses} emptyLabel={t("No derived goals yet. The company tree stays as data and is not listed as goals.", "还没有派生目标。公司树留在数据层，不会被列成目标。")} onPick={(id, goal) => void enter(id, goal)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
+      <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t("Expand goal tree", "展开目标目录")} resizeLabel={t("Resize goal navigation", "调整目标导航宽度")}>
+        <NavPanel language={language} roots={roots} pages={pages} focusId={pendingId || focusId} pathIds={path.map((goal) => goal.id)} loading={loading} statuses={navStatuses} emptyLabel={t("No derived goals yet. The company tree stays as data and is not listed as goals.", "还没有派生目标。公司树留在数据层，不会被列成目标。")} onPick={(id, goal) => void enter(id, goal)} onExpand={expand} onSearch={search} onMoveGoal={requestGoalMove} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
       </SideRail>
       <main className="onto-main onto-focus-main">
         {error && <div className="onto-focus-error" role="alert">{error}</div>}
@@ -505,6 +577,9 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="onto-detail-kind">{t("Node detail", "节点详情")}</div>
               <div className="onto-detail-title">{selectedEntity?.name || focus?.name || t("Purpose", "目的")}</div>
+              {goalModel && <button type="button" className="teleology-batch-review-button" disabled={reviewingGoal || proposedGoalIds.length === 0} onClick={() => setBatchReviewOpen(true)}>
+                {reviewingGoal && batchProgress > 0 ? t(`Confirming ${batchProgress}/${proposedGoalIds.length}…`, `确认中 ${batchProgress}/${proposedGoalIds.length}…`) : t(`Confirm pending goals (${proposedGoalIds.length})`, `批量确认待确认目标（${proposedGoalIds.length}）`)}
+              </button>}
             </div>
             <button type="button" className="onto-panel-close" onClick={() => setRightOpen(false)} aria-label={t("Collapse details", "收起目标详情")}>×</button>
           </div>
@@ -553,6 +628,24 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
       </SideRail>
     </div>
     {review && <PurposeReview instance={instance} datasetId={datasetId} proposal={review} language={language} onClose={() => setReview(null)} onCommitted={() => { setReview(null); if (focusId) void enter(focusId); }} />}
+    <AppDialog
+      opened={batchReviewOpen}
+      title={t("Confirm all pending goals?", "确认全部待确认目标？")}
+      description={t(`This confirms all ${proposedGoalIds.length} pending goals in this dataset.`, `将确认当前数据集中的全部 ${proposedGoalIds.length} 个待确认目标。`)}
+      confirmLabel={t(`Confirm ${proposedGoalIds.length} goals`, `确认 ${proposedGoalIds.length} 个目标`)}
+      cancelLabel={t("Cancel", "取消")}
+      onCancel={() => setBatchReviewOpen(false)}
+      onConfirm={() => void reviewAllProposedGoals()}
+    />
+    <AppDialog
+      opened={moveDialog !== null}
+      title={t("Change goal hierarchy?", "调整目标层级？")}
+      description={moveDialog ? t(`Move “${moveDialog.sourceName}” under “${moveDialog.parentName}”? The goal's review status stays the same.`, `将“${moveDialog.sourceName}”移动到“${moveDialog.parentName}”下？目标的确认状态不会改变。`) : undefined}
+      confirmLabel={t("Move goal", "确认移动")}
+      cancelLabel={t("Cancel", "取消")}
+      onCancel={() => setMoveDialog(null)}
+      onConfirm={() => { const move = moveDialog; setMoveDialog(null); if (move) void applyGoalMove(move); }}
+    />
     {drawer && <div className="onto-drawer-backdrop" onMouseDown={() => setDrawer(null)}><aside className="onto-drawer" onMouseDown={(event) => event.stopPropagation()}><header><strong>{drawer === "children" ? t("Browse subgoals", "浏览子目标") : drawer === "path" ? t("Goal path", "目标路径") : t("Purpose relations", "目的关系")}</strong><button type="button" onClick={() => setDrawer(null)}>×</button></header>
       {drawer === "children" && <><input value={drawerQuery} onChange={(event) => { setDrawerQuery(event.target.value); setDrawerOffset(0); }} placeholder={t("Search subgoals", "搜索子目标")} /><div className="onto-drawer-list">{drawerLoading ? t("Loading…", "加载中…") : drawerPage.map((goal) => <button type="button" key={goal.id} onClick={() => { setDrawer(null); void enter(goal.id); }}>◎ {goal.name}<small>{goal.child_count || 0} {t("subgoals", "个子目标")}</small></button>)}</div><footer><button type="button" disabled={drawerOffset === 0} onClick={() => setDrawerOffset(Math.max(0, drawerOffset - PAGE))}>{t("Previous", "上一页")}</button><span>{drawerOffset + 1}–{Math.min(drawerOffset + PAGE, drawerTotal)} / {drawerTotal}</span><button type="button" disabled={drawerOffset + PAGE >= drawerTotal} onClick={() => setDrawerOffset(drawerOffset + PAGE)}>{t("Next", "下一页")}</button></footer></>}
       {drawer === "path" && <div className="onto-drawer-list">{drawerPath.map((goal) => <button type="button" key={goal.id} onClick={() => { setDrawer(null); void enter(goal.id); }}>◎ {goal.name}</button>)}</div>}

@@ -25,6 +25,7 @@ from cognee.modules.teleology.coverage_service import (
 from cognee.modules.teleology.goal_build import (
     get_build_status,
     list_goal_model_runs,
+    move_goal_candidate,
     read_goal_model,
     review_goal_candidate,
     review_teleology_item,
@@ -177,6 +178,12 @@ class TeleologyBuildCreate(InDTO):
 class GoalCandidateReview(InDTO):
     dataset_id: UUID
     status: Literal["proposed", "confirmed", "rejected"]
+
+
+class GoalCandidateMove(InDTO):
+    dataset_id: UUID
+    target_id: Optional[str] = None
+    placement: Literal["before", "after", "inside", "root"]
 
 
 class GoalTeleologyReview(InDTO):
@@ -994,6 +1001,21 @@ def get_teleology_router() -> APIRouter:
         await _authorized_dataset(payload.dataset_id, user, "write")
         try:
             return await review_goal_candidate(payload.dataset_id, candidate_id, payload.status)
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/goal-model/candidates/{candidate_id}/move", response_model=dict)
+    async def move_ai_goal_candidate(
+        candidate_id: str,
+        payload: GoalCandidateMove,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Move a derived goal in its dataset tree without changing the company tree."""
+        await _authorized_dataset(payload.dataset_id, user, "write")
+        try:
+            return await move_goal_candidate(
+                payload.dataset_id, candidate_id, payload.target_id, payload.placement
+            )
         except GoalBuildError as exc:
             return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
 

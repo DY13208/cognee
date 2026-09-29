@@ -616,6 +616,7 @@ export interface GoalCandidate {
   source_node_ids: string[];
   evidence: GoalEvidence[];
   parent_candidate_id: string | null;
+  sort_order?: number | null;
   status: "proposed" | "confirmed" | "rejected";
   run_id: string;
   generated_by: string;
@@ -649,6 +650,7 @@ export interface GoalModelView {
     id: string;
     name: string;
     parent_candidate_id: string | null;
+    sort_order?: number | null;
     status: string;
     confidence: number;
     evidence_count: number;
@@ -709,6 +711,21 @@ export async function reviewGoalCandidate(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dataset_id: datasetId, status }),
+  });
+  if (!resp.ok) throw new Error(await readError(resp));
+  return resp.json();
+}
+
+export async function moveGoalCandidate(
+  instance: CogneeInstance,
+  datasetId: string,
+  candidateId: string,
+  input: { target_id: string | null; placement: "before" | "after" | "inside" | "root" },
+): Promise<{ parent_candidate_id: string | null; parent_changed: boolean; sort_order: number }> {
+  const resp = await instance.fetch(`/v1/teleology/goal-model/candidates/${encodeURIComponent(candidateId)}/move`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset_id: datasetId, ...input }),
   });
   if (!resp.ok) throw new Error(await readError(resp));
   return resp.json();

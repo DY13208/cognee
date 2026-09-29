@@ -1,5 +1,5 @@
-import { reviewGoalCandidate } from "@/modules/teleology/teleologyApi";
 import type { CogneeInstance } from "@/modules/instances/types";
+import { reviewGoalCandidate } from "@/modules/teleology/teleologyApi";
 
 export async function confirmGoalCandidates(
   instance: CogneeInstance,
@@ -7,8 +7,8 @@ export async function confirmGoalCandidates(
   candidateIds: string[],
   onProgress?: (completed: number) => void,
 ) {
-  const failed: { id: string; error: string }[] = [];
   let confirmed = 0;
+  const failed: { id: string; error: string }[] = [];
   for (const [index, id] of candidateIds.entries()) {
     try {
       await reviewGoalCandidate(instance, datasetId, id, "confirmed");

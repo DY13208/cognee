@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { GraphNodeSummary } from "@/modules/teleology/teleologyApi";
 
 function GoalMark({ depth }: { depth: number }) {
@@ -19,8 +19,9 @@ function GoalMark({ depth }: { depth: number }) {
 
 export type GoalTreeNode = { id: string; name: string; children: GoalTreeNode[] };
 export type GoalPage = { items: GraphNodeSummary[]; total: number; loading: boolean; loaded?: boolean; nextOffset?: number };
+export type GoalMovePlacement = "before" | "after" | "inside" | "root";
 
-export default function NavPanel({ language, roots, pages, focusId, pathIds, loading, statuses = {}, onPick, onExpand, onSearch, onClose, hasMoreRoots, onLoadMoreRoots, emptyLabel }: {
+export default function NavPanel({ language, roots, pages, focusId, pathIds, loading, statuses = {}, onPick, onExpand, onSearch, onMoveGoal, onClose, hasMoreRoots, onLoadMoreRoots, emptyLabel }: {
   language: "zh" | "en";
   roots: GraphNodeSummary[];
   pages: Record<string, GoalPage>;
@@ -31,6 +32,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   onPick: (id: string, goal: GraphNodeSummary) => void;
   onExpand: (id: string, more?: boolean) => void;
   onSearch: (query: string) => Promise<GraphNodeSummary[]>;
+  onMoveGoal?: (sourceId: string, targetId: string | null, placement: GoalMovePlacement) => void;
   onClose?: () => void;
   hasMoreRoots?: boolean;
   onLoadMoreRoots?: () => void;
@@ -41,6 +43,8 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   const [searchOpen, setSearchOpen] = useState(false);
   const [results, setResults] = useState<GraphNodeSummary[]>([]);
   const [searching, setSearching] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropHint, setDropHint] = useState<{ id: string; placement: GoalMovePlacement } | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { setOpen((old) => new Set([...old, ...pathIds])); }, [pathIds]);
@@ -55,12 +59,41 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   }, [query, onSearch]);
   const t = (en: string, zh: string) => language === "zh" ? zh : en;
 
+  function placementAt(event: DragEvent<HTMLElement>): GoalMovePlacement {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientY - rect.top) / Math.max(rect.height, 1);
+    return ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "inside";
+  }
+
   function item(goal: GraphNodeSummary, depth: number): React.ReactNode {
     const expanded = open.has(goal.id);
     const page = pages[goal.id];
     const count = goal.child_count ?? page?.total ?? 0;
     return <div key={goal.id} role="treeitem" aria-expanded={count ? expanded : undefined} aria-selected={focusId === goal.id}>
-      <div className={`onto-file-row${focusId === goal.id ? " is-selected" : ""}`} style={{ paddingLeft: depth * 16 + 8 }}>
+      <div
+        className={`onto-file-row${focusId === goal.id ? " is-selected" : ""}${draggingId === goal.id ? " is-dragging" : ""}${dropHint?.id === goal.id ? ` is-drop-${dropHint.placement}` : ""}`}
+        style={{ paddingLeft: depth * 16 + 8 }}
+        draggable={Boolean(onMoveGoal && goal.source === "derived_goal")}
+        onDragStart={(event) => {
+          if (!onMoveGoal || goal.source !== "derived_goal") return;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", goal.id);
+          setDraggingId(goal.id);
+        }}
+        onDragOver={(event) => {
+          if (!onMoveGoal || !draggingId || draggingId === goal.id || goal.source !== "derived_goal") return;
+          event.preventDefault(); event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+          setDropHint({ id: goal.id, placement: placementAt(event) });
+        }}
+        onDrop={(event) => {
+          if (!onMoveGoal || !draggingId || goal.source !== "derived_goal") return;
+          event.preventDefault(); event.stopPropagation();
+          if (draggingId !== goal.id) onMoveGoal(draggingId, goal.id, placementAt(event));
+          setDraggingId(null); setDropHint(null);
+        }}
+        onDragEnd={() => { setDraggingId(null); setDropHint(null); }}
+      >
         {count ? (
           <button type="button" className={`onto-file-chevron${expanded ? " is-open" : ""}`} aria-label={expanded ? t("Collapse", "收起") : t("Expand", "展开")} onClick={() => {
             const next = new Set(open);
@@ -115,6 +148,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
     </div>
     <div className="onto-file-list" role="tree">
       {query.trim() ? searching ? <div className="onto-nav-loading">{t("Searching…", "搜索中…")}</div> : results.length ? results.map((goal) => <button type="button" className="onto-nav-result" key={goal.id} onClick={() => { onPick(goal.id, goal); setQuery(""); setResults([]); setSearchOpen(false); }}><span className="onto-file-icon" aria-hidden><GoalMark depth={0} /></span><span>{goal.name}</span><small>{goal.parent_name || t("Root goal", "根目标")}</small></button>) : <div className="onto-nav-loading">{t("No matching goals", "没有匹配的目标")}</div> : loading && !roots.length ? <div className="onto-nav-loading">{t("Loading roots…", "加载根目标中…")}</div> : roots.length ? <>{roots.map((goal) => item(goal, 0))}{hasMoreRoots && <button type="button" className="onto-nav-more" onClick={onLoadMoreRoots}>{t("Load more roots", "加载更多根目标")}</button>}</> : <div className="onto-nav-loading">{emptyLabel || t("No derived goals yet.", "还没有派生目标。")}</div>}
+      {draggingId && onMoveGoal && <div className={`onto-nav-root-drop${dropHint?.id === "__root__" ? " is-active" : ""}`} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); setDropHint({ id: "__root__", placement: "root" }); }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); onMoveGoal(draggingId, null, "root"); setDraggingId(null); setDropHint(null); }}>{t("Move to top level", "移到顶层")}</div>}
     </div>
   </aside>;
 }

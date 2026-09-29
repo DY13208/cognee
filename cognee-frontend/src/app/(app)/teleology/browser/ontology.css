@@ -78,6 +78,8 @@
 .teleology-goal-review-actions button { border: 1px solid #7568af; border-radius: 6px; background: #574a91; color: #fff; padding: 7px 10px; cursor: pointer; }
 .teleology-goal-review-actions button + button { background: transparent; }
 .teleology-goal-review-actions button:disabled { opacity: .5; cursor: default; }
+.teleology-batch-review-button { display: block; max-width: 100%; margin-top: 10px; padding: 7px 10px; border: 1px solid #7568af; border-radius: 6px; background: #574a91; color: #fff; font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
+.teleology-batch-review-button:disabled { opacity: .5; cursor: default; }
 .teleology-goal-review small { color: #aaa7b7; line-height: 1.4; }
 .teleology-detail-legend { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 7px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,.08); color: rgba(232,231,228,.68); font-size: 11px; }
 .teleology-detail-legend i { width: 18px; height: 0; border-top: 2px solid #63a8db; }
@@ -330,6 +332,14 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .onto-file-row { position: relative; display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 4px 8px; border-radius: 6px; transition: background 200ms ease; }
 .onto-file-row.is-hovered { background: rgba(124,140,255,0.12); }
 .onto-file-row.is-selected { background: rgba(124,140,255,0.22); }
+.onto-file-row[draggable="true"] { cursor: grab; }
+.onto-file-row.is-dragging { opacity: .45; cursor: grabbing; }
+.onto-file-row.is-drop-inside { outline: 1px solid #8c9cff; background: rgba(124,140,255,.22); }
+.onto-file-row.is-drop-before::before, .onto-file-row.is-drop-after::after { content: ""; position: absolute; z-index: 3; left: 4px; right: 4px; height: 2px; background: #8c9cff; }
+.onto-file-row.is-drop-before::before { top: 0; }
+.onto-file-row.is-drop-after::after { bottom: 0; }
+.onto-nav-root-drop { margin: 8px; padding: 10px; border: 1px dashed #6678b8; border-radius: 6px; color: #aebae0; font-size: 11px; text-align: center; }
+.onto-nav-root-drop.is-active { border-color: #a6b2ff; background: rgba(124,140,255,.18); }
 .onto-file-guide { position: absolute; top: 0; bottom: 0; display: flex; }
 .onto-file-guide > div { width: 1px; background: rgba(255,255,255,0.15); transition: background 200ms ease; }
 .onto-file-row.is-hovered .onto-file-guide > div { background: rgba(124,140,255,0.4); }
@@ -590,6 +600,11 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 /* Panels are translucent rather than painted #141416, so the shell's grid reads
    through them exactly like the navbar / search panels do. */
 .onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: rgba(20, 20, 22, 0.72); box-shadow: none; overflow: hidden; transition: width 180ms ease; }
+.onto-side-container.is-resizing { transition: none; }
+.onto-side-resize-handle { position: absolute; z-index: 10; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
+.onto-side-resize-handle::after { content: ""; position: absolute; top: 0; right: 2px; bottom: 0; width: 2px; background: transparent; }
+.onto-side-resize-handle:hover::after, .onto-side-resize-handle:focus-visible::after, .onto-side-container.is-resizing .onto-side-resize-handle::after { background: #7988c9; }
+.onto-side-resize-handle:focus-visible { outline: 2px solid #7988c9; outline-offset: -2px; }
 .onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: rgba(20, 20, 22, 0.72); }
 .onto-side-left .onto-nav { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 12px 12px 8px; background: transparent; color: var(--onto-ink); overflow: hidden; }
 .onto-side-right { width: 340px; border-right: 0; border-left: 1px solid var(--onto-border); }

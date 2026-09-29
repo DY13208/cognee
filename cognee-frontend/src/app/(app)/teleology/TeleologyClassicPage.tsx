@@ -1228,7 +1228,7 @@ export default function TeleologyClassicPage() {
       ) : null}
 
       <div className="onto-body">
-        <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t(language, "Expand goal tree", "展开目标目录")}>
+        <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t(language, "Expand goal tree", "展开目标目录")} resizeLabel={t(language, "Resize goal navigation", "调整目标导航宽度")}>
           <GoalNav
             language={language === "zh" ? "zh" : "en"}
             roots={navRoots}

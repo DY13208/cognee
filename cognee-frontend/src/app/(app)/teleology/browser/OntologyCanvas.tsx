@@ -36,8 +36,8 @@ type PanState = {
   pointerId: number;
   startClientX: number;
   startClientY: number;
-  scrollLeft: number;
-  scrollTop: number;
+  startX: number;
+  startY: number;
 };
 
 type LayoutResult = {
@@ -110,12 +110,14 @@ export default function OntologyCanvas({
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set());
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [panning, setPanning] = useState(false);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const lastGoodLayout = useRef<LayoutResult | null>(null);
   const didDragRef = useRef(false);
 
   // Reset manual positions when the focus neighbourhood changes.
   useEffect(() => {
     setOffsets({});
+    setPanOffset({ x: 0, y: 0 });
     dragRef.current = null;
     marqueeRef.current = null;
     setMarquee(null);
@@ -231,11 +233,7 @@ export default function OntologyCanvas({
   const onPointerMove = useCallback((e: PointerEvent) => {
     const pan = panRef.current;
     if (pan && e.pointerId === pan.pointerId) {
-      const el = wrapRef.current;
-      if (el) {
-        el.scrollLeft = pan.scrollLeft - (e.clientX - pan.startClientX);
-        el.scrollTop = pan.scrollTop - (e.clientY - pan.startClientY);
-      }
+      setPanOffset({ x: pan.startX + e.clientX - pan.startClientX, y: pan.startY + e.clientY - pan.startClientY });
       return;
     }
     const selection = marqueeRef.current;
@@ -310,14 +308,29 @@ export default function OntologyCanvas({
         }, 0);
       }
     },
-    [onPointerMove, onWindowMove, onWindowEnd],
+    [onWindowMove, onWindowEnd],
   );
 
   const startCanvasPointerDown = useCallback(
     (e: ReactPointerEvent) => {
-      if ((e.target as Element).closest(".onto-entity-card, button, input")) return;
       const el = wrapRef.current;
       if (!el) return;
+      if (e.button === 2 || e.button === 1) {
+        e.preventDefault();
+        panRef.current = {
+          pointerId: e.pointerId,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startX: panOffset.x,
+          startY: panOffset.y,
+        };
+        setPanning(true);
+        window.addEventListener("pointermove", onWindowMove);
+        window.addEventListener("pointerup", onWindowEnd);
+        window.addEventListener("pointercancel", onWindowEnd);
+        return;
+      }
+      if ((e.target as Element).closest(".onto-entity-card, button, input")) return;
       if (e.button === 0) {
         const content = contentRef.current;
         if (!content) return;
@@ -332,22 +345,8 @@ export default function OntologyCanvas({
         window.addEventListener("pointercancel", onWindowEnd);
         return;
       }
-      // Middle or right button keeps canvas panning available.
-      if (e.button !== 2 && e.button !== 1) return;
-      e.preventDefault();
-      panRef.current = {
-        pointerId: e.pointerId,
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-        scrollLeft: el.scrollLeft,
-        scrollTop: el.scrollTop,
-      };
-      setPanning(true);
-      window.addEventListener("pointermove", onWindowMove);
-      window.addEventListener("pointerup", onWindowEnd);
-      window.addEventListener("pointercancel", onWindowEnd);
     },
-    [onWindowMove, onWindowEnd, zoom],
+    [onWindowMove, onWindowEnd, panOffset, zoom],
   );
 
   const startDrag = useCallback(
@@ -497,6 +496,7 @@ export default function OntologyCanvas({
             minWidth: "100%",
             minHeight: "100%",
             zoom,
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px)`,
             opacity: loading ? 0.88 : 1,
             transition: "opacity 160ms ease",
           }}

@@ -4,7 +4,7 @@ import { confirmGoalCandidates } from "./confirmGoalCandidates";
 
 jest.mock("@/modules/teleology/teleologyApi", () => ({ reviewGoalCandidate: jest.fn() }));
 
-it("continues after an individual review fails and reports partial success", async () => {
+it("continues after one review fails and reports partial success", async () => {
   const instance = { fetch: jest.fn() } as unknown as CogneeInstance;
   const progress: number[] = [];
   jest.mocked(reviewGoalCandidate)

@@ -8,7 +8,7 @@ this schema is migrated.
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import UUID, Column, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import UUID, Boolean, Column, DateTime, Float, Index, Integer, String, Text
 
 from cognee.infrastructure.databases.relational import Base
 
@@ -49,6 +49,8 @@ class TeleologyGoalCandidateRecord(Base):
     source_node_ids = Column(Text, nullable=False, default="[]")
     evidence = Column(Text, nullable=False, default="[]")
     parent_candidate_id = Column(String(64), nullable=True)
+    parent_override = Column(Boolean, nullable=False, default=False)
+    sort_order = Column(Integer, nullable=True)
     status = Column(String(32), nullable=False, default="proposed")
     run_id = Column(String(64), nullable=False)
     generated_by = Column(String(64), nullable=False)
