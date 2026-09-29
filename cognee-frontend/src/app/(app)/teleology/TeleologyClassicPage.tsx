@@ -19,8 +19,8 @@ import {
   getGoalRelations,
   getPurposeContext,
   getLatestOpenGoalProposal,
-  listTeleologyProposals,
   getGoalPath,
+  getGoalModel,
   syncTeleologyGoals,
   syncTeleologyFromCompanyTree,
   createGraphAnnotation,
@@ -35,7 +35,6 @@ import {
   type GraphNodeSummary,
   type PurposeContext,
   type TeleologyProposal,
-  type TeleologyProposalSummary,
 } from "@/modules/teleology/teleologyApi";
 import PageLoading from "@/ui/elements/PageLoading";
 import DeleteConfirmModal from "@/ui/elements/DeleteConfirmModal";
@@ -49,6 +48,7 @@ import PurposeLensGraph, {
 import { notifications } from "@mantine/notifications";
 import { t, useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 import GoalNav, { type GoalPage } from "./browser/NavPanel";
+import { buildDerivedGoalTree, parseDataNodeId, type DerivedGoalTree } from "./browser/derivedGoalTree";
 import GoalFocusDetail from "./browser/GoalFocusDetail";
 import { shouldShowFocusDetail } from "./browser/TeleologyFocusMap";
 import PurposeReview from "./browser/PurposeReview";
@@ -181,9 +181,35 @@ export default function TeleologyClassicPage() {
   } | null>(null);
 
   const datasetId = selectedDataset?.id || datasets[0]?.id || "";
+  const derivedTreeRef = useRef<DerivedGoalTree | null>(null);
 
   useEffect(() => {
     if (!cogniInstance || !datasetId || !lensGoalId) return;
+    const tree = derivedTreeRef.current;
+    if (tree?.byId.get(lensGoalId)?.source === "derived_goal") {
+      const focus = tree.focus(lensGoalId);
+      if (!focus) return;
+      setFocusContext({
+        dataset_id: datasetId,
+        goal: focus.goal,
+        ancestors: tree.path(lensGoalId).slice(0, -1),
+        children: focus.children,
+        children_total: focus.children.length,
+        note: focus.goal.description,
+        purposes: focus.purposes,
+        constraints: focus.constraints,
+        relations: [],
+        entities: focus.children,
+        documents: [],
+        source: "ai_goal_model",
+        revision: lensGoalId,
+        missing_purpose: focus.purposes.length === 0,
+      });
+      setFocusRelations(focus.relations);
+      setFocusProposal(null);
+      setLoadError(null);
+      return;
+    }
     let active = true;
     setFocusContext(null); setFocusRelations([]); setFocusProposal(null);
     void getPurposeContext(cogniInstance, datasetId, lensGoalId)
@@ -199,33 +225,32 @@ export default function TeleologyClassicPage() {
   }, [cogniInstance, datasetId, lensGoalId, focusRevision]);
 
   useEffect(() => {
-    if (!cogniInstance || !datasetId || loading) return;
+    if (!cogniInstance || !datasetId) return;
     let active = true;
-    setClassicNavStatuses({});
-    void (async () => {
-      const summaries: TeleologyProposalSummary[] = [];
-      let offset = 0;
-      let total = 0;
-      do {
-        const page = await listTeleologyProposals(cogniInstance, datasetId, { status: "open", limit: 200, offset });
-        summaries.push(...page.items);
-        total = page.total;
-        offset += page.items.length;
-      } while (active && offset < total && offset < 2000 && total > offset);
-      if (!active) return;
-      const latest = new Map<string, TeleologyProposalSummary>();
-      for (const item of summaries) {
-        const prior = latest.get(item.source_goal_id);
-        if (!prior || (prior.generated_by !== "purpose-agent" && item.generated_by === "purpose-agent")) latest.set(item.source_goal_id, item);
-      }
-      const statuses: Record<string, string> = {};
-      const committed = await listTeleologyProposals(cogniInstance, datasetId, { status: "committed", limit: 200 });
-      for (const item of committed.items) statuses[item.source_goal_id] = t(language, "Confirmed", "已确认");
-      for (const [id, item] of latest) statuses[id] = item.items_count ? t(language, `AI suggestions ${item.items_count}`, `AI建议 ${item.items_count}`) : t(language, "Insufficient evidence", "无充分证据");
-      if (active) setClassicNavStatuses((old) => ({ ...statuses, ...old }));
-    })().catch((cause) => { if (active) setLoadError(cause instanceof Error ? cause.message : String(cause)); });
+    setLoading(true);
+    void getGoalModel(cogniInstance, datasetId)
+      .then((model) => {
+        if (!active) return;
+        const tree = buildDerivedGoalTree(model, language === "zh" ? "zh" : "en");
+        derivedTreeRef.current = tree;
+        setNavRoots(tree.roots);
+        setNavPages(tree.pages);
+        setClassicNavStatuses(tree.statuses);
+        const first = tree.roots[0];
+        if (first) {
+          setLensGoalId(first.id);
+          setSelectedGoal(first);
+          setNavPath(tree.pathIds(first.id));
+        } else {
+          setLensGoalId("");
+          setSelectedGoal(null);
+          setGraph(null);
+        }
+      })
+      .catch((cause) => { if (active) setLoadError(cause instanceof Error ? cause.message : String(cause)); })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [cogniInstance, datasetId, language, loading]);
+  }, [cogniInstance, datasetId, language]);
 
   useEffect(() => {
     if (!lensGoalId) return;
@@ -234,6 +259,7 @@ export default function TeleologyClassicPage() {
     const confirmedLabel = confirmed ? t(language, `Confirmed ${confirmed}`, `已确认 ${confirmed}`) : "";
     const candidateLabel = candidates ? t(language, `AI suggestions ${candidates}`, `AI建议 ${candidates}`) : "";
     const label = [confirmedLabel, candidateLabel].filter(Boolean).join(" · ") || (focusProposal ? t(language, "Insufficient evidence", "无充分证据") : null);
+    if (derivedTreeRef.current?.byId.get(lensGoalId)?.source === "derived_goal") return;
     if (label) setClassicNavStatuses((old) => ({ ...old, [lensGoalId]: label }));
   }, [lensGoalId, focusContext, focusRelations, focusProposal, language]);
 
@@ -255,41 +281,15 @@ export default function TeleologyClassicPage() {
     setLoadError(null);
     try {
       // Roots only. Expanding a row loads its direct children; the canvas loads the focused goal.
-      const [yaml, roots] = await Promise.all([
-        getTeleology(cogniInstance, { limit: 40 }).catch(() => null),
-        getGraphAnnotations(cogniInstance, datasetId, {
-          parentId: "_roots",
-          goalsLimit: 30,
-          limit: 1,
-        }),
-      ]);
+      const yaml = await getTeleology(cogniInstance, { limit: 40 }).catch(() => null);
       if (yaml) setStatus(yaml);
       setBrainNodes([]);
-      setNavPages({});
-      const rootGoals = roots.goals || [];
-      setNavRoots(rootGoals);
-      const known = rootGoals.some((goal) => goal.id === lensGoalId);
-      const first = known ? rootGoals.find((goal) => goal.id === lensGoalId) : rootGoals[0];
-      if (first) {
-        if (!known) setLensGoalId(first.id);
-        setSelectedGoal({
-          ...first,
-          name: displayName(first.name, first.id),
-          description: displayName(first.description || ""),
-        });
-        if (!known) setNavPath([first.id]);
-        setGoalHits([]);
-      } else {
-        setGraph(null);
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setLoadError(msg);
       setGraph(null);
-    } finally {
-      setLoading(false);
     }
-  }, [cogniInstance, datasetId, lensGoalId]);
+  }, [cogniInstance, datasetId]);
 
   const searchGoals = useCallback(
     async (query: string, opts?: { parentId?: string; mode?: "browse" | "search" }) => {
@@ -363,18 +363,24 @@ export default function TeleologyClassicPage() {
   }, [cogniInstance, datasetId]);
 
   const searchNav = useCallback(async (query: string) => {
-    if (!cogniInstance || !datasetId) return [];
-    const result = await getGraphAnnotations(cogniInstance, datasetId, { q: query, goalsLimit: 30, limit: 1 });
-    return (result.goals || []).map((goal) => ({
-      ...goal,
-      name: displayName(goal.name, goal.id),
-    }));
-  }, [cogniInstance, datasetId]);
+    return derivedTreeRef.current?.search(query) || [];
+  }, []);
 
   const pickNavGoal = useCallback(async (id: string) => {
+    const data = parseDataNodeId(id);
+    const goalId = data?.goalId || id;
+    const tree = derivedTreeRef.current;
+    const goal = tree?.byId.get(goalId);
+    if (goal?.source === "derived_goal" && tree) {
+      setLensGoalId(goalId);
+      setSelectedNodeId(data ? id : goalId);
+      setSelectedGoal(goal);
+      setNavPath(tree.pathIds(goalId));
+      return;
+    }
     setLensGoalId(id);
     setSelectedNodeId(null);
-    const known = [navRoots, ...Object.values(navPages).map((page) => page.items)].flat().find((goal) => goal.id === id);
+    const known = [navRoots, ...Object.values(navPages).map((page) => page.items)].flat().find((item) => item.id === id);
     if (known) {
       setSelectedGoal({
         ...known,
@@ -385,7 +391,7 @@ export default function TeleologyClassicPage() {
     if (!cogniInstance || !datasetId) return;
     try {
       const chain = await getGoalPath(cogniInstance, datasetId, id);
-      setNavPath(chain.map((goal) => goal.id));
+      setNavPath(chain.map((item) => item.id));
       const current = chain[chain.length - 1];
       if (current) {
         setSelectedGoal({
@@ -409,9 +415,6 @@ export default function TeleologyClassicPage() {
 
   useEffect(() => {
     if (!cogniInstance || isInitializing || !datasetId) return;
-    setLoading(true);
-    setLensGoalId("");
-    setSelectedGoal(null);
     setGoalQuery("");
     setGoalHits([]);
     refresh();
@@ -419,7 +422,8 @@ export default function TeleologyClassicPage() {
 
   useEffect(() => {
     if (!cogniInstance || !datasetId || isInitializing) return;
-    if (!lensGoalId) {
+    if (!lensGoalId || derivedTreeRef.current?.byId.get(lensGoalId)?.source === "derived_goal") {
+      if (lensGoalId) setGraph(null);
       return;
     }
     let cancelled = false;
@@ -577,6 +581,10 @@ export default function TeleologyClassicPage() {
       if (linkedIdsForLens && !linkedIdsForLens.has(node.id)) return;
       byId.set(node.id, node);
     };
+
+    for (const child of focusContext?.entities || []) {
+      add({ id: child.id, name: displayName(child.name, child.id), type: child.type || "Data", kind: "entity", dimmed: false });
+    }
 
     const center = focusContext?.goal || selectedGoal;
     if (center) {
@@ -1229,6 +1237,7 @@ export default function TeleologyClassicPage() {
             pathIds={navPath}
             loading={loading}
             statuses={classicNavStatuses}
+            emptyLabel={t(language, "No derived goals yet. The company tree stays as data and is not listed as goals.", "还没有派生目标。公司树留在数据层，不会被列成目标。")}
             onPick={(id) => { void pickNavGoal(id); }}
             onExpand={(id, more) => { void expandNav(id, more); }}
             onSearch={searchNav}

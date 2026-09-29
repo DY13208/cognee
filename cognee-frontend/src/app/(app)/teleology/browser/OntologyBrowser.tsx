@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CogneeInstance } from "@/modules/instances/types";
-import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, listTeleologyProposals, moveWorkspaceGoal, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal, type TeleologyProposalSummary } from "@/modules/teleology/teleologyApi";
+import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveWorkspaceGoal, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
+import { buildDerivedGoalTree, parseDataNodeId, type DerivedGoalTree } from "./derivedGoalTree";
 import { notifications } from "@mantine/notifications";
 import NavPanel, { type GoalPage } from "./NavPanel";
 import OntologyCanvas from "./OntologyCanvas";
@@ -82,11 +83,28 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const [zoom, setZoom] = useState(1);
   const hiddenRels = useMemo(() => new Set<string>(), []);
   const requestId = useRef(0);
+  const derivedRef = useRef<DerivedGoalTree | null>(null);
 
   const loadPath = useCallback((goal: GraphNodeSummary) => getGoalPath(instance, datasetId, goal.id), [instance, datasetId]);
 
   const enter = useCallback(async (id: string, preview?: GraphNodeSummary) => {
     if (!datasetId) return;
+    const dataNode = parseDataNodeId(id);
+    const goalId = dataNode && derivedRef.current?.byId.get(dataNode.goalId)?.source === "derived_goal" ? dataNode.goalId : id;
+    const derived = derivedRef.current?.byId.get(goalId)?.source === "derived_goal" ? derivedRef.current?.focus(goalId) : null;
+    if (derived && derivedRef.current) {
+      const serial = ++requestId.current;
+      setLoading(false); setError(null); setPendingId(null);
+      setFocusId(goalId); setSelectedId(dataNode ? id : goalId); setFocusGoal(derived.goal); setParent(null);
+      setPath(derivedRef.current.path(goalId));
+      setChildren(derived.children); setChildTotal(derived.children.length);
+      setWhy(derived.purposes); setConstraints(derived.constraints); setProposal(null); setSelectedProposalItem(null);
+      setRelations(derived.relations);
+      setRelationCounts({ serves: derived.relations.length, advances: 0, blocks: 0 });
+      setRelationTotal(derived.relations.length); setRelationOffset(0);
+      if (serial !== requestId.current) return;
+      return;
+    }
     const serial = ++requestId.current;
     setLoading(true); setError(null); setPendingId(id);
     let relationPage: Awaited<ReturnType<typeof getGoalRelations>> | null = null;
@@ -153,11 +171,14 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     if (!datasetId) return;
     setLoading(true); setError(null);
     try {
-      const result = await getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE });
-      setRoots(result.goals); setRootTotal(result.goals_total ?? result.goals.length);
-      if (result.goals.length) await enter(result.goals[0].id);
+      const model = await getGoalModel(instance, datasetId);
+      const tree = buildDerivedGoalTree(model, language);
+      derivedRef.current = tree;
+      setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
+      if (tree.roots.length) await enter(tree.roots[0].id, tree.roots[0]);
+      else setLoading(false);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setLoading(false); }
-  }, [instance, datasetId, enter]);
+  }, [instance, datasetId, enter, language]);
 
   useEffect(() => {
     requestId.current += 1; setPendingId(null); setRoots([]); setPages({}); setFocusId(null); setSelectedId(null); setFocusGoal(null); setParent(null); setPath([]); setChildren([]); setRelations([]); setWhy([]); setConstraints([]); setProposal(null); setSelectedProposalItem(null); setReview(null);
@@ -165,36 +186,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [datasetId, loadRoots]);
 
   useEffect(() => {
-    if (!datasetId) return;
-    let active = true;
-    setNavStatuses({});
-    void (async () => {
-      const summaries: TeleologyProposalSummary[] = [];
-      let offset = 0;
-      let total = 0;
-      do {
-        const page = await listTeleologyProposals(instance, datasetId, { status: "open", limit: 200, offset });
-        summaries.push(...page.items);
-        total = page.total;
-        offset += page.items.length;
-      } while (active && offset < total && offset < 2000 && total > offset);
-      if (!active) return;
-      const latest = new Map<string, (typeof summaries)[number]>();
-      for (const item of summaries) {
-        const prior = latest.get(item.source_goal_id);
-        if (!prior || (prior.generated_by !== "purpose-agent" && item.generated_by === "purpose-agent")) latest.set(item.source_goal_id, item);
-      }
-      const statuses: Record<string, string> = {};
-      const committed = await listTeleologyProposals(instance, datasetId, { status: "committed", limit: 200 });
-      for (const item of committed.items) statuses[item.source_goal_id] = language === "zh" ? "已确认" : "Confirmed";
-      for (const [id, item] of latest) statuses[id] = item.items_count ? language === "zh" ? `AI建议 ${item.items_count}` : `AI suggestions ${item.items_count}` : language === "zh" ? "无充分证据" : "Insufficient evidence";
-      if (active) setNavStatuses((old) => ({ ...statuses, ...old }));
-    })().catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); });
-    return () => { active = false; };
-  }, [datasetId, instance, language]);
-
-  useEffect(() => {
-    if (!focusId) return;
+    if (!focusId || derivedRef.current?.byId.get(focusId)?.source === "derived_goal") return;
     const confirmed = why.length + constraints.length + relations.length;
     const candidateCount = proposal?.items.filter((item) => item.status !== "ignored" && item.kind !== "gap").length || 0;
     const confirmedLabel = confirmed ? language === "zh" ? `已确认 ${confirmed}` : `Confirmed ${confirmed}` : "";
@@ -218,12 +210,11 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [instance, datasetId]);
 
   const search = useCallback(async (query: string) => {
-    const result = await getGraphAnnotations(instance, datasetId, { q: query, goalsLimit: PAGE, limit: 1 });
-    return result.goals;
-  }, [instance, datasetId]);
+    return derivedRef.current?.search(query) || [];
+  }, []);
 
   useEffect(() => {
-    if (drawer !== "children" || !focusId) return;
+    if (drawer !== "children" || !focusId || derivedRef.current?.byId.get(focusId)?.source === "derived_goal") return;
     let active = true;
     const timer = window.setTimeout(() => {
       setDrawerLoading(true);
@@ -236,7 +227,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [drawer, drawerQuery, drawerOffset, focusId, instance, datasetId]);
 
   useEffect(() => {
-    if (drawer !== "relations" || !focusId) return;
+    if (drawer !== "relations" || !focusId || derivedRef.current?.byId.get(focusId)?.source === "derived_goal") return;
     let active = true;
     setDrawerLoading(true);
     void getGoalRelations(instance, datasetId, focusId, { relationship: relationType, offset: relationOffset, limit: PAGE }).then((result) => {
@@ -437,7 +428,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     </header>
     <div className="onto-body">
       <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel={t("Expand goal tree", "展开目标目录")}>
-        <NavPanel language={language} roots={roots} pages={pages} focusId={pendingId || focusId} pathIds={path.map((goal) => goal.id)} loading={loading} statuses={navStatuses} onPick={(id, goal) => void enter(id, goal)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
+        <NavPanel language={language} roots={roots} pages={pages} focusId={pendingId || focusId} pathIds={path.map((goal) => goal.id)} loading={loading} statuses={navStatuses} emptyLabel={t("No derived goals yet. The company tree stays as data and is not listed as goals.", "还没有派生目标。公司树留在数据层，不会被列成目标。")} onPick={(id, goal) => void enter(id, goal)} onExpand={expand} onSearch={search} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
       </SideRail>
       <main className="onto-main onto-focus-main">
         {error && <div className="onto-focus-error" role="alert">{error}</div>}

@@ -601,6 +601,7 @@ export interface GoalEvidence {
   node_id: string;
   name: string;
   source_class: string;
+  semantic_class?: string;
   layer?: string;
   text?: string;
 }
