@@ -60,7 +60,8 @@
 .onto-detail-path { color: #acc4f5; line-height: 1.7; margin-bottom: 6px; }
 
 .teleology-mode-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 1px solid rgba(255,255,255,0.08); background: #141416; flex-shrink: 0; }
-@media (min-width: 640px) { .teleology-crumb { margin-left: var(--teleology-sidebar, 240px); } }
+/* The goal tree sidebar starts below the header, so the header breadcrumb is
+   pinned to the left edge instead of being offset by the sidebar width. */
 .teleology-mode-tabs { display: flex; gap: 6px; flex: none; }
 .teleology-classic-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap; }
 .teleology-mode-tab { border: 1px solid rgba(255,255,255,0.17); border-radius: 7px; background: #222228; color: #e8e7e4; padding: 7px 13px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }

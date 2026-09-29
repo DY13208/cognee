@@ -16,8 +16,6 @@ import useBoolean from "@/utils/useBoolean";
 import useOutsideClick from "@/utils/useOutsideClick";
 import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 import LanguageSwitch from "./LanguageSwitch";
-import { useNavbar } from "./NavbarContext";
-import { COLLAPSED_WIDTH, EXPANDED_WIDTH } from "./Navbar/CustomAppShellNavbar";
 
 // ── Icons ──
 
@@ -97,7 +95,6 @@ export default function TopBar() {
   const { data: cloudUser } = useCurrentUser(cloud);
   const user = cloud ? cloudUser : localUser;
   const pathname = usePathname();
-  const { collapsed } = useNavbar();
   const { language } = useBusinessLanguage();
   const { workspace, workspaces, setWorkspace } = useFilter();
   const { requestCreateWorkspace, availableTenants } = useTenant();
@@ -113,7 +110,6 @@ export default function TopBar() {
   // Check if we're on a dataset detail page
   const isDatasetDetail = /^\/datasets\/.+$/.test(pathname);
   const onTeleology = basePath === "/teleology";
-  const sidebarOffset = collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH;
 
   return (
     <header
@@ -125,14 +121,16 @@ export default function TopBar() {
         backdropFilter: onTeleology ? undefined : "blur(12px)",
         borderBottom: "1px solid rgba(255,255,255,0.08)",
         ...(onTeleology
-          ? { minHeight: 48, height: "auto", padding: "10px 16px", ["--teleology-sidebar" as string]: `${sidebarOffset}px` }
+          ? { minHeight: 48, height: "auto", padding: "10px 16px" }
           : { height: 53, paddingInline: 24 }),
       }}
     >
       {/* Left: breadcrumbs */}
       <div className={`flex items-center${onTeleology ? " teleology-crumb" : ""}`} style={{ gap: 8 }}>
-        {/* Other pages keep a fixed offset. Teleology tracks the live sidebar so
-            "workspace / page" lines up with the view tabs under it. */}
+        {/* Other pages keep a fixed offset so the breadcrumb starts where the
+            sidebar ends. Teleology pins the breadcrumb to the header's left
+            edge (no offset) — the sidebar only begins below the header, so
+            indenting it there just left dead space. */}
         {!onTeleology && <div aria-hidden="true" style={{ width: 240, flexShrink: 0 }} />}
 
         {/* 1. Workspace switcher */}
