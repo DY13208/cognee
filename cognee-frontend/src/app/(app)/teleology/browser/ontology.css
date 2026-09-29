@@ -631,18 +631,14 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .onto-more-menu button:hover:not(:disabled) { background: #222; }
 .onto-more-menu button:disabled { opacity: .5; cursor: default; }
 .onto-body { gap: 0; padding: 0; background: transparent; }
-/* Side panels share the canvas background so the shell grid stays continuous. */
+/* The panels stay transparent so the app shell's grid remains visible. */
 .onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: transparent; box-shadow: none; overflow: hidden; transition: width 180ms ease; }
-.onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: transparent; }
-/* Panels are translucent rather than painted #141416, so the shell's grid reads
-   through them exactly like the navbar / search panels do. */
-.onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: rgba(20, 20, 22, 0.72); box-shadow: none; overflow: hidden; transition: width 180ms ease; }
 .onto-side-container.is-resizing { transition: none; }
 .onto-side-resize-handle { position: absolute; z-index: 10; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
 .onto-side-resize-handle::after { content: ""; position: absolute; top: 0; right: 2px; bottom: 0; width: 2px; background: transparent; }
 .onto-side-resize-handle:hover::after, .onto-side-resize-handle:focus-visible::after, .onto-side-container.is-resizing .onto-side-resize-handle::after { background: #7988c9; }
 .onto-side-resize-handle:focus-visible { outline: 2px solid #7988c9; outline-offset: -2px; }
-.onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: rgba(20, 20, 22, 0.72); }
+.onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: transparent; }
 .onto-side-left .onto-nav { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 12px 12px 8px; background: transparent; color: var(--onto-ink); overflow: hidden; }
 .onto-side-right { width: 340px; border-right: 0; border-left: 1px solid var(--onto-border); }
 .onto-side-right .onto-detail { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 14px; background: transparent; }
