@@ -27,6 +27,7 @@ from cognee.modules.teleology.graph_annotations import _authorized_dataset
 _NAMESPACE = uuid5(NAMESPACE_URL, "cognee:teleology:orchestrated-goal")
 _RELATIONS = frozenset({"serves", "advances", "blocks"})
 _OUTCOME = ("提升", "提高", "达成", "实现", "改善")
+_POSITIVE_OUTCOME = ("提升", "改善", "维护", "保障", "优化")
 _CONSTRAINT_NAME = ("不得超过", "不得高于", "上限", "费比", "约束", "限制")
 _CRITICAL = frozenset(
     {
@@ -269,6 +270,12 @@ def compose_orchestrated_proposal(
         rejected_counts=rejected_counts,
         issues=issues,
     )
+    id_to_goal = {str(goal.get("id") or ""): goal for goal in candidates}
+    goal_names = {
+        client_id: str((id_to_goal.get(candidate_id) or {}).get("name") or "")
+        for client_id, candidate_id in client_to_id.items()
+    }
+    warnings: list[dict[str, Any]] = []
     _apply_relations(
         list(payload.get("relations") or []),
         relations,
@@ -280,6 +287,8 @@ def compose_orchestrated_proposal(
         rejected_counts,
         issues,
         relation_preview,
+        warnings,
+        goal_names,
     )
     if mode == "replace":
         _attach_legacy_confirmed(candidates, confirmed, by_identity)
@@ -298,6 +307,7 @@ def compose_orchestrated_proposal(
         constraint_preview,
         relation_preview,
         mode,
+        warnings,
     )
     model = {
         "run_id": run,
@@ -307,6 +317,8 @@ def compose_orchestrated_proposal(
         "stage": "completed",
         "submission_mode": mode,
         "generated_by": generated_by,
+        "current_run_id": run,
+        "model_version": 1,
         "committed": False,
         "graph_committed": False,
         "source_count": len(
@@ -345,6 +357,21 @@ async def submit_orchestrated_goal_model(
     submission_mode: str | None = None,
 ) -> dict[str, Any]:
     """Validate, then persist one snapshot. A strict failure does not write."""
+    mode = str(submission_mode or payload.get("submission_mode") or "replace")
+    if mode == "patch":
+        from cognee.modules.teleology.goal_patch import submit_orchestrated_patch
+
+        return await submit_orchestrated_patch(
+            dataset_id,
+            user,
+            payload,
+            known_node_ids=known_node_ids,
+            catalog=catalog,
+            store=store,
+            dry_run=dry_run,
+            strict=strict,
+            submission_mode=mode,
+        )
     if not list(payload.get("goals") or []):
         raise GoalBuildError("goals must not be empty")
     preview_only = bool(payload.get("dry_run") if dry_run is None else dry_run)
@@ -429,6 +456,7 @@ def collect_node_ids(payload: dict[str, Any]) -> list[str]:
     found: list[str] = []
     sections = (
         list(payload.get("goals") or [])
+        + list(payload.get("upsert_goals") or [])
         + list(payload.get("purposes") or [])
         + list(payload.get("constraints") or [])
         + list(payload.get("relations") or [])
@@ -737,6 +765,8 @@ def _apply_relations(
     rejected_counts: dict[str, int],
     issues: list[dict[str, Any]],
     preview: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    goal_names: dict[str, str],
 ) -> None:
     for raw in rows:
         client_id = str(raw.get("client_id") or raw.get("source_client_id") or "")
@@ -764,6 +794,22 @@ def _apply_relations(
         )
         bucket.append(item)
         accepted_counts["relations"] += 1
+        warning = _relation_polarity_warning(
+            relationship,
+            goal_names.get(str(raw.get("source_client_id") or ""), ""),
+            goal_names.get(str(raw.get("target_client_id") or ""), ""),
+        )
+        if warning:
+            warnings.append(
+                {
+                    "kind": "relation",
+                    "client_id": client_id,
+                    "reason": warning,
+                    "relationship": relationship,
+                    "source_client_id": raw.get("source_client_id"),
+                    "target_client_id": raw.get("target_client_id"),
+                }
+            )
         preview.append(
             {
                 "client_id": client_id,
@@ -773,6 +819,7 @@ def _apply_relations(
                 "id": item["id"],
                 "status": "accepted",
                 "reason": "",
+                "warning": warning,
             }
         )
 
@@ -792,6 +839,20 @@ def _relation_issue(raw: dict[str, Any], client_to_id: dict[str, str], evidence_
     if _confidence(raw.get("confidence")) is None:
         return "invalid_confidence"
     return evidence_issue
+
+
+def _positive_outcome_goal(name: str) -> bool:
+    text = str(name or "").strip()
+    return any(text.startswith(token) for token in _POSITIVE_OUTCOME)
+
+
+def _relation_polarity_warning(relationship: str, source_name: str, target_name: str) -> str:
+    """blocks from one positive outcome onto another is a hint, not a rejection."""
+    if relationship != "blocks":
+        return ""
+    if _positive_outcome_goal(source_name) and _positive_outcome_goal(target_name):
+        return "possible_relation_polarity_conflict"
+    return ""
 
 
 def _attach_legacy_confirmed(
@@ -848,6 +909,7 @@ def _summary(
     constraint_preview: list[dict[str, Any]],
     relation_preview: list[dict[str, Any]],
     submission_mode: str,
+    warnings: list[dict[str, Any]],
 ) -> dict[str, Any]:
     critical = [issue for issue in issues if issue.get("reason") in _CRITICAL]
     valid = not critical
@@ -882,6 +944,7 @@ def _summary(
         "accepted": dict(accepted),
         "rejected": dict(rejected),
         "issues": issues,
+        "warnings": warnings,
         "critical_errors": critical,
         "committed": False,
         "graph_committed": False,

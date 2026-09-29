@@ -208,6 +208,15 @@ def test_golden_hierarchy_and_five_relations_from_evidence_ids():
     assert summary["relations_preview"] and all(
         item["status"] == "accepted" for item in summary["relations_preview"]
     )
+    price_blocks = next(item for item in model["relations"] if item["relationship"] == "blocks")
+    assert price_blocks["relationship"] == "blocks"
+    assert any(
+        warning["reason"] == "possible_relation_polarity_conflict"
+        for warning in summary["warnings"]
+    )
+    assert "possible_relation_polarity_conflict" not in {
+        issue["reason"] for issue in summary["critical_errors"]
+    }
     assert all(item["evidence"] for item in model["relations"])
     assert all(item["source_node_ids"] for item in model["relations"])
     assert parents["提升公司整体经营利润"] is None
@@ -510,3 +519,148 @@ def _atomic_payload() -> dict:
         "constraints": constraints,
         "relations": relations,
     }
+
+
+def _polarity_payload() -> dict:
+    return {
+        "goals": [
+            _goal("g_order", "维护全渠道价格体系秩序", ["price_node"]),
+            _goal("g_efficiency", "提升渠道经营效率与费比健康度", ["channel"]),
+            _goal("g_disorder", "价格体系失序", ["price_wm"]),
+            _goal("g_plain", "渠道经营效率", ["creator"]),
+        ],
+        "relations": [
+            _relation("g_order", "g_efficiency", "blocks", "price_node"),
+            _relation("g_disorder", "g_plain", "blocks", "inventory"),
+            _relation("g_order", "g_plain", "advances", "channel"),
+        ],
+    }
+
+
+def test_positive_blocks_positive_warns_and_keeps_the_relation():
+    payload = _polarity_payload()
+    submitted = copy.deepcopy(payload["relations"])
+    model, summary = compose_orchestrated_proposal(
+        uuid4(), payload, known_node_ids=set(PROFIT_NODES), submission_mode="replace"
+    )
+
+    assert payload["relations"] == submitted
+    assert summary["valid"] is True
+    assert summary["critical_errors"] == []
+    assert summary["accepted"]["relations"] == 3
+    assert summary["rejected"]["relations"] == 0
+    assert [
+        (warning["source_client_id"], warning["target_client_id"], warning["reason"])
+        for warning in summary["warnings"]
+    ] == [("g_order", "g_efficiency", "possible_relation_polarity_conflict")]
+    names = {goal["id"]: goal["name"] for goal in model["candidates"]}
+    stored = {
+        (names[item["source"]], names[item["target"]]): item["relationship"]
+        for item in model["relations"]
+    }
+    assert stored[("维护全渠道价格体系秩序", "提升渠道经营效率与费比健康度")] == "blocks"
+    assert stored[("价格体系失序", "渠道经营效率")] == "blocks"
+    assert stored[("维护全渠道价格体系秩序", "渠道经营效率")] == "advances"
+
+
+@pytest.mark.asyncio
+async def test_dry_run_returns_polarity_warning_without_writing(memory_store):
+    before = copy.deepcopy(memory_store.runs)
+    result = await submit_orchestrated_goal_model(
+        uuid4(),
+        object(),
+        _polarity_payload(),
+        known_node_ids=set(PROFIT_NODES),
+        store=memory_store,
+        dry_run=True,
+        strict=True,
+    )
+
+    assert result["dry_run"] is True
+    assert result["saved"] is False
+    assert result["run_id"] is None
+    assert result["valid"] is True
+    assert any(
+        warning["reason"] == "possible_relation_polarity_conflict" for warning in result["warnings"]
+    )
+    assert memory_store.runs == before
+
+
+@pytest.mark.asyncio
+async def test_list_goal_model_runs_includes_orchestrated_history():
+    from datetime import datetime, timezone
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    def _create(sync_conn):
+        TeleologyBuildRunRecord.__table__.create(sync_conn)
+        TeleologyGoalCandidateRecord.__table__.create(sync_conn)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(_create)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    store = SqlGoalModelStore(sessions)
+    dataset_id = uuid4()
+    bad_id = "ece5de3b-2ada-4edb-9024-1e070357f26e"
+    good_id = "1a6e63da-1c60-49f3-8769-f49eebd6e2d6"
+    bad, _bad_summary = compose_orchestrated_proposal(
+        dataset_id,
+        {"goals": golden_payload()["goals"][:1], "hierarchy": [], "relations": []},
+        known_node_ids=set(PROFIT_NODES),
+        run_id=bad_id,
+    )
+    bad["status"] = "failed"
+    good, _good_summary = compose_orchestrated_proposal(
+        dataset_id,
+        {"goals": golden_payload()["goals"][:2], "hierarchy": [], "relations": []},
+        known_node_ids=set(PROFIT_NODES),
+        run_id=good_id,
+    )
+    baseline, _baseline_summary = compose_orchestrated_proposal(
+        dataset_id,
+        {"goals": golden_payload()["goals"][:1], "hierarchy": [], "relations": []},
+        known_node_ids=set(PROFIT_NODES),
+    )
+    baseline["mode"] = "baseline"
+    baseline["run_id"] = str(uuid4())
+    await store.save_result(bad)
+    await store.save_result(good)
+    await store.save_result(baseline)
+    async with sessions() as session:
+        record = await session.get(TeleologyBuildRunRecord, UUID(bad_id))
+        record.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        record.status = "failed"
+        await session.commit()
+        before = (
+            await session.execute(select(func.count()).select_from(TeleologyBuildRunRecord))
+        ).scalar_one()
+
+    listed = await store.list_runs(dataset_id, mode="orchestrated", limit=50, offset=0)
+    failed = await store.list_runs(dataset_id, mode="orchestrated", status="failed")
+    page = await store.list_runs(dataset_id, mode="orchestrated", limit=1, offset=1)
+    async with sessions() as session:
+        after = (
+            await session.execute(select(func.count()).select_from(TeleologyBuildRunRecord))
+        ).scalar_one()
+
+    assert {row["run_id"] for row in listed} == {bad_id, good_id}
+    assert all(row["mode"] == "orchestrated" for row in listed)
+    assert all(row["generated_by"] for row in listed)
+    assert all(row["committed"] is False and row["graph_committed"] is False for row in listed)
+    assert all(
+        "candidates" not in row and "items" not in row and "proposal_id" not in row
+        for row in listed
+    )
+    assert {row["run_id"] for row in failed} == {bad_id}
+    assert failed[0]["status"] == "failed"
+    assert page[0]["run_id"] == bad_id
+    assert listed[0]["candidate_count"] >= 1
+    assert before == after == 3
+    await engine.dispose()

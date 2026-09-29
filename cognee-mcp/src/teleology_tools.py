@@ -25,6 +25,53 @@ def register_teleology_tools(registry, get_client) -> None:
             message = "Teleology request failed." if safe_error else f"{type(exc).__name__}: {exc}"
             return [types.TextContent(type="text", text=f"Error: {message}")]
 
+    def _goal_model_body(
+        dataset_id,
+        goals,
+        hierarchy,
+        purposes,
+        constraints,
+        relations,
+        generated_by,
+        dry_run,
+        strict,
+        submission_mode,
+        base_run_id,
+        upsert_goals,
+        remove_goal_ids,
+        affected_goal_ids,
+        changed_source_ids,
+        source_revision,
+        idempotency_key,
+    ) -> dict:
+        body = {
+            "dataset_id": dataset_id,
+            "generated_by": generated_by or "workbuddy_orchestrated",
+            "dry_run": dry_run,
+            "strict": strict,
+            "submission_mode": submission_mode or "replace",
+            "goals": goals or [],
+            "hierarchy": hierarchy or [],
+            "purposes": purposes or [],
+            "constraints": constraints or [],
+            "relations": relations or [],
+        }
+        if base_run_id:
+            body["base_run_id"] = base_run_id
+        if upsert_goals:
+            body["upsert_goals"] = upsert_goals
+        if remove_goal_ids:
+            body["remove_goal_ids"] = remove_goal_ids
+        if affected_goal_ids:
+            body["affected_goal_ids"] = affected_goal_ids
+        if changed_source_ids:
+            body["changed_source_ids"] = changed_source_ids
+        if source_revision:
+            body["source_revision"] = source_revision
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return body
+
     @registry.tool(tags={"teleology"})
     async def get_teleology(q: str = None, limit: int = 80, offset: int = 0) -> list:
         """Read the active teleology YAML status and paginated goals, purposes and constraints."""
@@ -374,6 +421,13 @@ def register_teleology_tools(registry, get_client) -> None:
         relations: list | None = None,
         generated_by: str = "workbuddy_orchestrated",
         submission_mode: str = "replace",
+        base_run_id: str | None = None,
+        upsert_goals: list | None = None,
+        remove_goal_ids: list | None = None,
+        affected_goal_ids: list | None = None,
+        changed_source_ids: list | None = None,
+        source_revision: str | None = None,
+        idempotency_key: str | None = None,
     ) -> list:
         """Validate one AI Goal Model snapshot and write nothing.
 
@@ -387,22 +441,32 @@ def register_teleology_tools(registry, get_client) -> None:
         relation/purpose/constraint previews. saved is false. No run is created.
         Call propose_teleology_goal_model only when valid is true and
         critical_errors is empty.
+        submission_mode=patch validates an incremental update against base_run_id.
+        Patch payloads use upsert_goals, remove_goal_ids, and affected_goal_ids.
+        Goals omitted from a patch stay unchanged. dry_run still writes nothing.
         """
         return await request(
             "POST",
             "/api/v1/teleology/goal-model/proposals",
-            body={
-                "dataset_id": dataset_id,
-                "generated_by": generated_by or "workbuddy_orchestrated",
-                "dry_run": True,
-                "strict": True,
-                "submission_mode": submission_mode or "replace",
-                "goals": goals or [],
-                "hierarchy": hierarchy or [],
-                "purposes": purposes or [],
-                "constraints": constraints or [],
-                "relations": relations or [],
-            },
+            body=_goal_model_body(
+                dataset_id,
+                goals,
+                hierarchy,
+                purposes,
+                constraints,
+                relations,
+                generated_by,
+                True,
+                True,
+                submission_mode,
+                base_run_id,
+                upsert_goals,
+                remove_goal_ids,
+                affected_goal_ids,
+                changed_source_ids,
+                source_revision,
+                idempotency_key,
+            ),
         )
 
     @registry.tool(tags={"teleology"})
@@ -417,6 +481,13 @@ def register_teleology_tools(registry, get_client) -> None:
         dry_run: bool = False,
         strict: bool = True,
         submission_mode: str = "replace",
+        base_run_id: str | None = None,
+        upsert_goals: list | None = None,
+        remove_goal_ids: list | None = None,
+        affected_goal_ids: list | None = None,
+        changed_source_ids: list | None = None,
+        source_revision: str | None = None,
+        idempotency_key: str | None = None,
     ) -> list:
         """Submit one complete AI Goal Model snapshot as proposals.
 
@@ -432,21 +503,51 @@ def register_teleology_tools(registry, get_client) -> None:
         Hierarchy uses parent_client_id, child_client_id, reason, and evidence_node_ids.
         A missing endpoint, cycle, self-parent, or identity collision rejects the save.
         This does not confirm, commit, write the company tree, or write the formal graph.
+        submission_mode=patch updates only upsert_goals, remove_goal_ids, and the
+        hierarchy, purpose, constraint, and relation rows whose goals are affected.
+        base_run_id must be the current model run. A mismatch returns stale_base
+        and writes nothing. An identical retry returns the earlier run.
         """
         return await request(
             "POST",
             "/api/v1/teleology/goal-model/proposals",
+            body=_goal_model_body(
+                dataset_id,
+                goals,
+                hierarchy,
+                purposes,
+                constraints,
+                relations,
+                generated_by,
+                dry_run,
+                strict,
+                submission_mode,
+                base_run_id,
+                upsert_goals,
+                remove_goal_ids,
+                affected_goal_ids,
+                changed_source_ids,
+                source_revision,
+                idempotency_key,
+            ),
+        )
+
+    @registry.tool(tags={"teleology"})
+    async def analyze_teleology_goal_model_impact(
+        dataset_id: str, changed_source_ids: list
+    ) -> list:
+        """Read goals affected by changed source nodes. This does not write.
+
+        Returns base_run_id, directly_impacted_goal_ids, context_goal_ids,
+        affected purposes, constraints, and relations. Context is the parent
+        and the direct children of an evidence hit, not the rest of the tree.
+        """
+        return await request(
+            "POST",
+            "/api/v1/teleology/goal-model/impact",
             body={
                 "dataset_id": dataset_id,
-                "generated_by": generated_by or "workbuddy_orchestrated",
-                "dry_run": dry_run,
-                "strict": strict,
-                "submission_mode": submission_mode or "replace",
-                "goals": goals or [],
-                "hierarchy": hierarchy or [],
-                "purposes": purposes or [],
-                "constraints": constraints or [],
-                "relations": relations or [],
+                "changed_source_ids": list(changed_source_ids or []),
             },
         )
 
@@ -458,6 +559,28 @@ def register_teleology_tools(registry, get_client) -> None:
         This does not write the graph.
         """
         return await request("GET", f"/api/v1/teleology/builds/{quote(run_id, safe='')}")
+
+    @registry.tool(tags={"teleology"})
+    async def list_teleology_goal_model_runs(
+        dataset_id: str,
+        mode: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list:
+        """List goal-model runs for one dataset. Read only.
+
+        Includes mode=orchestrated. Each row is run metadata: run_id, dataset_id,
+        mode, generated_by, status, created_at, completed_at, candidate_count,
+        committed, graph_committed. Orchestrated goal candidates are not converted
+        into purpose proposals. This does not write the graph or the company tree.
+        """
+        params = {"dataset_id": dataset_id, "limit": limit or 50, "offset": offset or 0}
+        if mode and str(mode).strip():
+            params["mode"] = str(mode).strip()
+        if status and str(status).strip():
+            params["status"] = str(status).strip()
+        return await request("GET", "/api/v1/teleology/goal-model/runs", params=params)
 
     @registry.tool(tags={"teleology"})
     async def get_teleology_goal_model(dataset_id: str) -> list:

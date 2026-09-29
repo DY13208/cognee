@@ -24,6 +24,7 @@ from cognee.modules.teleology.coverage_service import (
 )
 from cognee.modules.teleology.goal_build import (
     get_build_status,
+    list_goal_model_runs,
     read_goal_model,
     review_goal_candidate,
     review_teleology_item,
@@ -204,6 +205,9 @@ class OrchestratedGoalIn(InDTO):
     source_node_ids: List[str] = Field(default_factory=list)
     evidence_node_ids: List[str] = Field(default_factory=list)
     evidence: List[OrchestratedEvidenceIn] = Field(default_factory=list)
+    candidate_id: str = ""
+    status: Optional[str] = None
+    reopen: bool = False
 
 
 class OrchestratedHierarchyIn(InDTO):
@@ -244,12 +248,24 @@ class OrchestratedGoalModelProposal(InDTO):
     generated_by: str = "workbuddy_orchestrated"
     dry_run: bool = False
     strict: bool = True
-    submission_mode: Literal["replace", "merge"] = "replace"
+    submission_mode: Literal["replace", "merge", "patch"] = "replace"
+    base_run_id: str = ""
     goals: List[OrchestratedGoalIn] = Field(default_factory=list)
+    upsert_goals: List[OrchestratedGoalIn] = Field(default_factory=list)
+    remove_goal_ids: List[str] = Field(default_factory=list)
+    affected_goal_ids: List[str] = Field(default_factory=list)
+    changed_source_ids: List[str] = Field(default_factory=list)
+    idempotency_key: str = ""
+    source_revision: str = ""
     hierarchy: List[OrchestratedHierarchyIn] = Field(default_factory=list)
     purposes: List[OrchestratedEndpointIn] = Field(default_factory=list)
     constraints: List[OrchestratedEndpointIn] = Field(default_factory=list)
     relations: List[OrchestratedRelationIn] = Field(default_factory=list)
+
+
+class GoalModelImpactRequest(InDTO):
+    dataset_id: UUID
+    changed_source_ids: List[str] = Field(default_factory=list)
 
 
 class CoverageRunCommit(InDTO):
@@ -924,6 +940,38 @@ def get_teleology_router() -> APIRouter:
             return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
         except DatasetNotFoundError as exc:
             return JSONResponse(status_code=404, content={"error": str(exc)})
+
+    @router.get("/goal-model/runs", response_model=dict)
+    async def list_ai_goal_model_runs(
+        dataset_id: UUID,
+        mode: Optional[str] = Query(default=None),
+        status: Optional[str] = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=200),
+        offset: int = Query(default=0, ge=0),
+        user: User = Depends(get_authenticated_user),
+    ):
+        """List goal-model runs, including orchestrated snapshots. Read only."""
+        try:
+            return await list_goal_model_runs(
+                dataset_id, user, mode=mode, status=status, limit=limit, offset=offset
+            )
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/goal-model/impact", response_model=dict)
+    async def analyze_ai_goal_model_impact(
+        payload: GoalModelImpactRequest,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Read goals touched by changed source nodes. This does not write."""
+        from cognee.modules.teleology.goal_patch import read_goal_model_impact
+
+        try:
+            return await read_goal_model_impact(
+                payload.dataset_id, user, list(payload.changed_source_ids or [])
+            )
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
 
     @router.get("/goal-model", response_model=dict)
     async def get_ai_goal_model(

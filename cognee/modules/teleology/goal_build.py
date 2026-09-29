@@ -80,6 +80,25 @@ async def start_teleology_build(
     return pending
 
 
+async def list_goal_model_runs(
+    dataset_id: UUID,
+    user: Any,
+    *,
+    mode: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Read goal-model run history. Candidates are not converted into proposals."""
+    await _authorized_dataset(dataset_id, user, "read")
+    size = min(200, max(1, int(limit or 50)))
+    start = max(0, int(offset or 0))
+    runs = await get_goal_store().list_runs(
+        dataset_id, mode=mode or None, status=status or None, limit=size, offset=start
+    )
+    return {"runs": runs, "limit": size, "offset": start}
+
+
 async def get_build_status(run_id: str, user: Any) -> dict[str, Any]:
     row = await get_goal_store().get_run(run_id)
     if row is None:

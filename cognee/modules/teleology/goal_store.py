@@ -49,7 +49,7 @@ def present_run(row: dict[str, Any]) -> dict[str, Any]:
 
 def dataset_view(row: dict[str, Any] | None, candidates: list[dict[str, Any]]) -> dict[str, Any]:
     payload = dict((row or {}).get("payload") or {})
-    payload["candidates"] = candidates
+    payload["candidates"] = _merge_candidate_flags(candidates, payload.get("candidates") or [])
     payload["committed"] = False
     payload["graph_committed"] = False
     payload.setdefault("dataset_id", str((row or {}).get("dataset_id") or ""))
@@ -146,6 +146,9 @@ class MemoryGoalRunStore:
                 "candidates": [dict(goal) for goal in result.get("candidates") or []],
             }
         )
+        row.setdefault("created_at", _now())
+        row["completed_at"] = _now() if row.get("status") in {"completed", "failed"} else None
+        row["mode"] = result.get("mode") or row.get("mode") or "baseline"
         self.runs[run_id] = row
         self.by_dataset[str(result["dataset_id"])] = run_id
 
@@ -163,6 +166,45 @@ class MemoryGoalRunStore:
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
         row = self.runs.get(str(run_id))
         return None if row is None else present_run(row)
+
+    async def list_runs(
+        self,
+        dataset_id: Any,
+        *,
+        mode: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        rows = [
+            row for row in self.runs.values() if str(row.get("dataset_id") or "") == str(dataset_id)
+        ]
+        if mode:
+            rows = [row for row in rows if str(row.get("mode") or "") == mode]
+        if status:
+            rows = [row for row in rows if str(row.get("status") or "") == status]
+        rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+        start = max(0, int(offset or 0))
+        size = max(0, int(limit or 0))
+        return [run_history_row(row) for row in rows[start : start + size]]
+
+    async def find_idempotent(self, dataset_id: Any, key: str) -> dict[str, Any] | None:
+        if not str(key or "").strip():
+            return None
+        matches = []
+        for row in self.runs.values():
+            if str(row.get("dataset_id") or "") != str(dataset_id):
+                continue
+            if row.get("status") != "completed":
+                continue
+            payload = row.get("payload") or {}
+            if str(payload.get("idempotency_key") or "") == str(key):
+                matches.append(row)
+        if not matches:
+            return None
+        matches.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+        payload = matches[0].get("payload") or {}
+        return payload if isinstance(payload, dict) else None
 
     async def get_dataset(self, dataset_id: Any) -> dict[str, Any] | None:
         run_id = self.by_dataset.get(str(dataset_id))
@@ -367,6 +409,64 @@ class SqlGoalModelStore:
             return present_run(_run_dict(record))
         return None
 
+    async def list_runs(
+        self,
+        dataset_id: Any,
+        *,
+        mode: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        from cognee.modules.teleology.goal_model_models import TeleologyBuildRunRecord
+
+        dataset_uuid = _uuid(dataset_id)
+        if dataset_uuid is None:
+            return []
+        async for session in self._session():
+            statement = select(TeleologyBuildRunRecord).where(
+                TeleologyBuildRunRecord.dataset_id == dataset_uuid
+            )
+            if mode:
+                statement = statement.where(TeleologyBuildRunRecord.mode == mode)
+            if status:
+                statement = statement.where(TeleologyBuildRunRecord.status == status)
+            statement = statement.order_by(TeleologyBuildRunRecord.created_at.desc())
+            statement = statement.offset(max(0, int(offset or 0))).limit(max(0, int(limit or 0)))
+            records = (await session.execute(statement)).scalars().all()
+            return [run_history_row(_run_dict(record)) for record in records]
+        return []
+
+    async def find_idempotent(self, dataset_id: Any, key: str) -> dict[str, Any] | None:
+        from cognee.modules.teleology.goal_model_models import TeleologyBuildRunRecord
+
+        if not str(key or "").strip():
+            return None
+        dataset_uuid = _uuid(dataset_id)
+        if dataset_uuid is None:
+            return None
+        async for session in self._session():
+            records = (
+                (
+                    await session.execute(
+                        select(TeleologyBuildRunRecord)
+                        .where(
+                            TeleologyBuildRunRecord.dataset_id == dataset_uuid,
+                            TeleologyBuildRunRecord.status == "completed",
+                        )
+                        .order_by(TeleologyBuildRunRecord.created_at.desc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for record in records:
+                payload = _run_dict(record).get("payload") or {}
+                if str(payload.get("idempotency_key") or "") == str(key):
+                    return payload
+            return None
+        return None
+
     async def get_dataset(self, dataset_id: Any) -> dict[str, Any] | None:
         from cognee.modules.teleology.goal_model_models import (
             TeleologyBuildRunRecord,
@@ -487,6 +587,43 @@ def _mark_review_item(
     return found
 
 
+def run_history_row(row: dict[str, Any], record: Any = None) -> dict[str, Any]:
+    """Run metadata only. Goal candidates stay out of this history row."""
+    payload = row.get("payload") or {}
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+    created_at = row.get("created_at")
+    completed_at = row.get("completed_at")
+    if record is not None:
+        created_at = created_at or getattr(record, "created_at", None)
+        completed_at = completed_at or getattr(record, "completed_at", None)
+    return {
+        "run_id": str(row.get("id") or row.get("run_id") or ""),
+        "dataset_id": str(row.get("dataset_id") or ""),
+        "mode": row.get("mode") or payload.get("mode") or "",
+        "generated_by": payload.get("generated_by") or "",
+        "status": row.get("status") or "",
+        "created_at": _iso(created_at),
+        "completed_at": _iso(completed_at),
+        "candidate_count": int(
+            row.get("candidate_count") or payload.get("canonical_goal_count") or 0
+        ),
+        "committed": False,
+        "graph_committed": False,
+    }
+
+
+def _iso(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
 def _run_dict(record: Any) -> dict[str, Any]:
     try:
         payload = json.loads(record.payload or "{}")
@@ -495,11 +632,36 @@ def _run_dict(record: Any) -> dict[str, Any]:
     return {
         "id": str(record.id),
         "dataset_id": str(record.dataset_id),
+        "mode": record.mode,
         "status": record.status,
         "source_count": record.source_count,
         "candidate_count": record.candidate_count,
+        "created_at": record.created_at,
+        "completed_at": record.completed_at,
         "payload": payload,
     }
+
+
+def _merge_candidate_flags(
+    rows: list[dict[str, Any]], stored: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Keep review flags that are not columns on the candidate table."""
+    extras = {str(goal.get("id") or ""): goal for goal in stored}
+    merged: list[dict[str, Any]] = []
+    for goal in rows:
+        extra = extras.get(str(goal.get("id") or "")) or {}
+        row = dict(goal)
+        for key in ("orchestrated_identity", "scope", "reason_provenance"):
+            if extra.get(key) not in (None, "", [], {}):
+                row[key] = extra[key]
+        if extra.get("retirement_proposed"):
+            row["retirement_proposed"] = True
+            row["outside_current_snapshot"] = True
+            row["status"] = extra.get("status") or row.get("status") or "confirmed"
+        elif row.get("status") == "legacy_confirmed":
+            row["outside_current_snapshot"] = True
+        merged.append(row)
+    return merged
 
 
 def _candidate_dict(record: Any) -> dict[str, Any]:
