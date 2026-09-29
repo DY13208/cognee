@@ -11,7 +11,7 @@ import {
 } from "react";
 import EntityCard from "./EntityCard";
 import { REL_PILL, relLabel } from "./entityMeta";
-import { layoutNeighborhood, CARD_W, CARD_H, buildTreeChildren } from "./layoutDag";
+import { layoutNeighborhood, CARD_W, CARD_H } from "./layoutDag";
 import type { LaidOutEdge, LaidOutNode, OntologyEdge, OntologyEntity, ViewMode } from "./types";
 
 type DragState = {
@@ -214,17 +214,20 @@ export default function OntologyCanvas({
     });
   }, [layout, nodesWithOffsets, viewMode]);
 
-  const childCountById = useMemo(() => {
-    const children = buildTreeChildren(filteredEdges);
-    const map = new Map<string, number>();
-    for (const [pid, kids] of children) map.set(pid, kids.length);
-    return map;
-  }, [filteredEdges]);
-
   const relationCountById = useMemo(() => {
     const counts = new Map<string, number>();
     for (const edge of filteredEdges) {
+      if (!["serves", "advances", "blocks"].includes(edge.relationship)) continue;
       counts.set(edge.sourceId, (counts.get(edge.sourceId) || 0) + 1);
+      counts.set(edge.targetId, (counts.get(edge.targetId) || 0) + 1);
+    }
+    return counts;
+  }, [filteredEdges]);
+
+  const evidenceCountById = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const edge of filteredEdges) {
+      if (edge.relationship !== "evidence") continue;
       counts.set(edge.targetId, (counts.get(edge.targetId) || 0) + 1);
     }
     return counts;
@@ -567,7 +570,7 @@ export default function OntologyCanvas({
           {nodesWithOffsets.map((n) => {
             if (relatedIds && !relatedIds.has(n.id)) return null;
             const dimmed = activeChain.size > 0 && !activeChain.has(n.id) && !selectedNodeIds.has(n.id);
-            const childCount = childCountById.get(n.id) || n.childCount || 0;
+            const childCount = n.childCount || 0;
             const canEnter = childCount > 0 && n.id !== focusId;
             const inSelection = selectedNodeIds.has(n.id);
             const movingGroup = draggingId !== null && selectedNodeIds.has(draggingId) && inSelection;
@@ -589,6 +592,7 @@ export default function OntologyCanvas({
                   language={language}
                   dragging={draggingId === n.id || movingGroup}
                   relationshipCount={relationCountById.get(n.id) || 0}
+                  evidenceCount={evidenceCountById.get(n.id) || 0}
                   onSelect={() => {
                     if (didDragRef.current) return;
                     onSelect(n.id);

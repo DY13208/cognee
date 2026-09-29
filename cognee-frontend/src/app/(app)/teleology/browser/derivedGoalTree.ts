@@ -92,7 +92,7 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
       graph_id: null,
       visual_id: dataNodeId(goal.id, nodeId),
       name: entry.name || nodeId,
-      type: semantic,
+      type: "Data",
       description: entry.text || "",
       source: "company_tree",
       parent_id: goal.id,
@@ -110,7 +110,7 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
       .map((entry) => evidenceNode(goal, entry))
       .filter((entry): entry is GraphNodeSummary => Boolean(entry));
     const childGoals = goals.filter((item) => item.parent_candidate_id === goal.id);
-    node.child_count = childGoals.length + evidence.length;
+    node.child_count = childGoals.length;
     byId.set(node.id, node);
     for (const entry of evidence) byId.set(entry.id, entry);
     evidenceByGoal.set(goal.id, evidence);
@@ -185,14 +185,14 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
       const evidence = (pages[goalId]?.items || []).filter((item) => item.source === "company_tree");
       const nameOf = (id: string | null | undefined) => (id && (byGoal.get(id)?.name || byId.get(id)?.name)) || id || "";
       const evidenceRelations: OntologyEdge[] = evidence.map((child) => ({
-        id: `${child.id}|serves|${goal.id}`,
+        id: `${child.id}|evidence|${goal.id}`,
         sourceId: child.id,
         targetId: goal.id,
         sourceName: child.name,
         targetName: goal.name,
-        sourceType: child.type,
+        sourceType: "Data",
         targetType: "Goal",
-        relationship: "serves",
+        relationship: "evidence",
       }));
       const semanticRelations: OntologyEdge[] = (model.relations || [])
         .filter((item) => item.status !== "rejected" && (item.goal_id === goalId || item.source === goalId || item.target === goalId))

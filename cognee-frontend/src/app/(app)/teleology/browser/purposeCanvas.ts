@@ -119,11 +119,24 @@ export function buildPurposeNeighborhood(input: PurposeNeighborhoodInput): {
     });
   }
   for (const relation of input.relations) {
+    const evidence = relation.relationship === "evidence";
+    const endpointKind = (type: string): EntityKind =>
+      evidence || type === "Data" ? "Other" : type === "Purpose" ? "Purpose" : type === "Constraint" ? "Constraint" : "Goal";
     if (!entities.has(relation.sourceId)) {
-      put(stub(relation.sourceId, relation.sourceName, relation.sourceType === "Purpose" ? "Purpose" : relation.sourceType === "Constraint" ? "Constraint" : "Goal", "confirmed"));
+      put({
+        ...stub(relation.sourceId, relation.sourceName, endpointKind(relation.sourceType), "confirmed"),
+        type: evidence ? "Data" : relation.sourceType,
+        source: evidence ? "company_tree" : undefined,
+        childCount: evidence ? 0 : undefined,
+      });
     }
     if (!entities.has(relation.targetId)) {
-      put(stub(relation.targetId, relation.targetName, relation.targetType === "Purpose" ? "Purpose" : relation.targetType === "Constraint" ? "Constraint" : "Goal", "confirmed"));
+      put({
+        ...stub(relation.targetId, relation.targetName, endpointKind(relation.targetType), "confirmed"),
+        type: evidence ? "Data" : relation.targetType,
+        source: evidence ? "company_tree" : undefined,
+        childCount: evidence ? 0 : undefined,
+      });
     }
     link({ ...relation, status: relation.status || "confirmed" });
   }

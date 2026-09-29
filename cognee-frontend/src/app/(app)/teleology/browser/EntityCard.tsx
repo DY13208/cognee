@@ -30,6 +30,7 @@ export default function EntityCard({
   onPointerDown,
   language,
   relationshipCount,
+  evidenceCount = 0,
 }: {
   node: LaidOutNode;
   selected: boolean;
@@ -42,6 +43,7 @@ export default function EntityCard({
   onPointerDown?: (e: ReactPointerEvent) => void;
   language: "zh" | "en";
   relationshipCount: number;
+  evidenceCount?: number;
 }) {
   const stripe = KIND_STRIPE[node.kind] || KIND_STRIPE.Other;
   const proposed = node.reviewStatus === "proposed";
@@ -185,7 +187,7 @@ export default function EntityCard({
             padding: "1px 7px",
           }}
         >
-          {node.kind === "Purpose" ? "WHY" : kindLabel(node.kind, language)}
+          {node.type === "Data" ? (language === "zh" ? "数据" : "Data") : node.kind === "Purpose" ? "WHY" : kindLabel(node.kind, language)}
           {proposed ? (language === "zh" ? " · AI建议" : " · Proposal") : semantic ? (language === "zh" ? " · 已确认" : " · Confirmed") : ""}
         </span>
       </div>
@@ -206,6 +208,7 @@ export default function EntityCard({
       <div className="onto-card-counts">
         <span>{language === "zh" ? "关系" : "Links"} {relationshipCount}</span>
         <span>{language === "zh" ? "子目标" : "Children"} {node.childCount || 0}</span>
+        {evidenceCount > 0 ? <span>{language === "zh" ? "证据" : "Evidence"} {evidenceCount}</span> : null}
       </div>
     </div>
   );

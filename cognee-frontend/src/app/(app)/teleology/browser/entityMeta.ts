@@ -16,6 +16,7 @@ export const KIND_STRIPE: Record<EntityKind, string> = {
 
 export const REL_PILL: Record<string, string> = {
   serves: "#60A5FA",
+  evidence: "#60A5FA",
   advances: "#34D399",
   blocks: "#F87171",
   has_subgoal: "#A78BFA",
@@ -42,6 +43,7 @@ export const KIND_LABEL_ZH: Record<EntityKind, string> = {
 
 export const REL_LABEL_ZH: Record<string, string> = {
   serves: "服务于",
+  evidence: "证据",
   advances: "推进",
   blocks: "阻碍",
   has_subgoal: "含子目标",

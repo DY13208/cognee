@@ -82,9 +82,11 @@ describe("derived goal tree", () => {
   it("connects data nodes so they serve the derived goal", () => {
     const focus = tree.focus("profit");
     expect(focus?.relations.map((edge) => [edge.sourceName, edge.relationship, edge.targetName])).toEqual([
-      ["Arencia项目", "serves", "提升 Arencia 项目盈利能力"],
-      ["项目利润分", "serves", "提升 Arencia 项目盈利能力"],
+      ["Arencia项目", "evidence", "提升 Arencia 项目盈利能力"],
+      ["项目利润分", "evidence", "提升 Arencia 项目盈利能力"],
     ]);
+    expect(focus?.goal.child_count).toBe(1);
+    expect(focus?.relations.every((edge) => edge.relationship !== "serves")).toBe(true);
     expect(focus?.children.map((child) => child.candidate_id)).toEqual(["accuracy"]);
     expect(parseDataNodeId(focus!.relations[0].sourceId)).toEqual({ goalId: "profit", nodeId: "project" });
   });
@@ -147,12 +149,39 @@ describe("derived goal tree", () => {
     expect(focus?.goal.candidate_id).toBe(rootId);
     expect(focus?.goal.id).toBe(rootId);
     expect(focus?.goal.graph_id).toBeNull();
+    expect(focus?.goal.child_count).toBe(names.length);
     expect(focus?.children.map((child) => child.name)).toEqual(names);
+    expect(focus?.relations.map((edge) => edge.relationship)).toEqual(["evidence"]);
+    expect(root.byId.get("data:f873e41a-99cb-590e-aace-ef1531c2e964:4ad0b6f7-83b6-5fa2-8ab3-50fa89300cdc")?.type).toBe("Data");
     expect(resolveFocusTarget(root, "4ad0b6f7-83b6-5fa2-8ab3-50fa89300cdc")).toEqual({
       candidateId: rootId,
       graphId: null,
       visualId: `visual:${rootId}`,
     });
     expect(resolveFocusTarget(root, `visual:${rootId}`).candidateId).toBe(rootId);
+  });
+
+  it("keeps a leaf goal's evidence out of its child count", () => {
+    const un = buildDerivedGoalTree({
+      ...model,
+      candidates: [{
+        ...model.candidates[0],
+        id: "un",
+        name: "提升 UNOVE(UN) 项目盈利能力",
+        parent_candidate_id: "profit",
+        evidence: [
+          { node_id: "un-profit", name: "陈华俊 C:UN项目利润分", source_class: "Metric" },
+          { node_id: "channel", name: "渠道增长", source_class: "Other" },
+          { node_id: "fee", name: "退后费比15%-20%", source_class: "Other" },
+          { node_id: "rule", name: "渠道统计规则", source_class: "Other" },
+        ],
+        source_node_ids: ["un-profit", "channel", "fee", "rule"],
+      }],
+    }, "zh");
+    const focus = un.focus("un");
+    expect(focus?.children).toEqual([]);
+    expect(focus?.goal.child_count).toBe(0);
+    expect(focus?.relations.map((edge) => edge.relationship)).toEqual(["evidence", "evidence", "evidence", "evidence"]);
+    expect(focus?.relations.map((edge) => edge.sourceType)).toEqual(["Data", "Data", "Data", "Data"]);
   });
 });

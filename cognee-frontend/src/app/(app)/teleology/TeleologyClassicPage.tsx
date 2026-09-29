@@ -588,7 +588,8 @@ export default function TeleologyClassicPage() {
     };
 
     for (const child of focusContext?.entities || []) {
-      add({ id: child.id, name: displayName(child.name, child.id), type: child.type || "Data", kind: "entity", dimmed: false });
+      const evidence = child.source === "company_tree" || child.type === "Data";
+      add({ id: child.id, name: displayName(child.name, child.id), type: evidence ? "Data" : child.type || "Goal", kind: evidence ? "entity" : "goal", dimmed: false });
     }
 
     const center = focusContext?.goal || selectedGoal;
@@ -648,7 +649,8 @@ export default function TeleologyClassicPage() {
       });
     }
     for (const edge of focusRelations) {
-      add({ id: edge.sourceId, name: edge.sourceName, type: edge.sourceType, kind: "goal", dimmed: false });
+      const evidence = edge.relationship === "evidence";
+      add({ id: edge.sourceId, name: edge.sourceName, type: evidence ? "Data" : edge.sourceType, kind: evidence ? "entity" : "goal", dimmed: false });
       add({ id: edge.targetId, name: edge.targetName, type: edge.targetType, kind: "goal", dimmed: false });
     }
 
@@ -709,8 +711,8 @@ export default function TeleologyClassicPage() {
       .map((edge) => ({
         source: edge.source_id,
         target: edge.target_id,
-        relationship: edge.relationship,
-        color: relationshipColor(edge.relationship),
+        relationship: edge.relationship === "evidence" ? (language === "zh" ? "证据" : "evidence") : edge.relationship,
+        color: relationshipColor(edge.relationship === "evidence" ? "serves" : edge.relationship),
         status: "confirmed" as const,
       })).filter((edge, index, all) => all.findIndex((candidate) => candidate.source === edge.source && candidate.target === edge.target && candidate.relationship === edge.relationship) === index);
     const proposed: PurposeGraphLink[] = (focusProposal?.items || [])
@@ -744,7 +746,7 @@ export default function TeleologyClassicPage() {
       }
     }
     return [...confirmed, ...semantic, ...proposed];
-  }, [purposeEdges, focusRelations, graphNodes, linkedIdsForLens, focusProposal, focusContext, lensGoalId]);
+  }, [purposeEdges, focusRelations, graphNodes, linkedIdsForLens, focusProposal, focusContext, lensGoalId, language]);
 
   const selectedNode = useMemo(
     () => graphNodes.find((n) => n.id === selectedNodeId) || null,

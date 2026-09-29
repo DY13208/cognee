@@ -9,6 +9,7 @@ const ForceGraph = dynamic(() => import("react-force-graph-2d"), { ssr: false })
 
 export const REL_COLOR: Record<string, string> = {
   serves: "#60A5FA",
+  evidence: "#60A5FA",
   advances: "#34D399",
   blocks: "#F87171",
   purpose: "#7eb6e8",

@@ -56,6 +56,33 @@ function proposal(items: ProposalItem[]): TeleologyProposal {
   };
 }
 
+test("evidence stays data and is not a goal or a serves edge", () => {
+  const evidence: OntologyEdge = {
+    id: "evidence-1",
+    sourceId: "metric-1",
+    targetId: focus.id,
+    sourceName: "陈华俊 C:UN项目利润分",
+    targetName: focus.name,
+    sourceType: "Data",
+    targetType: "Goal",
+    relationship: "evidence",
+  };
+  const neighborhood = buildPurposeNeighborhood({
+    focus: { ...focus, child_count: 0 },
+    purposes: [],
+    constraints: [],
+    relations: [evidence],
+    proposal: null,
+    children: [],
+  });
+  const source = neighborhood.entities.find((entity) => entity.id === "metric-1");
+  expect(source?.kind).not.toBe("Goal");
+  expect(source?.type).toBe("Data");
+  expect(source?.childCount).toBe(0);
+  expect(neighborhood.entities.find((entity) => entity.id === focus.id)?.childCount).toBe(0);
+  expect(neighborhood.edges.map((edge) => edge.relationship)).toEqual(["evidence"]);
+});
+
 test("a goal with no relations still stays on the canvas", () => {
   const neighborhood = buildPurposeNeighborhood({ focus, purposes: [], constraints: [], relations: [], proposal: null, children: [] });
   expect(neighborhood.entities.map((entity) => entity.id)).toEqual([focus.id]);
