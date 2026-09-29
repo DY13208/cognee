@@ -25,8 +25,9 @@ _CONSTRAINT_MARKERS = (
 )
 _OVERREACH = re.compile(r"必须使用|必须锚定|须锚定|必须通过|must use", re.IGNORECASE)
 _STRUCTURAL_REASON = re.compile(
-    r"直接子目标|上级节点|结构上(?:明确)?归属|层级关系|符合\s*goal\s*tree(?:\s*结构)?|"
-    r"\bparent\b|\bancestor\b|\bhierarchy\b",
+    r"直接子目标|上级节点|父级|祖先|下级|结构上(?:明确)?归属|层级关系|路径位置|命名层级|"
+    r"结构性证据|符合\s*goal\s*tree(?:\s*结构)?|"
+    r"\bparent\b|\bancestor\b|\bhierarchy\b|\bgoal\s*tree\b",
     re.IGNORECASE,
 )
 
@@ -76,25 +77,79 @@ def _context_node_types(context: dict[str, Any]) -> dict[str, str]:
     return types
 
 
+def hierarchy_scope(context: dict[str, Any]) -> dict[str, Any]:
+    """Local company-tree chain: ancestors, the current goal, and its direct children."""
+    current = str((context.get("goal") or {}).get("id") or "")
+    ancestors = [
+        str(node.get("id"))
+        for node in context.get("ancestors") or []
+        if isinstance(node, dict) and node.get("id")
+    ]
+    children = [
+        str(node.get("id"))
+        for node in context.get("children") or []
+        if isinstance(node, dict) and node.get("id")
+    ]
+    for entry in context.get("child_evidence") or []:
+        if isinstance(entry, dict) and entry.get("goal_id"):
+            child_id = str(entry["goal_id"])
+            if child_id not in children:
+                children.append(child_id)
+    ancestors_of: dict[str, set[str]] = {}
+    for index, node_id in enumerate(ancestors):
+        ancestors_of[node_id] = set(ancestors[:index])
+    if current:
+        ancestors_of[current] = set(ancestors)
+    below_current = set(ancestors)
+    if current:
+        below_current.add(current)
+    for child_id in children:
+        ancestors_of[child_id] = set(below_current)
+    members = set(ancestors_of)
+    return {
+        "current_goal_id": current,
+        "parent_id": ancestors[-1] if ancestors else None,
+        "ancestor_ids": ancestors,
+        "child_ids": children,
+        "members": members,
+        "ancestors_of": ancestors_of,
+    }
+
+
+def hierarchy_aligned(source: str, target: str, context: dict[str, Any]) -> bool:
+    """True when the two ends are distinct nodes on one local ancestor chain."""
+    scope = hierarchy_scope(context)
+    ancestors_of = scope["ancestors_of"]
+    if source not in ancestors_of or target not in ancestors_of or source == target:
+        return False
+    return source in ancestors_of[target] or target in ancestors_of[source]
+
+
+def has_independent_semantic_evidence(evidence_ids: list[Any], context: dict[str, Any]) -> bool:
+    """Document, Entity, Purpose, Constraint, MapReference, or any non-Goal evidence."""
+    types = _context_node_types(context)
+    for node_id in evidence_ids:
+        node_type = types.get(str(node_id))
+        if node_type and node_type != "goal":
+            return True
+    return False
+
+
 def structural_hierarchy_only(item: dict[str, Any], context: dict[str, Any]) -> bool:
-    """A hierarchy-aligned semantic relation needs non-Goal evidence and a semantic reason."""
+    """Hierarchy-aligned serves/advances/blocks need evidence outside the goal chain.
+
+    Confidence never overrides missing evidence. Structural wording is only a
+    second check, and only when the evidence itself is not independent.
+    """
     if item.get("kind") != "relation":
         return False
-    current = str((context.get("goal") or {}).get("id") or "")
-    ancestors = {str(node.get("id")) for node in context.get("ancestors") or []}
-    children = {str(node.get("id")) for node in context.get("children") or []}
     source, target = str(item.get("source") or ""), str(item.get("target") or "")
-    aligned = (source == current and target in ancestors) or (
-        source in children and target == current
-    )
-    if not aligned:
-        return False
-    types = _context_node_types(context)
-    evidence = [str(value) for value in item.get("evidence_node_ids") or []]
-    independent = any(types.get(node_id) not in {None, "goal"} for node_id in evidence)
-    reason = str(item.get("reason") or "").strip()
-    structural_reason_only = bool(_STRUCTURAL_REASON.fullmatch(reason.strip("。,. ")))
-    return not independent or structural_reason_only
+    evidence = [str(value) for value in item.get("evidence_node_ids") or [] if str(value).strip()]
+    independent = has_independent_semantic_evidence(evidence, context)
+    if hierarchy_aligned(source, target, context) and not independent:
+        return True
+    reason = str(item.get("reason") or "")
+    return bool(_STRUCTURAL_REASON.search(reason)) and not independent
 
 
 def min_relation_confidence() -> float:

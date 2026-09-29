@@ -19,14 +19,27 @@ from cognee.modules.teleology.purpose_layer import get_purpose_context, propose_
 from cognee.modules.users.models import User
 
 _RELATIONS = frozenset({"serves", "advances", "blocks"})
-PROMPT_VERSION = "purpose-analyze-v1"
+PROMPT_VERSION = "purpose-analyze-v2"
 
 _SYSTEM = """You infer why one company goal exists. The company tree is fact. You only propose a teleology layer.
 
 Allowed node kinds: Purpose, Constraint, Suggested Goal.
 Allowed relationships: serves, advances, blocks.
 Do not emit has_subgoal or any other relationship.
-Do not emit an advances edge only because one node is the child or parent of another. That structural link is already known. An advances edge needs evidence beyond those two endpoints, such as a document or entity id from the context.
+Company Tree hierarchy is already known fact.
+Do not infer serves, advances, or blocks from hierarchy alone.
+Parent/child/ancestor/path/name adjacency is NOT semantic evidence.
+Do not output a relation merely because:
+- A is parent of B
+- B is child of A
+- goals are adjacent in the path
+- one goal appears to belong to another goal structurally
+- their names look related
+Before emitting a relation, ask: "Is there evidence beyond the company-tree hierarchy?"
+If no: DO NOT emit the relation.
+Do not emit it as a weak guess either.
+Simply omit it.
+A real relation needs evidence outside the goal chain, such as a Document, Entity, Purpose, Constraint, or MapReference id from the context.
 Open/uncommitted proposals are not evidence.
 Never cite, summarize, reinforce, or imitate another open proposal.
 Only use the bounded goal context and its graph/document/entity evidence.
@@ -35,7 +48,7 @@ evidence_node_ids must be ids present in the context. Every item needs a non-emp
 Do not invent an owner or a progress value. Do not rewrite the company tree.
 Suggested goals stay proposals. Write names and reasons in the same language as the goal.
 
-Purpose must answer why the goal exists, what outcome it should produce, and what value a higher goal receives if it succeeds. Do not repackage children, tools, dashboards, weekly reports, measurement methods, or processes as a Purpose. Those belong to HOW: direct children, suggested goals, and serves or advances edges.
+Purpose must answer why the goal exists, what outcome it should produce, and what value a higher goal receives if it succeeds. Purpose should describe the specific business outcome of this goal. Avoid generic templates such as "支撑 X 项目目标达成" when the context supports a more specific outcome. Do not merge purposes that name different projects. Do not repackage children, tools, dashboards, weekly reports, measurement methods, or processes as a Purpose. Those belong to HOW: direct children, suggested goals, and serves or advances edges.
 
 A Constraint requires explicit evidence of a limit, boundary, precondition, compliance rule, resource limit, risk, dependency, prohibition, or an SLA, time, or cost bound. Do not turn “a tool, process, metric, or dashboard exists” into “this tool must be used”. If that is only a suggestion, leave it out of constraints.
 
@@ -178,6 +191,7 @@ def _existing_keys(
 
 def _prompt_context(context: dict[str, Any], open_items: list[dict[str, Any]]) -> dict[str, Any]:
     del open_items  # Open proposals are only used after inference for duplicate/conflict checks.
+
     def brief(node: dict[str, Any]) -> dict[str, str]:
         return {
             "id": str(node.get("id") or ""),
@@ -281,8 +295,8 @@ def normalize_analysis(
             "source_goal_ids": [goal_id] if goal_id else [],
         }
         if kind == "constraint" and constraint_overreach(item):
-                weak_signals.append({**item, "weak_reason": "constraint_overreach"})
-                return
+            weak_signals.append({**item, "weak_reason": "constraint_overreach"})
+            return
         bucket.append(item)
         created[item_id] = item_id
         created[name] = item_id
@@ -330,15 +344,21 @@ def normalize_analysis(
             continue
         confidence = _confidence(raw.get("confidence"))
         candidate = {
-            "kind": "relation", "source": source_id, "target": target_id,
-            "relationship": relationship, "reason": reason,
+            "kind": "relation",
+            "source": source_id,
+            "target": target_id,
+            "relationship": relationship,
+            "reason": reason,
             "evidence_node_ids": evidence_ids,
         }
         if structural_hierarchy_only(candidate, context):
-            weak_signals.append({
-                **candidate, "confidence": confidence,
-                "weak_reason": "structural_hierarchy_only",
-            })
+            weak_signals.append(
+                {
+                    **candidate,
+                    "confidence": confidence,
+                    "weak_reason": "structural_hierarchy_only",
+                }
+            )
             continue
         if confidence < min_relation_confidence():
             weak_signals.append(
