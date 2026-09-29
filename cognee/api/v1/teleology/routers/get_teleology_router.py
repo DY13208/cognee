@@ -22,13 +22,15 @@ from cognee.modules.teleology.coverage_service import (
     retry_coverage_failures,
     start_coverage,
 )
-from cognee.modules.teleology.goal_build import start_teleology_build
-from cognee.modules.teleology.goal_model import (
-    GoalBuildError,
-    goal_model_view,
-    set_candidate_status,
-    set_teleology_status,
+from cognee.modules.teleology.goal_build import (
+    get_build_status,
+    read_goal_model,
+    review_goal_candidate,
+    review_teleology_item,
+    start_teleology_build,
 )
+from cognee.modules.teleology.goal_model import GoalBuildError
+from cognee.modules.teleology.goal_orchestrated import submit_orchestrated_goal_model
 from cognee.modules.teleology.goal_workspace import (
     create_goal as create_workspace_goal,
 )
@@ -180,6 +182,66 @@ class GoalTeleologyReview(InDTO):
     dataset_id: UUID
     kind: Literal["purpose", "constraint", "relation"]
     status: Literal["proposed", "confirmed", "rejected"]
+
+
+class OrchestratedEvidenceIn(InDTO):
+    node_id: str = ""
+    name: str = ""
+    source_layer: str = ""
+    semantic_class: str = ""
+    text: str = ""
+    reason: str = ""
+
+
+class OrchestratedGoalIn(InDTO):
+    client_id: str = ""
+    name: str = ""
+    description: str = ""
+    reason: str = ""
+    confidence: Optional[float] = None
+    source_node_ids: List[str] = Field(default_factory=list)
+    evidence: List[OrchestratedEvidenceIn] = Field(default_factory=list)
+
+
+class OrchestratedHierarchyIn(InDTO):
+    parent_client_id: str = ""
+    child_client_id: str = ""
+    reason: str = ""
+    confidence: Optional[float] = None
+    evidence_node_ids: List[str] = Field(default_factory=list)
+    relationship: Optional[str] = None
+    origin: Optional[str] = None
+
+
+class OrchestratedEndpointIn(InDTO):
+    client_id: str = ""
+    goal_client_id: str = ""
+    name: str = ""
+    reason: str = ""
+    confidence: Optional[float] = None
+    source_node_ids: List[str] = Field(default_factory=list)
+    evidence: List[OrchestratedEvidenceIn] = Field(default_factory=list)
+
+
+class OrchestratedRelationIn(InDTO):
+    client_id: str = ""
+    source_client_id: str = ""
+    target_client_id: str = ""
+    relationship: str = ""
+    reason: str = ""
+    confidence: Optional[float] = None
+    source_node_ids: List[str] = Field(default_factory=list)
+    evidence: List[OrchestratedEvidenceIn] = Field(default_factory=list)
+
+
+class OrchestratedGoalModelProposal(InDTO):
+    dataset_id: UUID
+    generated_by: str = "workbuddy_orchestrated"
+    goals: List[OrchestratedGoalIn] = Field(default_factory=list)
+    hierarchy: List[OrchestratedHierarchyIn] = Field(default_factory=list)
+    purposes: List[OrchestratedEndpointIn] = Field(default_factory=list)
+    constraints: List[OrchestratedEndpointIn] = Field(default_factory=list)
+    relations: List[OrchestratedRelationIn] = Field(default_factory=list)
 
 
 class CoverageRunCommit(InDTO):
@@ -812,7 +874,7 @@ def get_teleology_router() -> APIRouter:
         payload: TeleologyBuildCreate,
         user: User = Depends(get_authenticated_user),
     ):
-        """Discover canonical goals from one dataset. The result stays a proposal."""
+        """Queue a goal build. The response is pending; the run continues in the background."""
         try:
             return await start_teleology_build(
                 payload.dataset_id,
@@ -827,14 +889,44 @@ def get_teleology_router() -> APIRouter:
         except DatasetNotFoundError as exc:
             return JSONResponse(status_code=404, content={"error": str(exc)})
 
+    @router.get("/builds/{run_id}", response_model=dict)
+    async def get_dataset_teleology_build(
+        run_id: str,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Read one goal build. The run stays in the database after the client disconnects."""
+        try:
+            return await get_build_status(run_id, user)
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.post("/goal-model/proposals", response_model=dict)
+    async def propose_orchestrated_goal_model(
+        payload: OrchestratedGoalModelProposal,
+        user: User = Depends(get_authenticated_user),
+    ):
+        """Store a WorkBuddy analysis as proposals. Nothing is confirmed or committed."""
+        try:
+            return await submit_orchestrated_goal_model(
+                payload.dataset_id,
+                user,
+                payload.model_dump(),
+            )
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+        except DatasetNotFoundError as exc:
+            return JSONResponse(status_code=404, content={"error": str(exc)})
+
     @router.get("/goal-model", response_model=dict)
     async def get_ai_goal_model(
         dataset_id: UUID,
         user: User = Depends(get_authenticated_user),
     ):
         """Read the derived AI Goal Model. Company-tree nodes stay in the evidence."""
-        await _authorized_dataset(dataset_id, user, "read")
-        return goal_model_view(dataset_id)
+        try:
+            return await read_goal_model(dataset_id, user)
+        except GoalBuildError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
 
     @router.post("/goal-model/candidates/{candidate_id}/review", response_model=dict)
     async def review_ai_goal_candidate(
@@ -845,7 +937,7 @@ def get_teleology_router() -> APIRouter:
         """Accept or reject one derived goal. This does not commit the graph."""
         await _authorized_dataset(payload.dataset_id, user, "write")
         try:
-            return set_candidate_status(payload.dataset_id, candidate_id, payload.status)
+            return await review_goal_candidate(payload.dataset_id, candidate_id, payload.status)
         except GoalBuildError as exc:
             return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
 
@@ -858,7 +950,7 @@ def get_teleology_router() -> APIRouter:
         """Accept or reject one purpose, constraint, or relation proposal."""
         await _authorized_dataset(payload.dataset_id, user, "write")
         try:
-            return set_teleology_status(
+            return await review_teleology_item(
                 payload.dataset_id, item_id, payload.status, payload.kind
             )
         except GoalBuildError as exc:

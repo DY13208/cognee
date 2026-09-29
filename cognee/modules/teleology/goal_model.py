@@ -423,6 +423,33 @@ def canonicalize(
     return merged
 
 
+def apply_candidate_parents(
+    goals: list[dict[str, Any]],
+    links: list[dict[str, Any]],
+    *,
+    blocked_ids: set[str],
+) -> list[dict[str, Any]]:
+    """Parent one canonical goal from another canonical goal.
+
+    Source-node ids are blocked. A directory parent cannot become a goal parent.
+    """
+    copied = [dict(goal) for goal in goals]
+    by_id = {str(goal["id"]): goal for goal in copied}
+    for goal in copied:
+        goal["parent_candidate_id"] = None
+    for link in links or []:
+        child_id = str(link.get("id") or "")
+        parent_id = link.get("parent_candidate_id")
+        parent = None if parent_id in (None, "") else str(parent_id)
+        child = by_id.get(child_id)
+        if child is None or parent is None:
+            continue
+        if parent == child_id or parent not in by_id or parent in blocked_ids:
+            continue
+        child["parent_candidate_id"] = parent
+    return copied
+
+
 def build_hierarchy(goals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Parent a goal only when another goal is the broader business result.
 

@@ -313,6 +313,12 @@ async def test_coverage_queues_canonical_goals_and_does_not_call_the_old_analyze
 
 @pytest.mark.asyncio
 async def test_start_build_with_sources_does_not_read_the_graph(monkeypatch):
+    from cognee.modules.teleology.goal_build import build_tasks
+    from cognee.modules.teleology.goal_store import MemoryGoalRunStore, use_goal_store
+
+    store = MemoryGoalRunStore()
+    use_goal_store(store)
+
     async def allow(*_args, **_kwargs):
         return object()
 
@@ -321,21 +327,60 @@ async def test_start_build_with_sources_does_not_read_the_graph(monkeypatch):
 
     monkeypatch.setattr("cognee.modules.teleology.goal_build._authorized_dataset", allow)
     monkeypatch.setattr("cognee.modules.teleology.goal_build.load_dataset_sources", explode)
-    view = await start_teleology_build(
-        uuid4(),
-        object(),
-        mode="baseline",
-        batch_size=2,
-        concurrency=1,
-        max_sources=20,
-        sources=arencia_sources(),
-    )
+    try:
+        view = await start_teleology_build(
+            uuid4(),
+            object(),
+            mode="baseline",
+            batch_size=2,
+            concurrency=1,
+            max_sources=20,
+            sources=arencia_sources(),
+            model=_ScriptedGoalModel(),
+        )
+        assert view["status"] == "pending"
+        assert view["committed"] is False
+        assert view["graph_committed"] is False
+        await build_tasks()[view["run_id"]]
+        saved = await store.get_dataset(view["dataset_id"])
+        assert saved["status"] == "completed"
+        assert saved["committed"] is False
+        assert saved["graph_committed"] is False
+        assert any(goal["name"] == "提升 Arencia 项目盈利能力" for goal in saved["candidates"])
+        assert any(row["source_class"] == "Responsibility" for row in saved["classifications"])
+    finally:
+        use_goal_store(None)
 
-    assert view["committed"] is False
-    assert view["graph_committed"] is False
-    assert view["status"] == "completed"
-    assert any(goal["name"] == "提升 Arencia 项目盈利能力" for goal in view["candidates"])
-    assert any(row["source_class"] == "Responsibility" for row in view["classifications"])
+
+class _ScriptedGoalModel:
+    """Test double for the production adapter. It is not the keyword pipeline."""
+
+    async def classify_sources(self, sources):
+        labels = {
+            "resp": ("Responsibility", "职责不是目标。"),
+            "project": ("Project", "项目是证据。"),
+            "metric": ("Metric", "指标是证据。"),
+            "accuracy": ("Metric", "准确性指标是证据。"),
+            "doc": ("Document", "文档是证据。"),
+        }
+        return [labels.get(str(source.get("id")), ("Other", "未分类。")) for source in sources]
+
+    async def extract_goals(self, _sources):
+        return [
+            {
+                "name": "提升 Arencia 项目盈利能力",
+                "description": "综合项目与利润分",
+                "reason": "项目和利润指标共同指向盈利结果",
+                "confidence": 0.82,
+                "source_node_ids": ["project", "metric"],
+            }
+        ]
+
+    async def canonicalize_goals(self, goals):
+        return goals
+
+    async def build_goal_hierarchy(self, _goals):
+        return []
 
 
 def test_build_modules_do_not_commit_or_copy_the_tree():

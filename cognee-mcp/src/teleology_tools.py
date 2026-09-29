@@ -347,10 +347,12 @@ def register_teleology_tools(registry, get_client) -> None:
         concurrency: int = 1,
         max_sources: int | None = None,
     ) -> list:
-        """Discover an AI Goal Model from one dataset. Modes: baseline, incremental.
+        """Queue an AI Goal Model build. Returns run_id and status pending immediately.
 
-        Company-tree nodes are evidence, not goals. The run stores proposals only.
-        It never commits them and it never writes the company tree.
+        Poll get_teleology_build_status until status is completed, then read
+        get_teleology_goal_model. Company-tree nodes are evidence, not goals.
+        The run stores proposals only. It never commits them and it never writes
+        the company tree. A client timeout does not cancel the build.
         """
         body = {
             "dataset_id": dataset_id,
@@ -361,6 +363,44 @@ def register_teleology_tools(registry, get_client) -> None:
         if max_sources:
             body["max_sources"] = max_sources
         return await request("POST", "/api/v1/teleology/builds", body=body)
+
+    @registry.tool(tags={"teleology"})
+    async def propose_teleology_goal_model(
+        dataset_id: str,
+        goals: list,
+        hierarchy: list | None = None,
+        purposes: list | None = None,
+        constraints: list | None = None,
+        relations: list | None = None,
+        generated_by: str = "workbuddy_orchestrated",
+    ) -> list:
+        """Submit a WorkBuddy mind-map analysis as an AI Goal Model proposal.
+
+        Cognee validates evidence and stores derived proposals only.
+        This does not confirm, commit, write the company tree, or write the formal graph.
+        """
+        return await request(
+            "POST",
+            "/api/v1/teleology/goal-model/proposals",
+            body={
+                "dataset_id": dataset_id,
+                "generated_by": generated_by or "workbuddy_orchestrated",
+                "goals": goals or [],
+                "hierarchy": hierarchy or [],
+                "purposes": purposes or [],
+                "constraints": constraints or [],
+                "relations": relations or [],
+            },
+        )
+
+    @registry.tool(tags={"teleology"})
+    async def get_teleology_build_status(run_id: str) -> list:
+        """Read one goal build: status, stage, progress, and error.
+
+        Call this after start_teleology_build until status is completed or failed.
+        This does not write the graph.
+        """
+        return await request("GET", f"/api/v1/teleology/builds/{quote(run_id, safe='')}")
 
     @registry.tool(tags={"teleology"})
     async def get_teleology_goal_model(dataset_id: str) -> list:
