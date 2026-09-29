@@ -18,6 +18,14 @@ const KIND_ICON: Record<string, string> = {
   Other: "○",
 };
 
+function EvidenceIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <ellipse cx="12" cy="5" rx="8" ry="3" />
+    <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+    <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+  </svg>;
+}
+
 export default function EntityCard({
   node,
   selected,
@@ -45,7 +53,8 @@ export default function EntityCard({
   relationshipCount: number;
   evidenceCount?: number;
 }) {
-  const stripe = KIND_STRIPE[node.kind] || KIND_STRIPE.Other;
+  const evidence = node.type === "Data" || node.source === "company_tree";
+  const stripe = evidence ? "#7eb6e8" : (KIND_STRIPE[node.kind] || KIND_STRIPE.Other);
   const proposed = node.reviewStatus === "proposed";
   const semantic = node.kind === "Purpose" || node.kind === "Constraint";
   const style: CSSProperties = {
@@ -126,7 +135,7 @@ export default function EntityCard({
             flexShrink: 0,
           }}
         >
-          {KIND_ICON[node.kind] || "○"}
+          {evidence ? <EvidenceIcon /> : (KIND_ICON[node.kind] || "○")}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div

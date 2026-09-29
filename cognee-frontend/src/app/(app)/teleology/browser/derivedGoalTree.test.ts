@@ -184,4 +184,63 @@ describe("derived goal tree", () => {
     expect(focus?.relations.map((edge) => edge.relationship)).toEqual(["evidence", "evidence", "evidence", "evidence"]);
     expect(focus?.relations.map((edge) => edge.sourceType)).toEqual(["Data", "Data", "Data", "Data"]);
   });
+
+  it("counts chevrons from hierarchy parents, including when only hierarchy carries the link", () => {
+    const rows: Array<[string, string | null]> = [
+      ["root", null],
+      ["g_profit", "root"],
+      ["g_finance", "root"],
+      ["g_org", "root"],
+      ["g_compliance", "root"],
+      ["g_ai", "root"],
+      ["g_mainbusiness", "g_profit"],
+      ["g_efficiency", "g_profit"],
+      ["g_growth", "g_profit"],
+      ["g_profit_leaf", "g_profit"],
+      ["g_brandprofit", "g_mainbusiness"],
+      ["g_main_leaf", "g_mainbusiness"],
+      ["brand-1", "g_brandprofit"],
+      ["brand-2", "g_brandprofit"],
+      ["brand-3", "g_brandprofit"],
+      ["brand-4", "g_brandprofit"],
+      ["eff-1", "g_efficiency"],
+      ["eff-2", "g_efficiency"],
+      ["eff-3", "g_efficiency"],
+      ["eff-4", "g_efficiency"],
+      ["grow-1", "g_growth"],
+      ["grow-2", "g_growth"],
+      ["grow-3", "g_growth"],
+      ["grow-4", "g_growth"],
+      ["comp-1", "g_compliance"],
+      ["comp-2", "g_compliance"],
+    ];
+    const tree = buildDerivedGoalTree({
+      ...model,
+      candidates: rows.map(([id]) => ({
+        ...model.candidates[0],
+        id,
+        name: id,
+        parent_candidate_id: null,
+        evidence: id === "g_profit" ? [{ node_id: "profit-score", name: "公司利润分", source_class: "Metric" }] : [],
+        source_node_ids: [],
+      })),
+      hierarchy: rows.map(([id, parent]) => ({
+        id,
+        name: id,
+        parent_candidate_id: parent,
+        status: "proposed",
+        confidence: 1,
+        evidence_count: 0,
+      })),
+    }, "zh");
+    expect(tree.byId.get("root")?.child_count).toBe(5);
+    expect(tree.byId.get("g_profit")?.child_count).toBe(4);
+    expect(tree.byId.get("g_mainbusiness")?.child_count).toBe(2);
+    expect(tree.byId.get("g_brandprofit")?.child_count).toBe(4);
+    expect(tree.byId.get("g_efficiency")?.child_count).toBe(4);
+    expect(tree.byId.get("g_growth")?.child_count).toBe(4);
+    expect(tree.byId.get("g_compliance")?.child_count).toBe(2);
+    expect(tree.byId.get("g_profit_leaf")?.child_count).toBe(0);
+    expect(tree.focus("g_profit")?.relations.map((edge) => edge.relationship)).toEqual(["evidence"]);
+  });
 });

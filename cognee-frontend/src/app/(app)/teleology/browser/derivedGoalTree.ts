@@ -58,6 +58,8 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
   const zh = language === "zh";
   const goals = (model.candidates || []).filter((goal) => goal.status !== "rejected");
   const byGoal = new Map(goals.map((goal) => [goal.id, goal]));
+  const hierarchyParent = new Map((model.hierarchy || []).map((row) => [row.id, row.parent_candidate_id || null]));
+  const parentOf = (goal: GoalCandidate) => hierarchyParent.has(goal.id) ? hierarchyParent.get(goal.id) || null : goal.parent_candidate_id || null;
   const byId = new Map<string, GraphNodeSummary>();
   const pages: Record<string, GoalPage> = {};
   const statuses: Record<string, string> = {};
@@ -75,8 +77,8 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
       description: goal.description || goal.reason || "",
       source: "derived_goal",
       status: goal.status,
-      parent_id: goal.parent_candidate_id,
-      parent_name: goal.parent_candidate_id ? byGoal.get(goal.parent_candidate_id)?.name || null : null,
+      parent_id: parentOf(goal),
+      parent_name: parentOf(goal) ? byGoal.get(parentOf(goal) || "")?.name || null : null,
       child_count: 0,
     };
   };
@@ -109,7 +111,7 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
     const evidence = (goal.evidence || [])
       .map((entry) => evidenceNode(goal, entry))
       .filter((entry): entry is GraphNodeSummary => Boolean(entry));
-    const childGoals = goals.filter((item) => item.parent_candidate_id === goal.id);
+    const childGoals = goals.filter((item) => parentOf(item) === goal.id);
     node.child_count = childGoals.length;
     byId.set(node.id, node);
     for (const entry of evidence) byId.set(entry.id, entry);
@@ -120,7 +122,7 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
   }
   for (const goal of goals) {
     const children = goals
-      .filter((item) => item.parent_candidate_id === goal.id)
+      .filter((item) => parentOf(item) === goal.id)
       .map((item) => byId.get(item.id)!)
       .filter(Boolean);
     const evidence = evidenceByGoal.get(goal.id) || [];
@@ -145,7 +147,7 @@ export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"
   }
 
   const roots = goals
-    .filter((goal) => !goal.parent_candidate_id || !byGoal.has(goal.parent_candidate_id))
+    .filter((goal) => !parentOf(goal) || !byGoal.has(parentOf(goal) || ""))
     .map((goal) => byId.get(goal.id)!)
     .filter(Boolean);
 

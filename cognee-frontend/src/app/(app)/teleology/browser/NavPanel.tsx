@@ -68,8 +68,9 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   function item(goal: GraphNodeSummary, depth: number): React.ReactNode {
     const expanded = open.has(goal.id);
     const page = pages[goal.id];
-    const count = goal.child_count ?? page?.total ?? 0;
-    return <div key={goal.id} role="treeitem" aria-expanded={count ? expanded : undefined} aria-selected={focusId === goal.id}>
+    const canonicalChildren = (page?.items || []).filter((child) => child.source === "derived_goal" && child.parent_id === goal.id);
+    const hasChildren = goal.source !== "company_tree" && goal.type !== "Data" && (canonicalChildren.length > 0 || (goal.child_count ?? 0) > 0);
+    return <div key={goal.id} role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={focusId === goal.id}>
       <div
         className={`onto-file-row${focusId === goal.id ? " is-selected" : ""}${draggingId === goal.id ? " is-dragging" : ""}${dropHint?.id === goal.id ? ` is-drop-${dropHint.placement}` : ""}`}
         style={{ paddingLeft: depth * 16 + 8 }}
@@ -94,7 +95,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
         }}
         onDragEnd={() => { setDraggingId(null); setDropHint(null); }}
       >
-        {count ? (
+        {hasChildren ? (
           <button type="button" className={`onto-file-chevron${expanded ? " is-open" : ""}`} aria-label={expanded ? t("Collapse", "收起") : t("Expand", "展开")} onClick={() => {
             const next = new Set(open);
             if (expanded) next.delete(goal.id); else { next.add(goal.id); if (!page?.loaded) onExpand(goal.id); }
