@@ -141,7 +141,6 @@ const NAV_SECTIONS: NavSection[] = [
       { text: "Overview", link: "/dashboard", icon: HouseIcon },
       { text: "Sessions", link: "/sessions", icon: SessionsIcon },
       { text: "Brain", link: "/datasets", icon: DatabaseIcon },
-      { text: "Teleology", link: "/teleology", icon: TeleologyIcon },
     ],
   },
   {
@@ -150,6 +149,7 @@ const NAV_SECTIONS: NavSection[] = [
       { text: "Search", link: "/search", icon: SearchIcon },
       { text: "Skills", link: "/skills", icon: SkillsIcon },
       { text: "Mindmap", link: "/knowledge-graph", icon: GraphIcon },
+      { text: "Teleology", link: "/teleology", icon: TeleologyIcon },
     ],
   },
   {

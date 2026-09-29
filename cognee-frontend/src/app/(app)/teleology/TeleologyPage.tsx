@@ -18,6 +18,7 @@ export default function TeleologyPage() {
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"browser" | "classic">("browser");
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const datasetDefaulted = useRef(false);
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export default function TeleologyPage() {
 
   function switchMode(next: "browser" | "classic") {
     setMode(next);
+    setToolbarCollapsed(false);
     try { window.localStorage.setItem(MODE_KEY, next); } catch { /* ignore */ }
   }
 
@@ -47,14 +49,21 @@ export default function TeleologyPage() {
   const zh = language === "zh";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", background: "#0e0e10" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", background: "transparent" }}>
       <TrackPageView page="teleology" />
-      <div className="teleology-mode-bar">
-        <div className="teleology-mode-tabs">
-          <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
-          <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
+      <div className="teleology-toolbar">
+        <div className="teleology-toolbar-row teleology-toolbar-top">
+          <div className="teleology-mode-tabs">
+            <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
+            <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
+          </div>
+          {mode === "browser"
+            ? <div id="teleology-browser-view-actions" className="teleology-toolbar-view-actions" />
+            : <div id="teleology-classic-actions" className="teleology-classic-actions" />}
         </div>
-        <div id="teleology-classic-actions" className="teleology-classic-actions" />
+        {mode === "browser" && !toolbarCollapsed && <div className="teleology-toolbar-row teleology-toolbar-bottom">
+          <div id="teleology-browser-data-actions" className="teleology-toolbar-data-actions" />
+        </div>}
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {mode === "browser" ? (
@@ -75,6 +84,7 @@ export default function TeleologyPage() {
             language={zh ? "zh" : "en"}
             busy={busy}
             onBusy={setBusy}
+            onHeaderCollapsedChange={setToolbarCollapsed}
           />
         ) : <TeleologyClassicPage />}
       </div>

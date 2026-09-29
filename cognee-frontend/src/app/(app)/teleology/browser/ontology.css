@@ -118,8 +118,11 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .teleology-classic-proposal p { margin: 0; font-size: 11px; }
 .teleology-classic-proposal.is-confirmed { border-style: solid; border-color: #63a8db; color: #d6e7f4; }
 
-.teleology-mode-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 1px solid rgba(255,255,255,0.08); background: #141416; flex-shrink: 0; }
-@media (min-width: 640px) { .teleology-crumb { margin-left: var(--teleology-sidebar, 240px); } }
+/* Kept translucent (matching TopBar's rgba(0,0,0,0.65) treatment) so the shell
+   grid stays continuous across the teleology header rows. */
+.teleology-mode-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 0; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(20, 20, 22, 0.72); flex-shrink: 0; }
+/* The goal tree sidebar starts below the header, so the header breadcrumb is
+   pinned to the left edge instead of being offset by the sidebar width. */
 .teleology-mode-tabs { display: flex; gap: 6px; flex: none; }
 .teleology-classic-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: nowrap; }
 .teleology-mode-tab { border: 1px solid rgba(255,255,255,0.17); border-radius: 7px; background: #222228; color: #e8e7e4; padding: 7px 13px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -127,9 +130,35 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .teleology-mode-tab.is-active { background: #414d83; border-color: #8b9eff; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
 .teleology-mode-tab:focus-visible { outline: 2px solid #b0bcff; outline-offset: 2px; }
 
+/* Two-row toolbar shared by the goal browser and purpose-relations view. */
+.teleology-toolbar { --onto-ink: #e8e7e4; position: relative; z-index: 20; margin: 8px 10px 0; flex-shrink: 0; overflow: visible; border: 1px solid #2c3037; border-radius: 10px; background: linear-gradient(180deg, #15171b, #121418); box-shadow: 0 10px 30px rgba(0,0,0,.28); }
+.teleology-toolbar-row { min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 7px 10px; }
+.teleology-toolbar-top { flex-wrap: nowrap; overflow-x: auto; }
+.teleology-toolbar-top .teleology-mode-tabs, .teleology-toolbar-top .teleology-classic-actions, .teleology-toolbar-top .teleology-toolbar-view-actions { flex-shrink: 0; }
+.teleology-toolbar-bottom { border-top: 1px solid #21242a; }
+.teleology-toolbar-view-actions, .teleology-toolbar-data-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.teleology-toolbar-view-actions { margin-left: auto; }
+.teleology-toolbar-data-actions { flex: 1; flex-wrap: wrap; }
+.teleology-toolbar .teleology-mode-tabs, .teleology-toolbar .onto-view-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #2d3138; border-radius: 8px; background: #0e1013; margin: 0; }
+.teleology-toolbar .teleology-mode-tab, .teleology-toolbar .onto-view-switch button { height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #9ea4ae; font-size: 13px; font-weight: 600; box-shadow: none; }
+.teleology-toolbar .teleology-mode-tab.is-active { background: #2b355f; color: #dce5ff; box-shadow: inset 0 0 0 1px #42548b; }
+.teleology-toolbar .onto-view-switch button.is-active { background: #1d2d5c; color: #aac0ff; box-shadow: inset 0 0 0 1px #3856a7; }
+.teleology-toolbar .onto-btn { height: 32px; padding: 0 12px; border: 1px solid #30343b; border-radius: 7px; background: #17191e; color: #c9cdd4; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.teleology-toolbar .onto-btn:hover:not(:disabled) { background: #21242a; border-color: #3a3f48; color: #fff; }
+.teleology-toolbar .onto-btn-primary { background: #2a2d33; color: #f3f4f6; border-color: #3a3e47; }
+.teleology-toolbar .onto-btn-code, .teleology-toolbar .onto-collapse-btn { background: #101215; }
+.teleology-toolbar .onto-collapse-btn { margin-left: 0; color: #969da7; }
+.teleology-dataset-picker { height: 32px; min-width: 215px; max-width: 310px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border: 1px solid #2c3037; border-radius: 7px; background: #0f1114; }
+.teleology-dataset-label { font-size: 11px; color: #666c76; white-space: nowrap; }
+.teleology-toolbar .teleology-dataset-picker .onto-select { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: #edf0f4; cursor: pointer; font-size: 13px; text-align: left; }
+.teleology-toolbar .teleology-dataset-picker .onto-search-item { color: #e8e7e4; }
+.teleology-toolbar-divider { height: 22px; width: 1px; flex: none; background: #2a2d34; }
+.teleology-toolbar .teleology-classic-actions { margin-left: auto; }
+@media (max-width: 900px) { .teleology-toolbar-bottom, .teleology-toolbar-data-actions { flex-wrap: wrap; } }
+
 .onto-root {
-  --onto-bg: #0e0e10;
-  --onto-panel: #141416;
+  --onto-bg: transparent;
+  --onto-panel: rgba(20, 20, 22, 0.72);
   --onto-panel-2: #1a1a1e;
   --onto-border: rgba(255, 255, 255, 0.08);
   --onto-ink: #e8e7e4;
@@ -141,7 +170,7 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--onto-bg);
+  background: transparent;
   color: var(--onto-ink);
   font-size: 13px;
 }
@@ -557,21 +586,26 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .onto-more-menu button { width: 100%; border: 0; border-radius: 5px; background: transparent; color: var(--onto-ink); text-align: left; padding: 8px; cursor: pointer; }
 .onto-more-menu button:hover:not(:disabled) { background: #222; }
 .onto-more-menu button:disabled { opacity: .5; cursor: default; }
-.onto-body { gap: 0; padding: 0; background: #0e0e10; }
-.onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: #141416; box-shadow: none; overflow: hidden; transition: width 180ms ease; }
-.onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: #141416; }
-.onto-side-left .onto-nav { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 12px 12px 8px; background: #141416; color: var(--onto-ink); overflow: hidden; }
+.onto-body { gap: 0; padding: 0; background: transparent; }
+/* Panels are translucent rather than painted #141416, so the shell's grid reads
+   through them exactly like the navbar / search panels do. */
+.onto-side-container { position: relative; z-index: 6; display: flex; flex-direction: column; flex: none; min-width: 0; min-height: 0; width: 264px; border-right: 1px solid var(--onto-border); border-radius: 0; background: rgba(20, 20, 22, 0.72); box-shadow: none; overflow: hidden; transition: width 180ms ease; }
+.onto-side-container.is-collapsed { width: 36px; overflow: hidden; background: rgba(20, 20, 22, 0.72); }
+.onto-side-left .onto-nav { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 12px 12px 8px; background: transparent; color: var(--onto-ink); overflow: hidden; }
 .onto-side-right { width: 340px; border-right: 0; border-left: 1px solid var(--onto-border); }
-.onto-side-right .onto-detail { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 14px; background: #141416; }
+.onto-side-right .onto-detail { width: 100%; height: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 0; padding: 14px; background: transparent; }
 .onto-side-right .teleology-node-detail { flex: 1; height: auto; }
-.onto-side-rail { display: flex; flex: none; flex-direction: column; align-items: center; width: 100%; height: 100%; padding: 10px 0; background: #141416; }
+.onto-side-rail { display: flex; flex: none; flex-direction: column; align-items: center; width: 100%; height: 100%; padding: 10px 0; background: transparent; }
 .onto-panel-close { margin-left: auto; width: 28px; height: 28px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: rgba(232,231,228,.55); font-size: 18px; line-height: 1; cursor: pointer; }
 .onto-panel-close:hover { background: rgba(255,255,255,.08); color: #fff; }
 .onto-panel-close + .onto-goal-search { margin-left: 4px; }
 .onto-panel-reopen { position: static; flex: none; z-index: 1; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; background: #141416; color: rgba(232,231,228,.7); cursor: pointer; }
 .onto-panel-reopen:hover { background: #222; color: #fff; }
 .onto-detail-head { display: flex; align-items: flex-start; gap: 8px; }
-.onto-main, .onto-main.onto-focus-main { position: relative; border: 0; border-radius: 0; overflow: hidden; background-color: #050505; background-image: radial-gradient(circle, rgba(255,255,255,.07) .75px, transparent 1px); background-size: 20px 20px; }
+/* The workspace canvas keeps the app shell's 33px grid instead of painting its
+   own dot lattice, so /teleology matches /search and every other route. The
+   shell gradient shows through because nothing here is opaque any more. */
+.onto-main, .onto-main.onto-focus-main { position: relative; border: 0; border-radius: 0; overflow: hidden; background: transparent; }
 .onto-canvas-toolbar { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 12; gap: 8px; flex-wrap: nowrap; min-height: 0; padding: 0; border: 0; background: transparent; pointer-events: none; }
 .onto-canvas-toolbar > * { pointer-events: auto; }
 .onto-canvas-toolbar .onto-btn { padding: 6px 9px; font-size: 11px; }
@@ -1007,14 +1041,16 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 }
 
 /* Main teleology workspace: contained panels, restrained indigo emphasis. */
-.onto-root { --onto-bg: #050505; --onto-panel: #0c0c0c; --onto-panel-2: #141414; --onto-border: rgba(255, 255, 255, .1); --onto-ink: #e8e7e4; --onto-muted: rgba(232, 231, 228, .48); --onto-accent: #e8e7e4; background: var(--onto-bg); color: var(--onto-ink); }
+.onto-root { --onto-bg: transparent; --onto-panel: rgba(20, 20, 22, 0.72); --onto-panel-2: #141414; --onto-border: rgba(255, 255, 255, .1); --onto-ink: #e8e7e4; --onto-muted: rgba(232, 231, 228, .48); --onto-accent: #e8e7e4; background: transparent; color: var(--onto-ink); }
 .onto-root .onto-btn { border-color: rgba(255,255,255,.12); background: #161616; color: #e8e7e4; }
 .onto-root .onto-btn:hover:not(:disabled) { border-color: rgba(255,255,255,.28); background: #222; }
 .onto-root .onto-btn-primary { background: #e8e7e4; border-color: #e8e7e4; color: #111; box-shadow: none; }
 .onto-root .onto-btn-primary:hover:not(:disabled) { background: #fff; }
 .onto-root .onto-input, .onto-root .onto-select { background: #141414; border-color: rgba(255,255,255,.12); color: #f2f2f2; }
-.onto-top { flex-wrap: nowrap; gap: 10px; min-height: 0; padding: 8px 16px; background: #141416; border-bottom: 1px solid rgba(255,255,255,0.08); }
-.onto-detail-head { position: sticky; top: 0; z-index: 1; background: #141416; }
+.onto-top { flex-wrap: nowrap; gap: 10px; min-height: 0; padding: 8px 16px; background: rgba(20, 20, 22, 0.72); border-bottom: 1px solid rgba(255,255,255,0.08); }
+/* Sticky header inside the right-hand detail panel: translucent so the grid
+   continues behind it. */
+.onto-detail-head { position: sticky; top: 0; z-index: 1; background: rgba(20, 20, 22, 0.92); backdrop-filter: blur(6px); }
 .teleology-graph-host { flex: 1; min-height: 0; height: 100%; }
 .onto-title-block { flex: none; margin-right: 8px; }
 .onto-title { font-size: 18px; line-height: 1.2; color: #fff; }
@@ -1051,7 +1087,7 @@ button.teleology-relation-item { cursor: pointer; font: inherit; }
 .onto-review-actions button { border: 1px solid rgba(255,255,255,.12); background: transparent; color: #e8e7e4; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; }
 .onto-review-actions button.is-on { background: #e8e7e4; color: #111; }
 
-.teleology-classic-inspector { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: #141416; color: #e8e7e4; }
+.teleology-classic-inspector { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: transparent; color: #e8e7e4; }
 .teleology-classic-inspector-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
 .onto-dialog { background: #161618; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; box-shadow: 0 18px 40px rgba(0,0,0,0.45); padding: 18px 18px 14px; color: #e8e7e4; }
 .onto-dialog h2 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }
