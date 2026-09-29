@@ -93,11 +93,11 @@ test("chevron follows canonical child_count, not evidence page totals", () => {
     expect(row?.querySelector("button.onto-file-chevron")).toBeTruthy();
   }
   const leaf = screen.getByText("提升 UNOVE(UN) 项目盈利能力").closest("[role='treeitem']");
-  expect(leaf?.querySelector("button.onto-file-chevron")).toBeNull();
+  expect(leaf?.querySelector("button.onto-file-chevron")).toBeTruthy();
   for (const label of screen.getAllByText("公司利润分")) {
     expect(label.closest("[role='treeitem']")?.querySelector("button.onto-file-chevron")).toBeNull();
   }
-  expect(container.querySelectorAll("button.onto-file-chevron")).toHaveLength(7);
+  expect(container.querySelectorAll("button.onto-file-chevron")).toHaveLength(8);
 });
 
 test("evidence cards use a database mark instead of the hollow circle", () => {

@@ -68,8 +68,8 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   function item(goal: GraphNodeSummary, depth: number): React.ReactNode {
     const expanded = open.has(goal.id);
     const page = pages[goal.id];
-    const canonicalChildren = (page?.items || []).filter((child) => child.source === "derived_goal" && child.parent_id === goal.id);
-    const hasChildren = goal.source !== "company_tree" && goal.type !== "Data" && (canonicalChildren.length > 0 || (goal.child_count ?? 0) > 0);
+    const listedChildren = (page?.items || []).filter((child) => child.id !== goal.id);
+    const hasChildren = goal.source !== "company_tree" && goal.type !== "Data" && (listedChildren.length > 0 || (goal.child_count ?? 0) > 0);
     return <div key={goal.id} role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={focusId === goal.id}>
       <div
         className={`onto-file-row${focusId === goal.id ? " is-selected" : ""}${draggingId === goal.id ? " is-dragging" : ""}${dropHint?.id === goal.id ? ` is-drop-${dropHint.placement}` : ""}`}
