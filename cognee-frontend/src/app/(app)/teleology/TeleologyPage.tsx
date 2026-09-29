@@ -51,7 +51,7 @@ export default function TeleologyPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", background: "transparent" }}>
       <TrackPageView page="teleology" />
-      <div className="teleology-toolbar">
+      <div className={`teleology-toolbar${mode === "classic" ? " is-classic" : ""}`}>
         <div className="teleology-toolbar-row teleology-toolbar-top">
           <div className="teleology-mode-tabs">
             <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
@@ -64,6 +64,7 @@ export default function TeleologyPage() {
         {mode === "browser" && !toolbarCollapsed && <div className="teleology-toolbar-row teleology-toolbar-bottom">
           <div id="teleology-browser-data-actions" className="teleology-toolbar-data-actions" />
         </div>}
+        {mode === "classic" && <div id="teleology-classic-info" className="teleology-toolbar-row teleology-classic-info-row" />}
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {mode === "browser" ? (

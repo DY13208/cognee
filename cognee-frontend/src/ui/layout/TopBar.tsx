@@ -8,7 +8,6 @@ import CogneeUser from "@/modules/users/CogneeUser";
 import isCloudEnvironment from "@/utils/isCloudEnvironment";
 
 import Link from "next/link";
-import HelpMenu from "./HelpMenu";
 import ProfileMenu from "./ProfileMenu";
 import { useFilter } from "./FilterContext";
 import { useTenant } from "@/modules/tenant/TenantContext";
@@ -109,7 +108,6 @@ export default function TopBar() {
 
   // Check if we're on a dataset detail page
   const isDatasetDetail = /^\/datasets\/.+$/.test(pathname);
-  const onTeleology = basePath === "/teleology";
 
   return (
     <header
@@ -120,9 +118,8 @@ export default function TopBar() {
         background: "rgba(0,0,0,0.65)",
         backdropFilter: "blur(12px)",
         borderBottom: "1px solid rgba(255,255,255,0.08)",
-        ...(onTeleology
-          ? { minHeight: 48, height: "auto", padding: "10px 16px" }
-          : { height: 53, paddingInline: 24 }),
+        height: 53,
+        paddingInline: 24,
       }}
     >
       {/* Left: breadcrumbs */}
@@ -187,10 +184,9 @@ export default function TopBar() {
         ) : null}
       </div>
 
-      {/* Right: language + help + profile */}
+      {/* Right: language + profile */}
       <div className="flex items-center gap-3">
         <LanguageSwitch />
-        <HelpMenu />
         <ProfileMenu
           userName={user?.name || ""}
           userEmail={user?.email || ""}

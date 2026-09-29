@@ -129,11 +129,13 @@ export default function TeleologyClassicPage() {
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null);
+  const [infoHost, setInfoHost] = useState<HTMLElement | null>(null);
   const [coverageOpen, setCoverageOpen] = useState(false);
   const { leftOpen, rightOpen, setLeftOpen, setRightOpen } = useSideOpen();
 
   useEffect(() => {
     setActionsHost(document.getElementById("teleology-classic-actions"));
+    setInfoHost(document.getElementById("teleology-classic-info"));
   }, []);
 
   const [status, setStatus] = useState<TeleologyStatus | null>(null);
@@ -981,27 +983,13 @@ export default function TeleologyClassicPage() {
     <Shell>
       <TrackPageView page="Teleology" />
 
-      {/* Header + purpose lens */}
-      <div
-        className="onto-top"
-        style={{
-          padding: "8px 16px 10px",
-          flexShrink: 0,
-          width: "100%",
-          alignItems: "stretch",
-          background: "rgba(20, 20, 22, 0.72)",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
+      {/* Keep controls in the shared two-row toolbar. */}
         {actionsHost
           ? createPortal(
               <>
                 <button
                   type="button"
-                  style={btn(true)}
+                  className="teleology-classic-action is-purple"
                   disabled={busy || !datasetId}
                   onClick={handleSyncFromCompanyTree}
                   title={t(
@@ -1012,15 +1000,15 @@ export default function TeleologyClassicPage() {
                 >
                   {t(language, "Sync company tree", "同步公司树")}
                 </button>
-                <button type="button" style={btn(false)} disabled={busy || !datasetId} onClick={handleSync}>
+                <button type="button" className="teleology-classic-action" disabled={busy || !datasetId} onClick={handleSync}>
                   {t(language, "Sync YAML goals", "同步 YAML 目标")}
                 </button>
-                <button type="button" style={btn(false)} disabled={!datasetId} onClick={() => setCoverageOpen(true)}>
+                <button type="button" className="teleology-classic-action is-strong" disabled={!datasetId} onClick={() => setCoverageOpen(true)}>
                   {t(language, "Purpose coverage", "目的论覆盖分析")}
                 </button>
                 <button
                   type="button"
-                  style={btn(false)}
+                  className="teleology-classic-action"
                   onClick={() => {
                     setVocabQuery("");
                     setVocabHits([]);
@@ -1035,24 +1023,19 @@ export default function TeleologyClassicPage() {
             )
           : null}
 
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 10,
-            alignItems: "center",
-          }}
-        >
-          <label style={{ fontSize: 12, color: "rgba(237,236,234,0.45)", fontWeight: 600 }}>
+        {infoHost ? createPortal(
+        <div className="teleology-classic-info">
+          <div className="teleology-classic-dataset">
+          <label className="teleology-classic-context-label">
             {t(language, "Dataset", "数据集")}
           </label>
-          <div style={{ position: "relative", minWidth: 160 }}>
+          <div style={{ position: "relative", minWidth: 0, flex: 1 }}>
             <button
               type="button"
               style={{
                 ...selectStyle,
-                width: "auto",
-                minWidth: 160,
+                width: "100%",
+                minWidth: 0,
                 textAlign: "left",
                 cursor: "pointer",
                 display: "flex",
@@ -1063,7 +1046,7 @@ export default function TeleologyClassicPage() {
               onClick={() => setDatasetMenuOpen((v) => !v)}
               onBlur={() => window.setTimeout(() => setDatasetMenuOpen(false), 150)}
             >
-              <span>{selectedDataset?.name || datasets[0]?.name || t(language, "No datasets", "暂无数据集")}</span>
+              <span className="teleology-classic-truncate">{selectedDataset?.name || datasets[0]?.name || t(language, "No datasets", "暂无数据集")}</span>
               <span style={{ opacity: 0.5, fontSize: 10 }}>▾</span>
             </button>
             {datasetMenuOpen ? (
@@ -1122,28 +1105,29 @@ export default function TeleologyClassicPage() {
             ) : null}
           </div>
 
-          <span style={{ width: 1, height: 22, background: "rgba(255,255,255,0.1)" }} />
-
-          <span style={{ fontSize: 12, color: "rgba(237,236,234,0.7)" }}>{t(language, "Current purpose", "当前目的")}: {selectedGoal?.name || t(language, "Select from the goal tree", "从左侧目标树选择")}</span>
-
+          </div>
+          <div className="teleology-classic-purpose">
+          <span className="teleology-classic-purpose-value"><span>{t(language, "Current purpose", "当前目的")}:</span> {selectedGoal?.name || t(language, "Select from the goal tree", "从左侧目标树选择")}</span>
           <button
             type="button"
-            style={btn(true)}
+            className="teleology-classic-action is-purple"
             disabled={!lensGoalId}
             onClick={() => setShowRecall((v) => !v)}
           >
             {t(language, "Recall with this purpose", "用此目的召回")}
           </button>
-
-          <div style={{ display: "flex", gap: 8, marginLeft: "auto", alignItems: "center" }}>
-            {(Object.keys(REL_COLOR) as TeleologyRelationship[]).map((rel) => (
+          </div>
+          <div className="teleology-classic-legend">
+            {Object.keys(REL_COLOR).map((rel) => (
               <span key={rel} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "rgba(237,236,234,0.55)" }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: REL_COLOR[rel] }} />
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: REL_COLOR[rel] }} />
                 {rel}
               </span>
             ))}
           </div>
-        </div>
+        </div>, infoHost) : null}
+
+      {(loadError || showRecall) && <div className="teleology-classic-feedback">
 
         {loadError ? (
           <div
@@ -1220,7 +1204,7 @@ export default function TeleologyClassicPage() {
             ) : null}
           </div>
         ) : null}
-      </div>
+      </div>}
 
       {/* Graph + inspector — same shell as the goal hierarchy view */}
       {coverageOpen && cogniInstance && datasetId ? (
