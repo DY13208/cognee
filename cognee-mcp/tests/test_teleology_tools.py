@@ -55,6 +55,35 @@ async def test_proposal_review_tools_only_issue_get_requests():
 
 
 @pytest.mark.asyncio
+async def test_sop_validate_uses_explicit_raw_source_context():
+    registry = FakeRegistry()
+    client = FakeClient()
+    register_teleology_tools(registry, lambda: client)
+    raw = {"target": {"uid": "node-1", "name": "<p>P：制定项目利润目标</p>"}}
+    proposal = {"plan": [{"id": "P1", "text": "制定项目利润目标"}]}
+    await registry.tools["validate_sop_proposal"](
+        "dataset-1", "room-1", "node-1", ["node-1"], raw, proposal
+    )
+    assert client.calls == [
+        (
+            "POST",
+            "/api/v1/teleology/sop/proposals/validate",
+            {
+                "dataset_id": "dataset-1",
+                "proposal": proposal,
+                "context": {
+                    "room_key": "room-1",
+                    "node_uid": "node-1",
+                    "source_uids": ["node-1"],
+                    "mindmap_context": raw,
+                },
+            },
+            None,
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_review_tools_omit_absent_filters():
     registry = FakeRegistry()
     client = FakeClient()

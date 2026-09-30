@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from pydantic import Field
@@ -321,8 +321,17 @@ def get_teleology_router() -> APIRouter:
     async def sop_validate(
         payload: SopValidationRequest, user: User = Depends(get_authenticated_user)
     ):
+        if not isinstance(payload.context.get("mindmap_context"), dict):
+            raise HTTPException(status_code=400, detail="mindmap_context is required")
         context = await build_teleology_sop_context(
-            {**payload.context, "dataset_id": str(payload.dataset_id)}, user
+            {
+                "dataset_id": str(payload.dataset_id),
+                "room_key": payload.context.get("room_key") or "",
+                "node_uid": payload.context.get("node_uid") or "",
+                "source_uids": payload.context.get("source_uids") or [],
+                "mindmap_context": payload.context["mindmap_context"],
+            },
+            user,
         )
         return validate_sop_proposal(payload.proposal, context)
 

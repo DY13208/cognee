@@ -1,4 +1,8 @@
 from copy import deepcopy
+from importlib import import_module
+
+import pytest
+from fastapi import HTTPException
 
 from cognee.modules.teleology.sop_context import context_from_snapshot
 from cognee.modules.teleology.sop_generator import generate_sop_proposal
@@ -464,3 +468,64 @@ def test_real_html_p1_generator_and_standalone_validation_agree():
         == "AMBIGUOUS"
     )
     assert proposal["validation"]["goal_resolution_reason"] == standalone["goal_resolution_reason"]
+
+
+@pytest.mark.asyncio
+async def test_sop_routes_rebuild_identical_real_shape_context(monkeypatch):
+    router_module = import_module("cognee.api.v1.teleology.routers.get_teleology_router")
+    real_id = "e7f37cf4-fda6-5856-93e2-c688fc0a1352"
+    snapshot = _snapshot()
+    snapshot["candidates"][1]["source_node_ids"] = [real_id]
+    snapshot["candidates"][1]["evidence"] = [{"node_id": real_id}]
+    snapshot["candidates"].append(_goal("g-second", "项目利润目标", real_id))
+    request = _request()
+    request["mindmap_context"]["target"].update(
+        name="<p>P：制定项目利润目标</p>", evidence_node_id=real_id
+    )
+    tree = [_tree(real_id, ROOM, NODE)]
+    built_contexts = []
+    built_requests = []
+
+    async def fake_builder(payload, user):
+        built_requests.append(deepcopy(payload))
+        result = context_from_snapshot(snapshot, payload, tree)
+        built_contexts.append(result)
+        return result
+
+    monkeypatch.setattr(router_module, "build_teleology_sop_context", fake_builder)
+    router = router_module.get_teleology_router()
+    generate = next(route.endpoint for route in router.routes if route.path == "/sop/proposals")
+    validate = next(
+        route.endpoint for route in router.routes if route.path == "/sop/proposals/validate"
+    )
+    proposal = await generate(router_module.SopProposalRequest(**request), user=object())
+    standalone = await validate(
+        router_module.SopValidationRequest(
+            dataset_id=request["dataset_id"],
+            proposal=proposal,
+            context={key: request[key] for key in ("room_key", "node_uid", "source_uids", "mindmap_context")},
+        ),
+        user=object(),
+    )
+    assert built_requests[0] == built_requests[1]
+    assert built_contexts[0]["factual_atoms"] == built_contexts[1]["factual_atoms"]
+    target = next(atom for atom in built_contexts[1]["factual_atoms"] if atom["provenance"] == "target")
+    assert target["text"] == "制定项目利润目标"
+    assert target["raw_text"] == "<p>P：制定项目利润目标</p>"
+    assert target["source_uid"] == NODE
+    assert target["evidence_node_id"] == real_id
+    assert target["explicit_plan"] is True
+    assert proposal["validation"]["unsupported_claims"] == standalone["unsupported_claims"] == []
+    assert proposal["validation"]["status"] == standalone["status"]
+    assert proposal["validation"]["provenance_conflicts"] == standalone["provenance_conflicts"]
+    assert proposal["validation"]["goal_resolution_status"] == standalone["goal_resolution_status"]
+
+    with pytest.raises(HTTPException, match="mindmap_context is required") as exc_info:
+        await validate(
+            router_module.SopValidationRequest(
+                dataset_id=request["dataset_id"], proposal=proposal, context={"room_key": ROOM}
+            ),
+            user=object(),
+        )
+    assert exc_info.value.status_code == 400
+    assert len(built_contexts) == 2

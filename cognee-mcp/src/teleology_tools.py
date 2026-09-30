@@ -68,15 +68,27 @@ def register_teleology_tools(registry, get_client) -> None:
         )
 
     @registry.tool(tags={"teleology", "sop"})
-    async def validate_sop_proposal(dataset_id: str, proposal: dict, context: dict) -> list:
-        """Validate an SOP proposal against current snapshot and supplied factual context."""
+    async def validate_sop_proposal(
+        dataset_id: str,
+        room_key: str,
+        node_uid: str,
+        source_uids: list[str],
+        mindmap_context: dict,
+        proposal: dict,
+    ) -> list:
+        """Validate using the same raw mind-map inputs as proposal generation."""
         return await request(
             "POST",
             "/api/v1/teleology/sop/proposals/validate",
             body={
                 "dataset_id": dataset_id,
                 "proposal": proposal,
-                "context": context,
+                "context": {
+                    "room_key": room_key,
+                    "node_uid": node_uid,
+                    "source_uids": source_uids,
+                    "mindmap_context": mindmap_context,
+                },
             },
         )
 
