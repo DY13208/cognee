@@ -84,6 +84,81 @@ def test_source_provenance_single_plural_and_wrong_pair():
     assert any("SOURCE_PROVENANCE_MISMATCH" in issue["reason"] for issue in errors)
 
 
+def test_real_p1_html_fact_is_supported_by_its_own_source():
+    context, proposal = _real_p1_context()
+    context["factual_atoms"] = [
+        {
+            "text": "制定项目利润目标",
+            "raw_text": "<p>P：制定项目利润目标</p>",
+            "source_uid": REAL_UID,
+            "evidence_node_id": REAL_ID,
+            "source_type": "NODE",
+        }
+    ]
+    proposal["plan"][0].update(source_uids=[REAL_UID], evidence_node_ids=[REAL_ID])
+    fields = [
+        "负责人",
+        "审批人",
+        "时间要求",
+        "数值阈值",
+        "系统名称",
+        "操作路径",
+        "责任部门",
+        "频率",
+    ]
+    proposal["missing_details"] = [
+        {"field": field, "evidence_status": "MISSING"} for field in fields
+    ]
+    result = validate_sop_proposal(proposal, context)
+    assert result["status"] == "NEEDS_REVIEW"
+    assert result["unsupported_claims"] == []
+    assert result["missing_fields"] == fields
+    assert result["quality_gaps"] == ["缺少可验收的检查标准"]
+    proposal["plan"][0]["text"] = "提交年度预算审批"
+    result = validate_sop_proposal(proposal, context)
+    assert any(
+        issue["reason"] == "SOURCE 文本未被引用事实直接支持"
+        for issue in result["unsupported_claims"]
+    )
+
+
+def test_source_text_html_variants_and_node_scope():
+    context, proposal = _real_p1_context()
+    item = proposal["plan"][0]
+    item.update(source_uid=REAL_UID, evidence_node_id=REAL_ID)
+    for raw in ("<p>P：制定项目利润目标</p>", "P：制定项目利润目标", "制定项目利润目标"):
+        context["factual_atoms"] = [
+            {"source_uid": REAL_UID, "evidence_node_id": REAL_ID, "raw_text": raw}
+        ]
+        assert validate_sop_proposal(proposal, context)["unsupported_claims"] == []
+    for raw in ("<div>P：提交审批</div>", "<strong>P：提交审批</strong>"):
+        item["text"] = "提交审批"
+        context["factual_atoms"] = [
+            {"source_uid": REAL_UID, "evidence_node_id": REAL_ID, "raw_text": raw}
+        ]
+        assert validate_sop_proposal(proposal, context)["unsupported_claims"] == []
+    context["factual_atoms"] = [
+        {"source_uid": "other-node", "raw_text": "<p>P：提交审批</p>"},
+        {"source_uid": REAL_UID, "raw_text": "<p>P：制定项目利润目标</p>"},
+    ]
+    assert any(
+        issue["reason"] == "SOURCE 文本未被引用事实直接支持"
+        for issue in validate_sop_proposal(proposal, context)["unsupported_claims"]
+    )
+
+
+def test_no_plan_is_insufficient_and_no_check_is_quality_gap():
+    context, proposal = _real_p1_context()
+    proposal["plan"][0].update(source_uid=REAL_UID, evidence_node_id=REAL_ID)
+    result = validate_sop_proposal(proposal, context)
+    assert result["status"] == "NEEDS_REVIEW"
+    assert "checks" not in result["missing_fields"]
+    assert result["quality_gaps"] == ["缺少可验收的检查标准"]
+    proposal["plan"] = []
+    result = validate_sop_proposal(proposal, context)
+    assert result["status"] == "INSUFFICIENT_EVIDENCE"
+
+
 def _sample():
     snapshot = {
         "run_id": "current",

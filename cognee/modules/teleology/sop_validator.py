@@ -5,7 +5,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from cognee.modules.teleology.sop_sources import MINDMAP_SOURCE_TYPES, extract_factual_atoms
+from cognee.modules.teleology.sop_sources import (
+    MINDMAP_SOURCE_TYPES,
+    _strip_plan_prefix,
+    extract_factual_atoms,
+    normalize_mindmap_text,
+)
 
 _SENSITIVE = re.compile(
     r"负责人|审批人|责任部门|\d+(?:\.\d+)?\s*(?:%|小时|分钟|天|次|元)|每周|每月|系统|路径|owner|approver|deadline|threshold",
@@ -26,7 +31,8 @@ def _atoms(context: dict[str, Any]) -> list[dict[str, Any]]:
     stored = [
         atom
         for atom in context.get("factual_atoms") or []
-        if isinstance(atom, dict) and atom.get("source_type") in MINDMAP_SOURCE_TYPES
+        if isinstance(atom, dict)
+        and (not atom.get("source_type") or atom.get("source_type") in MINDMAP_SOURCE_TYPES)
     ]
     if stored:
         return stored
@@ -106,6 +112,38 @@ def verify_source_provenance(
     ):
         return "SOURCE 缺少真实的 source/evidence id"
     return None
+
+
+def _canonical_source_text(value: Any) -> str:
+    normalized = normalize_mindmap_text(str(value or "")).strip()
+    return _strip_plan_prefix(normalized)[0]
+
+
+def _source_text_supported(item: dict[str, Any], context: dict[str, Any]) -> bool:
+    expected = _canonical_source_text(item.get("text"))
+    if not expected:
+        return False
+    uids = set(collect_source_uids(item))
+    ids = set(collect_evidence_node_ids(item))
+    if ids:
+        uids.update(
+            str(ref["mindmap_uid"])
+            for ref in context.get("source_refs") or []
+            if isinstance(ref, dict)
+            and ref.get("resolution_status") == "EXACT"
+            and str(ref.get("company_tree_node_id") or "") in ids
+            and ref.get("mindmap_uid")
+        )
+    for atom in _atoms(context):
+        atom_uid = str(atom.get("source_uid") or "")
+        atom_id = str(atom.get("evidence_node_id") or "")
+        if atom_uid not in uids and atom_id not in ids:
+            continue
+        if ids and atom_id and atom_id not in ids:
+            continue
+        if any(_canonical_source_text(atom.get(key)) == expected for key in ("text", "raw_text")):
+            return True
+    return False
 
 
 def _known_constraint_ids(context: dict[str, Any]) -> set[str]:
@@ -216,6 +254,7 @@ def validate_sop_proposal(
     constraint_ids = _known_constraint_ids(context)
     purpose_ids = _known_purpose_ids(context)
     unsupported: list[dict[str, Any]] = []
+    quality_gaps: list[str] = []
     missing = [
         str(item.get("field"))
         for item in proposal.get("missing_details") or []
@@ -233,7 +272,7 @@ def validate_sop_proposal(
                 provenance_error = verify_source_provenance(item, context, known_uids, known_ids)
                 if provenance_error:
                     unsupported.append({"id": label, "reason": provenance_error})
-                elif text not in factual_text:
+                elif not _source_text_supported(item, context):
                     unsupported.append({"id": label, "reason": "SOURCE 文本未被引用事实直接支持"})
             elif status == "DERIVED":
                 if not str(item.get("reason") or "").strip():
@@ -258,7 +297,13 @@ def validate_sop_proposal(
                     unsupported.append({"id": label, "reason": "MISSING 内容须明确标注待确认"})
             else:
                 unsupported.append({"id": label, "reason": "无效 evidence_status"})
-            if _SENSITIVE.search(text) and status != "MISSING" and text not in factual_text:
+            source_grounded = status == "SOURCE" and _source_text_supported(item, context)
+            if (
+                _SENSITIVE.search(text)
+                and status != "MISSING"
+                and not source_grounded
+                and text not in factual_text
+            ):
                 grounded = status == "DERIVED" and _sensitive_grounded(text, item, context)
                 if not grounded:
                     unsupported.append(
@@ -277,7 +322,7 @@ def validate_sop_proposal(
         ):
             conflicts.append({"constraint": name, "reason": "计划包含被禁止的行为"})
     if not checks:
-        missing.append("checks")
+        quality_gaps.append("缺少可验收的检查标准")
     if not plan:
         missing.append("plan")
     coverage = {"checks": len(checks), "plan": len(plan), "covered_checks": 0}
@@ -329,11 +374,12 @@ def validate_sop_proposal(
                     {"sop_id": existing.get("id"), "reason": "同目标、同范围的已有 SOP 步骤不同"}
                 )
     identity_issues, provenance_conflicts = _resolution_issues(context)
-    if not checks and not plan:
+    if not plan:
         state = "INSUFFICIENT_EVIDENCE"
     elif (
         unsupported
         or missing
+        or quality_gaps
         or conflicts
         or sop_conflicts
         or identity_issues
@@ -351,6 +397,7 @@ def validate_sop_proposal(
         or "",
         "unsupported_claims": unsupported,
         "missing_fields": missing,
+        "quality_gaps": quality_gaps,
         "constraint_conflicts": conflicts,
         "sop_conflicts": sop_conflicts,
         "source_identity_issues": identity_issues,

@@ -455,6 +455,7 @@ def test_real_html_p1_generator_and_standalone_validation_agree():
         for ref in standalone_context["source_refs"]
     )
     standalone = validate_sop_proposal(proposal, standalone_context)
+    assert proposal["validation"] == standalone
     assert proposal["validation"]["unsupported_claims"] == standalone["unsupported_claims"] == []
     assert proposal["validation"]["provenance_conflicts"] == standalone["provenance_conflicts"]
     assert (
