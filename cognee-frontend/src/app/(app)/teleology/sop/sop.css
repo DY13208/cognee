@@ -1,0 +1,194 @@
+.sop-sheet {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  color: #e8e7e4;
+  background:
+    radial-gradient(1200px 420px at 10% -10%, rgba(232, 196, 140, 0.08), transparent 55%),
+    transparent;
+}
+
+.sop-reader {
+  width: min(760px, calc(100% - 48px));
+  margin: 28px auto 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.sop-kicker {
+  margin: 0;
+  color: #c4a574;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.sop-reader h1 {
+  margin: 8px 0 0;
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 620;
+  letter-spacing: -0.03em;
+}
+
+.sop-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.sop-meta span,
+.sop-origin {
+  border: 1px solid rgba(232, 231, 228, 0.16);
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: rgba(232, 231, 228, 0.72);
+  font-size: 12px;
+}
+
+.sop-meta .is-review { color: #e7c27a; border-color: rgba(231, 194, 122, 0.45); }
+.sop-meta .is-valid { color: #8ddeaf; border-color: rgba(141, 222, 175, 0.4); }
+.sop-meta .is-thin { color: #e7a0a0; border-color: rgba(231, 160, 160, 0.4); }
+
+.sop-section h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232, 231, 228, 0.48);
+}
+
+.sop-objective {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.sop-flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.sop-flow li {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 12px;
+  position: relative;
+}
+
+.sop-flow li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 25px;
+  top: 28px;
+  bottom: -2px;
+  width: 1px;
+  background: rgba(232, 231, 228, 0.22);
+}
+
+.sop-flow-mark {
+  width: 52px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #161616;
+  border: 1px solid rgba(232, 231, 228, 0.28);
+  color: #e8c48c;
+  font-size: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.sop-flow li.is-check .sop-flow-mark { border-radius: 4px; color: #9ec0ff; }
+.sop-flow li.is-gap .sop-flow-body { color: rgba(232, 231, 228, 0.55); font-style: italic; }
+
+.sop-flow-body {
+  margin: 0 0 18px;
+  padding-top: 3px;
+  line-height: 1.45;
+}
+
+.sop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sop-list article {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(232, 231, 228, 0.1);
+}
+
+.sop-list strong { font-size: 15px; font-weight: 560; }
+.sop-list p { margin: 6px 0 0; color: rgba(232, 231, 228, 0.62); font-size: 13px; line-height: 1.45; }
+
+.sop-missing { margin: 0; padding: 0; list-style: none; }
+.sop-missing li { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid rgba(232, 231, 228, 0.1); }
+.sop-missing small { color: rgba(232, 231, 228, 0.55); }
+
+.sop-basis { margin: 0; padding-left: 18px; }
+.sop-basis li { margin: 6px 0; line-height: 1.5; color: rgba(232, 231, 228, 0.82); }
+
+.sop-empty {
+  width: min(520px, calc(100% - 48px));
+  margin: 72px auto;
+  color: rgba(232, 231, 228, 0.72);
+  line-height: 1.6;
+}
+
+.sop-load {
+  width: min(760px, calc(100% - 48px));
+  margin: 8px auto 0;
+  color: rgba(232, 231, 228, 0.72);
+}
+
+.sop-load summary { cursor: pointer; color: #c4a574; }
+.sop-load form { display: grid; gap: 8px; margin-top: 12px; }
+.sop-load label { display: grid; gap: 4px; font-size: 12px; }
+.sop-load input,
+.sop-load textarea {
+  border: 1px solid rgba(232, 231, 228, 0.16);
+  background: #121212;
+  color: #e8e7e4;
+  padding: 8px;
+  font: inherit;
+}
+.sop-load button {
+  justify-self: start;
+  border: 1px solid #e8e7e4;
+  background: #e8e7e4;
+  color: #111;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.sop-load button:disabled { opacity: 0.5; cursor: default; }
+.sop-load .sop-error { color: #e7a0a0; }
+
+.sop-developer {
+  width: min(760px, calc(100% - 48px));
+  margin: 0 auto 48px;
+  color: rgba(232, 231, 228, 0.55);
+  font-size: 12px;
+}
+.sop-developer summary { cursor: pointer; }
+.sop-developer pre {
+  overflow: auto;
+  padding: 12px;
+  background: #101010;
+  border: 1px solid rgba(232, 231, 228, 0.1);
+  white-space: pre-wrap;
+}
