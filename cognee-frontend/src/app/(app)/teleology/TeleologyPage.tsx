@@ -51,20 +51,29 @@ export default function TeleologyPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", background: "transparent" }}>
       <TrackPageView page="teleology" />
-      <div className={`teleology-toolbar${mode === "classic" ? " is-classic" : ""}`}>
+      <div className="teleology-toolbar">
         <div className="teleology-toolbar-row teleology-toolbar-top">
           <div className="teleology-mode-tabs">
             <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
             <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
           </div>
-          {mode === "browser"
-            ? <div id="teleology-browser-view-actions" className="teleology-toolbar-view-actions" />
-            : <div id="teleology-classic-actions" className="teleology-classic-actions" />}
+          <div className="teleology-toolbar-view-actions">
+            <button
+              type="button"
+              className="onto-btn onto-collapse-btn"
+              aria-expanded={!toolbarCollapsed}
+              aria-controls="teleology-toolbar-data-row"
+              onClick={() => setToolbarCollapsed((collapsed) => !collapsed)}
+            >
+              {toolbarCollapsed ? (zh ? "展开 ↓" : "Expand ↓") : (zh ? "收起 ↑" : "Collapse ↑")}
+            </button>
+          </div>
         </div>
-        {mode === "browser" && !toolbarCollapsed && <div className="teleology-toolbar-row teleology-toolbar-bottom">
-          <div id="teleology-browser-data-actions" className="teleology-toolbar-data-actions" />
-        </div>}
-        {mode === "classic" && <div id="teleology-classic-info" className="teleology-toolbar-row teleology-classic-info-row" />}
+        <div id="teleology-toolbar-data-row" className="teleology-toolbar-row teleology-toolbar-bottom" style={{ display: toolbarCollapsed ? "none" : undefined }}>
+          {mode === "browser"
+            ? <div id="teleology-browser-data-actions" className="teleology-toolbar-data-actions" />
+            : <div id="teleology-classic-info" className="teleology-toolbar-data-actions" />}
+        </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {mode === "browser" ? (
@@ -85,7 +94,6 @@ export default function TeleologyPage() {
             language={zh ? "zh" : "en"}
             busy={busy}
             onBusy={setBusy}
-            onHeaderCollapsedChange={setToolbarCollapsed}
           />
         ) : <TeleologyClassicPage />}
       </div>
