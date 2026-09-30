@@ -625,7 +625,8 @@ export interface GoalCandidate {
   evidence: GoalEvidence[];
   parent_candidate_id: string | null;
   sort_order?: number | null;
-  status: "proposed" | "confirmed" | "rejected";
+  status: "proposed" | "confirmed" | "rejected" | "legacy_confirmed";
+  outside_current_snapshot?: boolean;
   run_id: string;
   generated_by: string;
   semantic_hash: string;

@@ -11,7 +11,7 @@ import {
   type GoalTeleologyItem,
 } from "@/modules/teleology/teleologyApi";
 
-const STATUS_LABEL = { proposed: "提案", confirmed: "已确认", rejected: "已驳回" };
+const STATUS_LABEL = { proposed: "提案", confirmed: "已确认", legacy_confirmed: "历史已确认", rejected: "已驳回" };
 
 function childrenOf(model: GoalModelView, parentId: string | null) {
   return model.hierarchy.filter((goal) => (goal.parent_candidate_id || null) === parentId);

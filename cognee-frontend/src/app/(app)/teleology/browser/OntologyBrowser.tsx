@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CogneeInstance } from "@/modules/instances/types";
 import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveGoalCandidate, moveWorkspaceGoal, reviewGoalCandidate, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GoalModelView, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
-import { buildDerivedGoalTree, parseDataNodeId, resolveFocusTarget, type DerivedGoalTree } from "./derivedGoalTree";
+import { buildDerivedGoalTree, isCurrentGoal, parseDataNodeId, resolveFocusTarget, type DerivedGoalTree } from "./derivedGoalTree";
 import { confirmGoalCandidates } from "./confirmGoalCandidates";
 import { notifications } from "@mantine/notifications";
 import NavPanel, { type GoalMovePlacement, type GoalPage } from "./NavPanel";
@@ -294,7 +294,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   }, [detailGoalId, focus, proposal, relationCounts, goalModel, focusPreset]);
 
   const selectedCandidate = goalModel?.candidates.find((candidate) => candidate.id === detailGoalId) || null;
-  const proposedGoalIds = goalModel?.candidates.filter((candidate) => candidate.status === "proposed").map((candidate) => candidate.id) || [];
+  const proposedGoalIds = goalModel?.candidates.filter((candidate) => isCurrentGoal(candidate) && candidate.status === "proposed").map((candidate) => candidate.id) || [];
 
   const selectedEntity = useMemo(() => {
     const found = [focus, parent, ...why, ...children, ...path, ...roots].find((goal) => goal?.id === selectedId);

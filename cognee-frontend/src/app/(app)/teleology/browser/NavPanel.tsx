@@ -68,8 +68,8 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
   function item(goal: GraphNodeSummary, depth: number): React.ReactNode {
     const expanded = open.has(goal.id);
     const page = pages[goal.id];
-    const listedChildren = (page?.items || []).filter((child) => child.id !== goal.id);
-    const hasChildren = goal.source !== "company_tree" && goal.type !== "Data" && (listedChildren.length > 0 || (goal.child_count ?? 0) > 0);
+    const goalChildren = (page?.items || []).filter((child) => child.source === "derived_goal" && child.type !== "Data");
+    const hasChildren = goal.source !== "company_tree" && goal.type !== "Data" && ((goal.child_count ?? 0) > 0 || goalChildren.length > 0);
     return <div key={goal.id} role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={focusId === goal.id}>
       <div
         className={`onto-file-row${focusId === goal.id ? " is-selected" : ""}${draggingId === goal.id ? " is-dragging" : ""}${dropHint?.id === goal.id ? ` is-drop-${dropHint.placement}` : ""}`}
@@ -110,7 +110,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
       </div>
       {expanded && <div role="group" className="onto-nav-branch">
         {page?.loading && <div className="onto-nav-loading">{t("Loading goals…", "加载目标中…")}</div>}
-        {page?.items.map((child) => item(child, depth + 1))}
+        {goalChildren.map((child) => item(child, depth + 1))}
         {page?.loaded && (page.nextOffset ?? page.items.length) < page.total && <button type="button" className="onto-nav-more" onClick={() => onExpand(goal.id, true)}>{t("Load 30 more", "再加载 30 个")} · {page.total - (page.nextOffset ?? page.items.length)}</button>}
       </div>}
     </div>;

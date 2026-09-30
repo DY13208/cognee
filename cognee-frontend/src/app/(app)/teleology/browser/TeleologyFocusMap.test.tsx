@@ -6,7 +6,7 @@ import EntityCard from "./EntityCard";
 import TeleologyFocusMap, { shouldShowFocusDetail } from "./TeleologyFocusMap";
 import type { LaidOutNode } from "./types";
 
-const goal: GraphNodeSummary = { id: "goal-1", name: "Arencia项目利润", type: "Goal", description: "", child_count: 1 };
+const goal: GraphNodeSummary = { id: "goal-1", name: "Arencia项目利润", type: "Goal", description: "", source: "derived_goal", child_count: 1 };
 const purpose: GraphNodeSummary = { id: "purpose-1", name: "提高利润核算准确性", type: "Purpose", description: "" };
 const candidatePurpose: ProposalItem = { id: "candidate-purpose", kind: "purpose", name: "提升利润透明度", description: "", confidence: 0.91, reason: "项目数据可核对", evidence_node_ids: ["document-1"], source_goal_ids: [goal.id], status: "proposed" };
 const candidateRelation: ProposalItem = { id: "candidate-relation", kind: "relation", name: "", description: "", confidence: 0.85, reason: "文档证明贡献", evidence_node_ids: ["document-1"], source_goal_ids: [goal.id], source: goal.id, target: "other-goal", relationship: "advances", status: "proposed" };
@@ -86,18 +86,18 @@ test("chevron follows canonical child_count, not evidence page totals", () => {
     node("leaf", "提升 UNOVE(UN) 项目盈利能力", 0),
   ];
   const evidence = node("data:g_profit:score", "公司利润分", 0, "company_tree");
-  const { container } = render(<NavPanel language="zh" roots={roots} pages={{ g_profit: { items: [evidence], total: 9, loading: false, loaded: true }, leaf: { items: [evidence], total: 4, loading: false, loaded: true } }} focusId="root" pathIds={["g_profit", "leaf"]} loading={false} onPick={jest.fn()} onExpand={jest.fn()} onSearch={async () => []} />);
+  const leafEvidence = ["利润分", "渠道增长", "费比", "统计规则"].map((name, index) => node(`data:leaf:${index}`, name, 0, "company_tree"));
+  const { container } = render(<NavPanel language="zh" roots={roots} pages={{ g_profit: { items: [evidence], total: 9, loading: false, loaded: true }, leaf: { items: leafEvidence, total: 4, loading: false, loaded: true } }} focusId="root" pathIds={["g_profit", "leaf"]} loading={false} onPick={jest.fn()} onExpand={jest.fn()} onSearch={async () => []} />);
   const names = roots.map((goal) => goal.name);
   for (const name of names.slice(0, 7)) {
     const row = screen.getByText(name).closest("[role='treeitem']");
     expect(row?.querySelector("button.onto-file-chevron")).toBeTruthy();
   }
   const leaf = screen.getByText("提升 UNOVE(UN) 项目盈利能力").closest("[role='treeitem']");
-  expect(leaf?.querySelector("button.onto-file-chevron")).toBeTruthy();
-  for (const label of screen.getAllByText("公司利润分")) {
-    expect(label.closest("[role='treeitem']")?.querySelector("button.onto-file-chevron")).toBeNull();
-  }
-  expect(container.querySelectorAll("button.onto-file-chevron")).toHaveLength(8);
+  expect(leaf?.querySelector("button.onto-file-chevron")).toBeNull();
+  expect(screen.queryByText("公司利润分")).toBeNull();
+  for (const row of leafEvidence) expect(screen.queryByText(row.name)).toBeNull();
+  expect(container.querySelectorAll("button.onto-file-chevron")).toHaveLength(7);
 });
 
 test("evidence cards use a database mark instead of the hollow circle", () => {

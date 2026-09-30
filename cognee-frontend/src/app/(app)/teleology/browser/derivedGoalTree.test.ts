@@ -1,4 +1,4 @@
-import { buildDerivedGoalTree, isMissingGraphGoal, parseDataNodeId, resolveFocusTarget } from "./derivedGoalTree";
+import { buildDerivedGoalTree, isCurrentGoal, isMissingGraphGoal, parseDataNodeId, resolveFocusTarget } from "./derivedGoalTree";
 import type { GoalModelView } from "@/modules/teleology/teleologyApi";
 
 const model = {
@@ -77,6 +77,30 @@ describe("derived goal tree", () => {
     expect(tree.statuses[tree.pages.profit.items[1].id]).toBe("数据 · 项目");
     expect(tree.statuses[tree.pages.profit.items[2].id]).toBe("数据 · 指标");
     expect(tree.statuses.accuracy).toBe("待确认");
+  });
+
+  it("keeps historical confirmed goals out of the current tree and pending count", () => {
+    const historical = {
+      ...model.candidates[0],
+      id: "historical",
+      name: "历史已确认目标",
+      status: "confirmed" as const,
+      outside_current_snapshot: true,
+    };
+    const legacy = {
+      ...model.candidates[0],
+      id: "legacy",
+      name: "旧状态历史目标",
+      status: "legacy_confirmed" as const,
+    };
+    const current = buildDerivedGoalTree({ ...model, candidates: [...model.candidates, historical, legacy] }, "zh");
+    expect(current.roots.map((goal) => goal.id)).toEqual(["profit"]);
+    expect(current.byId.has("historical")).toBe(false);
+    expect(current.byId.has("legacy")).toBe(false);
+    expect(current.statuses.historical).toBeUndefined();
+    expect(current.statuses.legacy).toBeUndefined();
+    expect(current.statuses.accuracy).toBe("待确认");
+    expect([...model.candidates, historical, legacy].filter((goal) => isCurrentGoal(goal) && goal.status === "proposed").map((goal) => goal.id)).toEqual(["accuracy"]);
   });
 
   it("connects data nodes so they serve the derived goal", () => {
@@ -213,17 +237,30 @@ describe("derived goal tree", () => {
       ["grow-4", "g_growth"],
       ["comp-1", "g_compliance"],
       ["comp-2", "g_compliance"],
+      ["comp-3", "g_compliance"],
     ];
+    const historical = Array.from({ length: 8 }, (_, index) => ({
+      ...model.candidates[0],
+      id: `historical-${index}`,
+      name: index === 0 ? "root" : `历史目标 ${index}`,
+      parent_candidate_id: null,
+      status: "legacy_confirmed" as const,
+      outside_current_snapshot: true,
+      evidence: [],
+      source_node_ids: [`historical-source-${index}`],
+    }));
+    expect(rows).toHaveLength(27);
+    expect(rows.length + historical.length).toBe(35);
     const tree = buildDerivedGoalTree({
       ...model,
-      candidates: rows.map(([id]) => ({
+      candidates: [...rows.map(([id]) => ({
         ...model.candidates[0],
         id,
         name: id,
         parent_candidate_id: null,
         evidence: id === "g_profit" ? [{ node_id: "profit-score", name: "公司利润分", source_class: "Metric" }] : [],
         source_node_ids: [],
-      })),
+      })), ...historical],
       hierarchy: rows.map(([id, parent]) => ({
         id,
         name: id,
@@ -233,13 +270,22 @@ describe("derived goal tree", () => {
         evidence_count: 0,
       })),
     }, "zh");
+    expect(tree.byId.size).toBe(28); // 27 goals plus one evidence Data node.
+    expect(tree.roots.map((goal) => goal.id)).toEqual(["root"]);
+    expect(tree.search("历史目标")).toEqual([]);
+    expect(tree.search("root").map((goal) => goal.id)).toEqual(["root"]);
+    for (const goal of historical) {
+      expect(tree.byId.has(goal.id)).toBe(false);
+      expect(tree.sourceOwners.has(goal.source_node_ids[0])).toBe(false);
+      expect(tree.focus(goal.id)).toBeNull();
+    }
     expect(tree.byId.get("root")?.child_count).toBe(5);
     expect(tree.byId.get("g_profit")?.child_count).toBe(4);
     expect(tree.byId.get("g_mainbusiness")?.child_count).toBe(2);
     expect(tree.byId.get("g_brandprofit")?.child_count).toBe(4);
     expect(tree.byId.get("g_efficiency")?.child_count).toBe(4);
     expect(tree.byId.get("g_growth")?.child_count).toBe(4);
-    expect(tree.byId.get("g_compliance")?.child_count).toBe(2);
+    expect(tree.byId.get("g_compliance")?.child_count).toBe(3);
     expect(tree.byId.get("g_profit_leaf")?.child_count).toBe(0);
     expect(tree.focus("g_profit")?.relations.map((edge) => edge.relationship)).toEqual(["evidence"]);
   });
