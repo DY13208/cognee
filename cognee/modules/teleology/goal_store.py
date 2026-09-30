@@ -56,6 +56,11 @@ def dataset_view(row: dict[str, Any] | None, candidates: list[dict[str, Any]]) -
     }
     merged.sort(key=lambda goal: original_ids.get(str(goal.get("id")), len(original_ids)))
     payload["candidates"] = ordered_candidates(merged)
+    payload["canonical_goal_count"] = sum(
+        goal.get("status") not in {"rejected", "legacy_confirmed"}
+        and not goal.get("outside_current_snapshot")
+        for goal in payload["candidates"]
+    )
     payload["committed"] = False
     payload["graph_committed"] = False
     payload.setdefault("dataset_id", str((row or {}).get("dataset_id") or ""))
@@ -87,7 +92,8 @@ def dataset_view(row: dict[str, Any] | None, candidates: list[dict[str, Any]]) -
             "sort_order": goal.get("sort_order"),
         }
         for goal in payload["candidates"]
-        if goal.get("status") != "rejected"
+        if goal.get("status") not in {"rejected", "legacy_confirmed"}
+        and not goal.get("outside_current_snapshot")
     ]
     payload.setdefault("classifications", list(payload.get("classifications") or []))
     return payload
@@ -421,6 +427,9 @@ class SqlGoalModelStore:
                 elif goal.get("sort_order") is not None:
                     current.sort_order = int(goal["sort_order"])
                 current.status = goal.get("status") or "proposed"
+                current.outside_current_snapshot = bool(
+                    goal.get("outside_current_snapshot") or current.status == "legacy_confirmed"
+                )
                 current.run_id = str(result["run_id"])
                 current.generated_by = goal.get("generated_by") or "dataset_goal_build"
                 current.semantic_hash = goal.get("semantic_hash") or ""
@@ -727,7 +736,7 @@ def _run_dict(record: Any) -> dict[str, Any]:
 def _merge_candidate_flags(
     rows: list[dict[str, Any]], stored: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Keep review flags that are not columns on the candidate table."""
+    """Keep supplemental review flags from the run payload."""
     extras = {str(goal.get("id") or ""): goal for goal in stored}
     merged: list[dict[str, Any]] = []
     for goal in rows:
@@ -739,8 +748,7 @@ def _merge_candidate_flags(
         if extra.get("retirement_proposed"):
             row["retirement_proposed"] = True
             row["outside_current_snapshot"] = True
-            row["status"] = extra.get("status") or row.get("status") or "confirmed"
-        elif row.get("status") == "legacy_confirmed":
+        if row.get("status") == "legacy_confirmed":
             row["outside_current_snapshot"] = True
         merged.append(row)
     return merged
@@ -765,7 +773,9 @@ def _candidate_dict(record: Any) -> dict[str, Any]:
         "parent_override": bool(record.parent_override),
         "sort_order": record.sort_order,
         "status": record.status,
-        "outside_current_snapshot": record.status == "legacy_confirmed",
+        "outside_current_snapshot": bool(
+            record.outside_current_snapshot or record.status == "legacy_confirmed"
+        ),
         "run_id": record.run_id,
         "generated_by": record.generated_by,
         "semantic_hash": record.semantic_hash,

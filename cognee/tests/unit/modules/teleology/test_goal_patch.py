@@ -19,6 +19,7 @@ from cognee.modules.teleology.goal_orchestrated import (
 from cognee.modules.teleology.goal_patch import (
     PATCH_IMPACT_REPLACE_RATIO,
     analyze_goal_model_impact,
+    compose_orchestrated_patch,
     submit_orchestrated_patch,
 )
 from cognee.modules.teleology.goal_store import (
@@ -522,4 +523,102 @@ async def test_retirement_flag_survives_sql_reload(monkeypatch):
     assert brand["outside_current_snapshot"] is True
     assert _parent_name(reloaded, "提升库存周转健康度与资金效率") == "提升公司整体经营利润"
     use_goal_store(None)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_relation_only_patch_preserves_confirmed_historical_sql_snapshot():
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    def create_tables(connection):
+        TeleologyBuildRunRecord.__table__.create(connection)
+        TeleologyGoalCandidateRecord.__table__.create(connection)
+
+    async with engine.begin() as connection:
+        await connection.run_sync(create_tables)
+    store = SqlGoalModelStore(async_sessionmaker(engine, expire_on_commit=False))
+    dataset_id = uuid4()
+    model, summary = compose_orchestrated_proposal(
+        dataset_id, golden_payload(), known_node_ids=KNOWN, submission_mode="replace"
+    )
+    assert summary["valid"] is True
+    current = model["candidates"][:]
+    root = next(goal for goal in current if not goal.get("parent_candidate_id"))
+    while len(current) < 27:
+        goal = copy.deepcopy(root)
+        goal["id"] = str(uuid4())
+        goal["name"] = f"补充目标 {len(current)}"
+        goal["parent_candidate_id"] = root["id"]
+        current.append(goal)
+    historical = []
+    for index in range(8):
+        goal = copy.deepcopy(root)
+        goal["id"] = str(uuid4())
+        goal["name"] = f"历史目标 {index}"
+        goal["status"] = "confirmed"
+        goal["outside_current_snapshot"] = True
+        goal["parent_candidate_id"] = None
+        historical.append(goal)
+    model["candidates"] = current + historical
+    model["canonical_goal_count"] = 27
+    model["purposes"] = [{"id": str(uuid4())} for _ in range(25)]
+    model["constraints"] = [{"id": str(uuid4())} for _ in range(28)]
+    model["relations"] = [{"id": str(uuid4())} for _ in range(15)]
+    await store.save_result(model)
+    before = await store.get_dataset(dataset_id)
+    assert before["canonical_goal_count"] == 27
+    assert sum(goal["outside_current_snapshot"] for goal in before["candidates"]) == 8
+
+    relation_rows = [
+        {
+            "client_id": f"new-relation-{index}",
+            "source_client_id": current[index]["id"],
+            "target_client_id": current[index + 1]["id"],
+            "relationship": "advances",
+            "reason": "相关目标之间存在明确支持关系",
+            "confidence": 0.8,
+            "evidence_node_ids": ["ar_profit"],
+        }
+        for index in range(5)
+    ]
+    patched, patch_summary = compose_orchestrated_patch(
+        dataset_id,
+        _patch(
+            before,
+            affected_goal_ids=[goal["id"] for goal in current[:6]],
+            relations=relation_rows,
+        ),
+        known_node_ids=KNOWN,
+        current=before,
+    )
+    assert patch_summary["valid"] is True
+    assert len(patch_summary["relation_changes"]) == 5
+    assert patch_summary["hierarchy_changes"] == []
+    assert patch_summary["purpose_changes"] == []
+    assert patch_summary["constraint_changes"] == []
+    assert patch_summary["added_goal_ids"] == []
+    assert patch_summary["retired_goal_ids"] == []
+    await store.save_result(patched)
+    after = await store.get_dataset(dataset_id)
+    live = [
+        goal
+        for goal in after["candidates"]
+        if goal["status"] not in {"rejected", "legacy_confirmed"}
+        and not goal["outside_current_snapshot"]
+    ]
+    historic = [goal for goal in after["candidates"] if goal["outside_current_snapshot"]]
+    assert len(after["candidates"]) == 35
+    assert after["canonical_goal_count"] == len(live) == 27
+    assert {goal["id"] for goal in live} == {goal["id"] for goal in current}
+    assert {goal["id"] for goal in historic} == {goal["id"] for goal in historical}
+    assert all(goal["status"] == "confirmed" for goal in historic)
+    assert len([goal for goal in live if not goal.get("parent_candidate_id")]) == 1
+    assert len([goal for goal in live if goal.get("parent_candidate_id")]) == 26
+    assert len(after["purposes"]) == 25
+    assert len(after["constraints"]) == 28
+    assert len(after["relations"]) == 20
     await engine.dispose()

@@ -52,6 +52,7 @@ class TeleologyGoalCandidateRecord(Base):
     parent_override = Column(Boolean, nullable=False, default=False)
     sort_order = Column(Integer, nullable=True)
     status = Column(String(32), nullable=False, default="proposed")
+    outside_current_snapshot = Column(Boolean, nullable=False, default=False)
     run_id = Column(String(64), nullable=False)
     generated_by = Column(String(64), nullable=False)
     semantic_hash = Column(String(64), nullable=False)

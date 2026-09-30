@@ -563,10 +563,7 @@ def _overwrite_goal_fields(
     existing["orchestrated_identity"] = sealed.get("orchestrated_identity")
     existing["scope"] = sealed.get("scope") or ""
     existing["status"] = status
-    restore = status == "proposed" or (
-        status == "confirmed"
-        and (existing.get("outside_current_snapshot") or existing.get("retirement_proposed"))
-    )
+    restore = bool(raw.get("reopen")) and str(raw.get("status") or "") == "proposed"
     if restore:
         existing["outside_current_snapshot"] = False
         existing["retirement_proposed"] = False
@@ -578,7 +575,7 @@ def _kept_status(existing: dict[str, Any], raw: dict[str, Any]) -> str:
     if reopen and status in {"confirmed", "rejected", "legacy_confirmed"}:
         return "proposed"
     if status == "legacy_confirmed":
-        return "confirmed"
+        return status
     if status in {"confirmed", "rejected"}:
         return status
     return "proposed"
