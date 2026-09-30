@@ -67,6 +67,47 @@ def _id_set(values: Any) -> list[str]:
     return [str(value) for value in values or [] if str(value).strip()]
 
 
+def _collect_ids(item: dict[str, Any], singular: str, plural: str) -> list[str]:
+    values = _id_set(item.get(plural))
+    value = str(item.get(singular) or "").strip()
+    if value:
+        values.append(value)
+    return list(dict.fromkeys(values))
+
+
+def collect_source_uids(item: dict[str, Any]) -> list[str]:
+    return _collect_ids(item, "source_uid", "source_uids")
+
+
+def collect_evidence_node_ids(item: dict[str, Any]) -> list[str]:
+    return _collect_ids(item, "evidence_node_id", "evidence_node_ids")
+
+
+def verify_source_provenance(
+    item: dict[str, Any], context: dict[str, Any], known_uids: set[str], known_ids: set[str]
+) -> str | None:
+    uids = collect_source_uids(item)
+    ids = collect_evidence_node_ids(item)
+    if not uids and not ids:
+        return "SOURCE 缺少真实的 source/evidence id"
+    exact_pairs = {
+        (str(ref.get("mindmap_uid")), str(ref.get("company_tree_node_id")))
+        for ref in context.get("source_refs") or []
+        if isinstance(ref, dict)
+        and ref.get("resolution_status") == "EXACT"
+        and ref.get("mindmap_uid")
+        and ref.get("company_tree_node_id")
+    }
+    if uids and ids:
+        if any((uid, node_id) not in exact_pairs for uid in uids for node_id in ids):
+            return "SOURCE_PROVENANCE_MISMATCH: SOURCE provenance pair 不一致"
+    elif any(uid not in known_uids for uid in uids) or any(
+        node_id not in known_ids for node_id in ids
+    ):
+        return "SOURCE 缺少真实的 source/evidence id"
+    return None
+
+
 def _known_constraint_ids(context: dict[str, Any]) -> set[str]:
     return {
         str(item.get("id"))
@@ -187,19 +228,11 @@ def validate_sop_proposal(
         for item in entries:
             text = str(item.get("text") or "").strip()
             status = item.get("evidence_status")
-            refs = _id_set(item.get("source_uids"))
-            ids = _id_set(item.get("evidence_node_ids"))
             label = str(item.get("id") or kind)
             if status == "SOURCE":
-                if (
-                    not refs
-                    and not ids
-                    or any(value not in known_uids for value in refs)
-                    or any(value not in known_ids for value in ids)
-                ):
-                    unsupported.append(
-                        {"id": label, "reason": "SOURCE 缺少真实的 source/evidence id"}
-                    )
+                provenance_error = verify_source_provenance(item, context, known_uids, known_ids)
+                if provenance_error:
+                    unsupported.append({"id": label, "reason": provenance_error})
                 elif text not in factual_text:
                     unsupported.append({"id": label, "reason": "SOURCE 文本未被引用事实直接支持"})
             elif status == "DERIVED":
@@ -311,6 +344,11 @@ def validate_sop_proposal(
         state = "VALID"
     return {
         "status": state,
+        "goal_resolution_status": context.get("goal_resolution_status")
+        or proposal.get("goal_resolution_status"),
+        "goal_resolution_reason": context.get("goal_resolution_reason")
+        or proposal.get("goal_resolution_reason")
+        or "",
         "unsupported_claims": unsupported,
         "missing_fields": missing,
         "constraint_conflicts": conflicts,

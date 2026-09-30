@@ -2,7 +2,86 @@ from copy import deepcopy
 
 from cognee.modules.teleology.sop_context import context_from_snapshot
 from cognee.modules.teleology.sop_generator import generate_sop_proposal
-from cognee.modules.teleology.sop_validator import validate_sop_proposal
+from cognee.modules.teleology.sop_validator import _known, validate_sop_proposal
+
+REAL_UID = "e1bd00ff-1f82-4a95-946e-7da665876c91"
+REAL_ID = "e7f37cf4-fda6-5856-93e2-c688fc0a1352"
+
+
+def _real_p1_context():
+    context = {
+        "mindmap_context": {"target": {"uid": REAL_UID, "name": "<p>P：制定项目利润目标</p>"}},
+        "source_refs": [
+            {
+                "mindmap_uid": REAL_UID,
+                "company_tree_node_id": REAL_ID,
+                "source_key": f"mindmap:room:{REAL_UID}",
+                "resolution_status": "EXACT",
+            }
+        ],
+        "goal_resolution_status": "AMBIGUOUS",
+        "goal_resolution_reason": "multiple goals share source provenance",
+    }
+    proposal = {
+        "plan": [{"id": "P1", "text": "制定项目利润目标", "evidence_status": "SOURCE"}],
+        "checks": [],
+        "goal_resolution_status": "AMBIGUOUS",
+    }
+    return context, proposal
+
+
+def test_real_p1_exact_pair_survives_missing_auxiliary_known_id():
+    context, proposal = _real_p1_context()
+    known_uids, known_ids, _ = _known(context)
+    assert REAL_UID in known_uids
+    assert REAL_ID in known_ids
+    assert (REAL_UID, REAL_ID) in {
+        (ref["mindmap_uid"], ref["company_tree_node_id"])
+        for ref in context["source_refs"]
+        if ref["resolution_status"] == "EXACT"
+    }
+    # Reproduces a standalone rebuild where the auxiliary ID set omits the tree ID.
+    from cognee.modules.teleology.sop_validator import verify_source_provenance
+
+    item = {
+        **proposal["plan"][0],
+        "source_uid": REAL_UID,
+        "source_uids": [REAL_UID],
+        "evidence_node_id": REAL_ID,
+        "evidence_node_ids": [REAL_ID],
+    }
+    assert verify_source_provenance(item, context, known_uids, set()) is None
+    proposal["plan"] = [item]
+    result = validate_sop_proposal(proposal, context)
+    assert result["unsupported_claims"] == []
+    assert result["goal_resolution_status"] == "AMBIGUOUS"
+    assert result["goal_resolution_reason"] == context["goal_resolution_reason"]
+    assert result["provenance_conflicts"]
+
+
+def test_source_provenance_single_plural_and_wrong_pair():
+    context, proposal = _real_p1_context()
+    base = proposal["plan"][0]
+    valid = [
+        {"source_uid": REAL_UID},
+        {"source_uids": [REAL_UID]},
+        {"evidence_node_id": REAL_ID},
+        {"evidence_node_ids": [REAL_ID]},
+        {"source_uid": REAL_UID, "evidence_node_id": REAL_ID},
+        {"source_uids": [REAL_UID], "evidence_node_ids": [REAL_ID]},
+        {
+            "source_uid": REAL_UID,
+            "source_uids": [REAL_UID],
+            "evidence_node_id": REAL_ID,
+            "evidence_node_ids": [REAL_ID],
+        },
+    ]
+    for fields in valid:
+        proposal["plan"] = [{**base, **fields}]
+        assert validate_sop_proposal(proposal, context)["unsupported_claims"] == []
+    proposal["plan"] = [{**base, "source_uid": REAL_UID, "evidence_node_id": "WRONG-ID"}]
+    errors = validate_sop_proposal(proposal, context)["unsupported_claims"]
+    assert any("SOURCE_PROVENANCE_MISMATCH" in issue["reason"] for issue in errors)
 
 
 def _sample():

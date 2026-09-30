@@ -3,7 +3,7 @@ from copy import deepcopy
 from cognee.modules.teleology.sop_context import context_from_snapshot
 from cognee.modules.teleology.sop_generator import generate_sop_proposal
 from cognee.modules.teleology.sop_sources import normalize_mindmap_text
-from cognee.modules.teleology.sop_validator import validate_sop_proposal
+from cognee.modules.teleology.sop_validator import _known, validate_sop_proposal
 
 ROOM = "room-rujw4n4j"
 NODE = "e1bd00ff-1f82-4a95-946e-7da665876c91"
@@ -429,3 +429,37 @@ def test_html_child_subtree_and_check_are_source_items():
         item["text"] == "C：确认利润率达到目标" and item["evidence_status"] == "SOURCE"
         for item in proposal["checks"]
     )
+
+
+def test_real_html_p1_generator_and_standalone_validation_agree():
+    real_id = "e7f37cf4-fda6-5856-93e2-c688fc0a1352"
+    snapshot = _snapshot()
+    snapshot["candidates"][1]["source_node_ids"] = [real_id]
+    snapshot["candidates"][1]["evidence"] = [{"node_id": real_id}]
+    snapshot["candidates"].append(_goal("g-second", "项目利润目标", real_id))
+    request = _request()
+    request["mindmap_context"]["target"]["name"] = "<p>P：制定项目利润目标</p>"
+    tree = [_tree(real_id, ROOM, NODE)]
+    generation_context = _context(snapshot, request, tree)
+    proposal = generate_sop_proposal(generation_context)
+    standalone_context = _context(snapshot, request, tree)
+    assert standalone_context["primary_goal"] is None
+    assert standalone_context["goal_resolution_status"] == "AMBIGUOUS"
+    known_uids, known_ids, _ = _known(standalone_context)
+    assert NODE in known_uids
+    assert real_id in known_ids
+    assert any(
+        ref["mindmap_uid"] == NODE
+        and ref["company_tree_node_id"] == real_id
+        and ref["resolution_status"] == "EXACT"
+        for ref in standalone_context["source_refs"]
+    )
+    standalone = validate_sop_proposal(proposal, standalone_context)
+    assert proposal["validation"]["unsupported_claims"] == standalone["unsupported_claims"] == []
+    assert proposal["validation"]["provenance_conflicts"] == standalone["provenance_conflicts"]
+    assert (
+        proposal["validation"]["goal_resolution_status"]
+        == standalone["goal_resolution_status"]
+        == "AMBIGUOUS"
+    )
+    assert proposal["validation"]["goal_resolution_reason"] == standalone["goal_resolution_reason"]
