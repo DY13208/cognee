@@ -59,7 +59,11 @@ from cognee.modules.teleology.graph_annotations import (
     sync_goals_to_graph,
 )
 from cognee.modules.teleology.proposal_review import get_proposal, list_proposals
-from cognee.modules.teleology.sop_context import build_teleology_sop_context
+from cognee.modules.teleology.sop_context import (
+    build_teleology_sop_context,
+    mindmap_context_ready,
+    sop_source_request,
+)
 from cognee.modules.teleology.sop_generator import generate_sop_proposal
 from cognee.modules.teleology.sop_validator import validate_sop_proposal
 from cognee.modules.teleology.run_commit import commit_coverage_run
@@ -312,7 +316,9 @@ def get_teleology_router() -> APIRouter:
     async def sop_proposal(
         payload: SopProposalRequest, user: User = Depends(get_authenticated_user)
     ):
-        context = await build_teleology_sop_context(payload.model_dump(mode="json"), user)
+        context = await build_teleology_sop_context(
+            sop_source_request(payload.dataset_id, payload.model_dump(mode="json")), user
+        )
         proposal = generate_sop_proposal(context)
         proposal["validation"] = validate_sop_proposal(proposal, context)
         return proposal
@@ -321,17 +327,14 @@ def get_teleology_router() -> APIRouter:
     async def sop_validate(
         payload: SopValidationRequest, user: User = Depends(get_authenticated_user)
     ):
-        if not isinstance(payload.context.get("mindmap_context"), dict):
-            raise HTTPException(status_code=400, detail="mindmap_context is required")
+        supplied = payload.context or {}
+        if not mindmap_context_ready(supplied.get("mindmap_context")):
+            raise HTTPException(
+                status_code=400,
+                detail="VALIDATION_CONTEXT_INCOMPLETE: mindmap_context is required",
+            )
         context = await build_teleology_sop_context(
-            {
-                "dataset_id": str(payload.dataset_id),
-                "room_key": payload.context.get("room_key") or "",
-                "node_uid": payload.context.get("node_uid") or "",
-                "source_uids": payload.context.get("source_uids") or [],
-                "mindmap_context": payload.context["mindmap_context"],
-            },
-            user,
+            sop_source_request(payload.dataset_id, supplied), user
         )
         return validate_sop_proposal(payload.proposal, context)
 

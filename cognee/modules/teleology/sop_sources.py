@@ -21,6 +21,7 @@ _NODE_KEYS = (
     ("path", "NODE", "path", True),
     ("children", "NODE", "children", True),
     ("subtree", "NODE", "subtree", True),
+    ("siblings", "NODE", "siblings", True),
     ("nodes", "NODE", "nodes", True),
     ("facts", "NODE", "facts", False),
     ("notes", "NOTE", "notes", False),
@@ -47,6 +48,11 @@ def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _node_data(node: dict[str, Any]) -> dict[str, Any]:
+    data = node.get("data")
+    return data if isinstance(data, dict) else {}
+
+
 def _node_uid(node: dict[str, Any]) -> str:
     for key in ("source_uid", "node_uid", "uid", "id"):
         if _text(node.get(key)):
@@ -55,9 +61,35 @@ def _node_uid(node: dict[str, Any]) -> str:
 
 
 def _label(node: dict[str, Any]) -> str:
-    for key in ("name", "title", "label", "topic", "text", "content"):
+    """Read both the simplified fixture shape and build_sop_context nodes.
+
+    Query nodes keep the visible title in ``data.text``. The composed target
+    copies that title to ``text``. Attachment names live on ``metadata``.
+    """
+    data = _node_data(node)
+    metadata = node.get("metadata") if isinstance(node.get("metadata"), dict) else {}
+    for source in (node, data):
+        for key in ("name", "title", "label", "topic"):
+            if _text(source.get(key)):
+                return _text(source.get(key))
+    if _text(data.get("text")):
+        return _text(data.get("text"))
+    for key in ("fileName", "filename", "name", "title"):
+        if _text(metadata.get(key)):
+            return _text(metadata.get(key))
+    for key in ("text", "content"):
         if _text(node.get(key)):
             return _text(node.get(key))
+    value = node.get("value")
+    if _text(value):
+        return _text(value)
+    if isinstance(value, dict):
+        for key in ("name", "title", "fileName", "url", "mapId"):
+            if _text(value.get(key)):
+                return _text(value.get(key))
+    for source in (node, data):
+        if _text(source.get("note")):
+            return _text(source.get("note"))
     return ""
 
 
@@ -249,7 +281,7 @@ def resolve_request_sources(
     by_uid = {ref["mindmap_uid"]: ref for ref in refs}
     for atom in atoms:
         ref = by_uid.get(_text(atom.get("source_uid")))
-        if ref and ref["resolution_status"] == "EXACT" and not atom.get("evidence_node_id"):
+        if ref and ref["resolution_status"] == "EXACT":
             atom["evidence_node_id"] = ref["company_tree_node_id"]
     return refs, summary, warnings
 
@@ -384,7 +416,8 @@ def _walk(
     if not isinstance(value, dict):
         return
     raw_text = _label(value)
-    note = _text(value.get("note"))
+    data = _node_data(value)
+    note = _text(value.get("note") or data.get("note"))
     extra_ids = value.get("evidence_node_ids") or []
     evidence_node_id = _text(extra_ids[0]) if extra_ids else _text(value.get("evidence_node_id"))
     current_path = path + ([raw_text] if raw_text else [])
@@ -411,6 +444,20 @@ def _walk(
             path=current_path,
             provenance=f"{origin}:note",
         )
+    if source_type == "ATTACHMENT":
+        body = _text(value.get("text"))
+        if body and body != raw_text:
+            _append_atom(
+                out,
+                seen,
+                raw_text=body,
+                source_type="ATTACHMENT",
+                source_uid=_node_uid(value),
+                evidence_node_id=evidence_node_id,
+                room_key=room_key,
+                path=current_path,
+                provenance=f"{origin}:text",
+            )
     if recurse:
         for child_key in ("children", "child_nodes", "subtree"):
             if value.get(child_key):

@@ -19,6 +19,42 @@ GSV_UID = "file-gsv"
 CHILD = "child-fill-profit"
 
 
+def _query_node(uid: str, text: str, parent_uid: str | None = None) -> dict:
+    return {"uid": uid, "parent_uid": parent_uid, "data": {"text": text}}
+
+
+def _real_build_sop_context() -> dict:
+    """Return shape of mind-map buildSopContext, not a simplified facts fixture."""
+    raw = "<p>P：制定项目利润目标</p>"
+    root = _query_node("ancestor-1", "项目经营")
+    target = _query_node(NODE, raw, "ancestor-1")
+    child = _query_node(CHILD, "填写项目利润测算", NODE)
+    sibling = _query_node("sibling-1", "同级节点", "ancestor-1")
+    return {
+        "target": {"uid": NODE, "text": raw, "room_key": ROOM, "revision": 8},
+        "path": [root, target],
+        "children": [child],
+        "subtree": [target, child],
+        "siblings": [sibling],
+        "notes": [],
+        "references": [
+            {"source_uid": NODE, "kind": "hyperlink", "value": "https://example.com/profit-model"}
+        ],
+        "attachments": [
+            {
+                "node_uid": NODE,
+                "metadata": {"id": "a1", "status": "ready", "fileName": "利润测算模型.xlsx"},
+                "text": "",
+            }
+        ],
+        "source_uids": ["ancestor-1", NODE, CHILD, "sibling-1"],
+        "existing_sop": {"found": False, "sop_uid": None, "C": None, "P": None},
+        "complete": True,
+        "warnings": [],
+        "source_revision": 8,
+    }
+
+
 def _tree(node_id: str, room: str, uid: str, name: str = "利润目标") -> dict:
     return {
         "id": node_id,
@@ -478,10 +514,8 @@ async def test_sop_routes_rebuild_identical_real_shape_context(monkeypatch):
     snapshot["candidates"][1]["source_node_ids"] = [real_id]
     snapshot["candidates"][1]["evidence"] = [{"node_id": real_id}]
     snapshot["candidates"].append(_goal("g-second", "项目利润目标", real_id))
-    request = _request()
-    request["mindmap_context"]["target"].update(
-        name="<p>P：制定项目利润目标</p>", evidence_node_id=real_id
-    )
+    mindmap = _real_build_sop_context()
+    request = _request(mindmap_context=mindmap, source_uids=list(mindmap["source_uids"]))
     tree = [_tree(real_id, ROOM, NODE)]
     built_contexts = []
     built_requests = []
@@ -499,17 +533,39 @@ async def test_sop_routes_rebuild_identical_real_shape_context(monkeypatch):
         route.endpoint for route in router.routes if route.path == "/sop/proposals/validate"
     )
     proposal = await generate(router_module.SopProposalRequest(**request), user=object())
+    poisoned = {
+        "room_key": request["room_key"],
+        "node_uid": request["node_uid"],
+        "source_uids": request["source_uids"],
+        "mindmap_context": request["mindmap_context"],
+        "factual_atoms": [
+            {
+                "text": "收集信息",
+                "raw_text": "收集信息",
+                "source_type": "NODE",
+                "source_uid": NODE,
+                "provenance": "target",
+            }
+        ],
+        "primary_goal": {"id": "injected", "name": "WM"},
+        "related_goals": [],
+        "source_refs": [],
+    }
     standalone = await validate(
         router_module.SopValidationRequest(
             dataset_id=request["dataset_id"],
             proposal=proposal,
-            context={key: request[key] for key in ("room_key", "node_uid", "source_uids", "mindmap_context")},
+            context=poisoned,
         ),
         user=object(),
     )
     assert built_requests[0] == built_requests[1]
+    assert "factual_atoms" not in built_requests[0]
+    assert "primary_goal" not in built_requests[1]
     assert built_contexts[0]["factual_atoms"] == built_contexts[1]["factual_atoms"]
-    target = next(atom for atom in built_contexts[1]["factual_atoms"] if atom["provenance"] == "target")
+    target = next(
+        atom for atom in built_contexts[1]["factual_atoms"] if atom["provenance"] == "target"
+    )
     assert target["text"] == "制定项目利润目标"
     assert target["raw_text"] == "<p>P：制定项目利润目标</p>"
     assert target["source_uid"] == NODE
@@ -523,9 +579,16 @@ async def test_sop_routes_rebuild_identical_real_shape_context(monkeypatch):
     with pytest.raises(HTTPException, match="mindmap_context is required") as exc_info:
         await validate(
             router_module.SopValidationRequest(
-                dataset_id=request["dataset_id"], proposal=proposal, context={"room_key": ROOM}
+                dataset_id=request["dataset_id"],
+                proposal=proposal,
+                context={
+                    "room_key": ROOM,
+                    "factual_atoms": poisoned["factual_atoms"],
+                    "primary_goal": poisoned["primary_goal"],
+                },
             ),
             user=object(),
         )
     assert exc_info.value.status_code == 400
+    assert "VALIDATION_CONTEXT_INCOMPLETE" in str(exc_info.value.detail)
     assert len(built_contexts) == 2

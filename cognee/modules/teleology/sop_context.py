@@ -32,6 +32,44 @@ def _facts(mindmap_context: Any) -> list[dict[str, Any]]:
     return [value for value in values if isinstance(value, dict)]
 
 
+def sop_source_request(dataset_id: Any, source: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep only the raw mind-map inputs shared by generate and validate.
+
+    Derived fields such as factual_atoms, source_refs, and primary_goal are
+    rebuilt by Cognee and must not be accepted from the caller.
+    """
+    source = source or {}
+    mindmap = source.get("mindmap_context")
+    raw_uids = source.get("source_uids") or []
+    if isinstance(raw_uids, str):
+        raw_uids = [raw_uids]
+    return {
+        "dataset_id": str(dataset_id),
+        "room_key": str(source.get("room_key") or ""),
+        "node_uid": str(source.get("node_uid") or ""),
+        "source_uids": [str(item) for item in raw_uids if str(item).strip()],
+        "mindmap_context": mindmap if isinstance(mindmap, dict) else {},
+    }
+
+
+def mindmap_context_ready(mindmap_context: Any) -> bool:
+    if not isinstance(mindmap_context, dict) or not mindmap_context:
+        return False
+    content_keys = (
+        "target",
+        "path",
+        "children",
+        "subtree",
+        "siblings",
+        "nodes",
+        "facts",
+        "notes",
+        "references",
+        "attachments",
+    )
+    return any(mindmap_context.get(key) not in (None, "", [], {}) for key in content_keys)
+
+
 def _existing_sops(mindmap_context: Any) -> list[Any]:
     if not isinstance(mindmap_context, dict):
         return []
