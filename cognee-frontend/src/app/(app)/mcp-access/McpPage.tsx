@@ -218,21 +218,40 @@ export default function McpPage() {
       <TrackPageView page="MCP Access" />
       {!hasAccess && <UpgradeBanner />}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <h1
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <h1
+            style={{
+              fontSize: 20,
+              fontWeight: 300,
+              color: "#EDECEA",
+              margin: 0,
+              fontFamily: '"TWKLausanne", sans-serif',
+            }}
+          >
+            MCP Access
+          </h1>
+          <span style={{ fontSize: 14, color: "rgba(237,236,234,0.55)" }}>
+            Copy personal configuration to connect MCP-capable AI clients to Cognee.
+          </span>
+        </div>
+        <Link
+          href="/mcp-access/sop"
           style={{
-            fontSize: 20,
-            fontWeight: 300,
-            color: "#EDECEA",
-            margin: 0,
-            fontFamily: '"TWKLausanne", sans-serif',
+            display: "inline-flex",
+            alignItems: "center",
+            background: "#6510F4",
+            borderRadius: 8,
+            padding: "8px 14px",
+            fontSize: 13,
+            fontWeight: 500,
+            color: "#fff",
+            textDecoration: "none",
+            whiteSpace: "nowrap",
           }}
         >
-          MCP Access
-        </h1>
-        <span style={{ fontSize: 14, color: "rgba(237,236,234,0.55)" }}>
-          Copy personal configuration to connect MCP-capable AI clients to Cognee.
-        </span>
+          SOP 草案
+        </Link>
       </div>
 
       <div

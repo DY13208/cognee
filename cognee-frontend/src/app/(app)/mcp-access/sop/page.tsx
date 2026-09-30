@@ -1,6 +1,6 @@
 "use client";
 
-import SopPanel from "./SopPanel";
+import SopPanel from "../../teleology/sop/SopPanel";
 
 export default function Page() {
   return <SopPanel />;

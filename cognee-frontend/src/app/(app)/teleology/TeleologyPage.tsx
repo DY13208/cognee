@@ -7,7 +7,6 @@ import { useCogniInstance } from "@/modules/tenant/TenantProvider";
 import { useFilter } from "@/ui/layout/FilterContext";
 import PageLoading from "@/ui/elements/PageLoading";
 import OntologyBrowser from "./browser/OntologyBrowser";
-import SopPanel from "./sop/SopPanel";
 import TeleologyClassicPage from "./TeleologyClassicPage";
 import "./browser/ontology.css";
 
@@ -18,18 +17,15 @@ export default function TeleologyPage() {
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"browser" | "classic" | "sop">("browser");
+  const [mode, setMode] = useState<"browser" | "classic">("browser");
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const datasetDefaulted = useRef(false);
 
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(MODE_KEY);
-      if (stored === "classic" || stored === "sop") setMode(stored);
-    } catch { /* ignore */ }
+    try { if (window.localStorage.getItem(MODE_KEY) === "classic") setMode("classic"); } catch { /* ignore */ }
   }, []);
 
-  function switchMode(next: "browser" | "classic" | "sop") {
+  function switchMode(next: "browser" | "classic") {
     setMode(next);
     setToolbarCollapsed(false);
     try { window.localStorage.setItem(MODE_KEY, next); } catch { /* ignore */ }
@@ -60,7 +56,6 @@ export default function TeleologyPage() {
           <div className="teleology-mode-tabs">
             <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
             <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
-            <button type="button" className={`teleology-mode-tab${mode === "sop" ? " is-active" : ""}`} aria-pressed={mode === "sop"} onClick={() => switchMode("sop")}>{zh ? "SOP 草案" : "SOP draft"}</button>
           </div>
           <div className="teleology-toolbar-view-actions">
             <button
@@ -77,9 +72,7 @@ export default function TeleologyPage() {
         <div id="teleology-toolbar-data-row" className="teleology-toolbar-row teleology-toolbar-bottom" style={{ display: toolbarCollapsed ? "none" : undefined }}>
           {mode === "browser"
             ? <div id="teleology-browser-data-actions" className="teleology-toolbar-data-actions" />
-            : mode === "classic"
-              ? <div id="teleology-classic-info" className="teleology-toolbar-data-actions" />
-              : null}
+            : <div id="teleology-classic-info" className="teleology-toolbar-data-actions" />}
         </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -102,7 +95,7 @@ export default function TeleologyPage() {
             busy={busy}
             onBusy={setBusy}
           />
-        ) : mode === "classic" ? <TeleologyClassicPage /> : <SopPanel />}
+        ) : <TeleologyClassicPage />}
       </div>
     </div>
   );
