@@ -12,12 +12,12 @@ _SENSITIVE = re.compile(
     re.IGNORECASE,
 )
 _CHECK = re.compile(
-    r"检查|核验|验收|确认|审核|是否|达到|符合|必须|红线|核对|check|verify|accept",
+    r"检查|核验|验收|确认|审核|是否|达到|符合|必须|不得|红线|目标值|核对|^C[：:]|check|verify|accept",
     re.IGNORECASE,
 )
 _PLAN = re.compile(
     r"制定|填写|计算|提交|复核|更新|上传|同步|通知|审批|导出|录入|分析|跟进|"
-    r"执行|记录|整理|发送|处理|开展|实施|确认|execute|submit|record",
+    r"执行|记录|整理|发送|处理|开展|实施|确认|检查|核对|^P[：:]|execute|submit|record",
     re.IGNORECASE,
 )
 

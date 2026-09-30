@@ -326,3 +326,44 @@ def test_empty_facts_are_insufficient_without_invented_steps():
     assert proposal["checks"] == []
     assert proposal["overall_confidence"] == 0
     assert validate_sop_proposal(proposal, context)["status"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_ambiguous_goal_preserves_factual_sections_and_shared_validation():
+    snapshot = _snapshot()
+    snapshot["candidates"].append(_goal("g-second", "项目利润目标", TREE_ID))
+    request = _request()
+    request["mindmap_context"]["notes"] = [
+        {"uid": NODE, "text": "C：项目利润目标必须完成核对"}
+    ]
+    context = _context(snapshot, request, [_tree(TREE_ID, ROOM, NODE)])
+    assert context["primary_goal"] is None
+    assert context["goal_resolution_status"] == "AMBIGUOUS"
+    proposal = generate_sop_proposal(context)
+    assert proposal["goal"] is None
+    assert proposal["related_goals"]
+    assert proposal["title"] == "制定项目利润目标 SOP 草案"
+    assert proposal["inputs"] and proposal["checks"] and proposal["plan"]
+    source_plan = next(item for item in proposal["plan"] if item["text"] == "制定项目利润目标")
+    assert source_plan["evidence_status"] == "SOURCE"
+    assert source_plan["source_uid"] == NODE
+    assert source_plan["provenance"] == "target"
+    assert source_plan["source_text"] == "P：制定项目利润目标"
+    assert any(item["evidence_status"] == "SOURCE" for item in proposal["checks"])
+    assert not any(item["evidence_status"] == "DERIVED" for item in proposal["checks"])
+    assert proposal["evidence_coverage"]["by_section"]["inputs"]["source"] >= 1
+    assert proposal["evidence_coverage"]["source"] >= 1
+    assert proposal["overall_confidence"] > 0
+    assert proposal["validation"]["status"] == "NEEDS_REVIEW"
+    assert proposal["validation"]["unsupported_claims"] == []
+    assert proposal["validation"] == validate_sop_proposal(proposal, context)
+
+
+def test_ambiguous_context_never_derives_unrelated_constraint():
+    context = _context(nodes=[_tree(TREE_ID, ROOM, NODE)])
+    context["primary_goal"] = None
+    context["goal_resolution_status"] = "AMBIGUOUS"
+    context["constraints"] = [{"id": "foreign", "goal_id": "other", "name": "禁止修改利润目标"}]
+    proposal = generate_sop_proposal(context)
+    assert proposal["plan"]
+    assert not any(item["evidence_status"] == "DERIVED" for item in proposal["checks"])
+    assert proposal["validation"]["provenance_conflicts"] == validate_sop_proposal(proposal, context)["provenance_conflicts"]

@@ -10,11 +10,11 @@ from cognee.modules.teleology.sop_sources import (
     extract_factual_atoms,
 )
 
-_CHECK_MARKERS = re.compile(r"验收标准|检查项|必须满足|目标数值|红线|核对规则|确认条件|验收|核验")
-_CHECK_LEAD = re.compile(r"^(?:检查|核验|验收|审核)")
+_CHECK_MARKERS = re.compile(r"验收标准|检查项|必须满足|目标数值|目标值|红线|核对规则|确认条件|验收|核验")
+_CHECK_LEAD = re.compile(r"^(?:C[：:]|检查[：:]?|核验[：:]?|验收[：:]?|审核[：:]?|必须[：:]|不得[：:]|红线[：:]|目标值[：:]|确认[：:]|核对[：:])")
 _PLAN_LEAD = re.compile(
     r"^(?:制定|填写|计算|提交|复核|更新|上传|同步|通知|审批|导出|录入|分析|跟进|"
-    r"执行|记录|整理|发送|处理|开展|实施|确认)"
+    r"执行|记录|整理|发送|处理|开展|实施|确认|检查|核对)"
 )
 _MISSING_FIELDS = (
     ("负责人", "当前资料未找到明确责任人"),
@@ -57,7 +57,7 @@ def _kind(atom: dict[str, Any]) -> str | None:
     text = str(atom.get("text") or "").strip()
     if not text:
         return None
-    if atom.get("explicit_plan"):
+    if atom.get("explicit_plan") or re.match(r"^(?:P[：:]|执行步骤[：:]?|计划动作[：:]?)", text):
         return "plan"
     if _CHECK_MARKERS.search(text) or _CHECK_LEAD.search(text):
         return "check"
@@ -76,6 +76,10 @@ def _source_item(kind: str, index: int, atom: dict[str, Any], reason: str) -> di
         "source_uids": [uid] if uid else [],
         "evidence_node_ids": [evidence_id] if evidence_id else [],
         "source_type": atom.get("source_type"),
+        "source_uid": uid,
+        "evidence_node_id": evidence_id or None,
+        "provenance": atom.get("provenance") or "",
+        "source_text": str(atom.get("raw_text") or atom.get("text") or "").strip(),
         "reason": reason,
         "confidence": float(atom.get("confidence") or 1.0),
         "room_key": atom.get("room_key") or "",
@@ -142,7 +146,8 @@ def generate_sop_proposal(context: dict[str, Any]) -> dict[str, Any]:
     inputs: list[dict[str, Any]] = []
     seen_checks: set[str] = set()
     seen_plan: set[str] = set()
-    for atom in _mindmap_atoms(context):
+    atoms = _mindmap_atoms(context)
+    for atom in atoms:
         if atom.get("source_type") in {"REFERENCE", "ATTACHMENT"} and _traceable(atom):
             inputs.append(_input_item(atom))
         kind = _kind(atom)
@@ -161,16 +166,19 @@ def generate_sop_proposal(context: dict[str, Any]) -> dict[str, Any]:
                 else "节点内容是明确的执行动作。"
             )
             plan.append(_source_item("plan", len(plan) + 1, atom, reason))
-    if not any(item["evidence_status"] == "SOURCE" for item in checks) and plan:
+    # Teleology enrichment follows factual generation and needs a unique goal.
+    if goal and not any(item["evidence_status"] == "SOURCE" for item in checks) and plan:
         for constraint in context.get("constraints") or []:
             if not isinstance(constraint, dict):
+                continue
+            if str(constraint.get("goal_id") or constraint.get("source") or "") != str(goal.get("id") or ""):
                 continue
             derived = _derived_check(len(checks) + 1, constraint)
             if derived is not None:
                 checks.append(derived)
     corpus = "\n".join(
         str(atom.get("text") or "") + "\n" + str(atom.get("raw_text") or "")
-        for atom in _mindmap_atoms(context)
+        for atom in atoms
     )
     gaps: list[str] = []
     missing_details: list[dict[str, Any]] = []
@@ -183,29 +191,41 @@ def generate_sop_proposal(context: dict[str, Any]) -> dict[str, Any]:
         gaps.append("缺少可验收的检查标准")
     if not plan:
         gaps.append("缺少可执行的计划步骤")
-    counts = {
-        key.lower(): sum(item["evidence_status"] == key for item in checks + plan)
-        for key in ("SOURCE", "DERIVED", "MISSING")
+    by_section = {
+        name: {
+            key.lower(): sum(item.get("evidence_status") == key for item in entries)
+            for key in ("SOURCE", "DERIVED", "MISSING")
+        }
+        for name, entries in (("inputs", inputs), ("checks", checks), ("plan", plan))
     }
+    counts = {key: sum(section[key] for section in by_section.values()) for key in ("source", "derived", "missing")}
     counts["missing"] += len(missing_details)
+    counts["by_section"] = by_section
     source_count = counts["source"]
     if not checks and not plan:
         confidence = 0.0
-    elif source_count and goal:
-        confidence = 0.75
-    elif source_count:
-        confidence = 0.55
     else:
-        confidence = 0.45
+        total = source_count + counts["derived"] + counts["missing"]
+        factual_share = source_count / total if total else 0.0
+        derived_share = counts["derived"] / total if total else 0.0
+        confidence = 0.35 + 0.45 * factual_share + 0.15 * derived_share
+        if not goal:
+            confidence *= 0.8 if context.get("goal_resolution_status") == "AMBIGUOUS" else 0.9
+        confidence = round(confidence, 3)
     reason = str(context.get("goal_resolution_reason") or "")
     risks = [reason] if not goal and reason else ([] if goal else ["尚未找到关联的 current Goal"])
-    return {
-        "title": f"{goal.get('name', '待确定目标')} SOP 草案",
+    target = next((atom["text"] for atom in atoms if atom.get("provenance") == "target"), "")
+    title_subject = str(target or goal.get("name") or "待确定流程").strip()
+    title_subject = re.sub(r"^[CP][：:]\s*", "", title_subject)
+    proposal = {
+        "title": f"{title_subject} SOP 草案",
         "objective": goal.get("name") or "",
         "scope": context.get("room_key") or "",
         "goal": {"id": goal.get("id"), "name": goal.get("name")} if goal else None,
-        "purpose": context.get("purposes") or [],
-        "constraints": context.get("constraints") or [],
+        "goal_resolution_status": context.get("goal_resolution_status") or ("RESOLVED" if goal else "NOT_FOUND"),
+        "related_goals": context.get("related_goals") or [],
+        "purpose": (context.get("purposes") or []) if goal else [],
+        "constraints": (context.get("constraints") or []) if goal else [],
         "inputs": inputs,
         "checks": checks,
         "plan": plan,
@@ -218,3 +238,7 @@ def generate_sop_proposal(context: dict[str, Any]) -> dict[str, Any]:
         "dataset_id": context.get("dataset_id"),
         "run_id": context.get("run_id"),
     }
+    from cognee.modules.teleology.sop_validator import validate_sop_proposal
+
+    proposal["validation"] = validate_sop_proposal(proposal, context)
+    return proposal
