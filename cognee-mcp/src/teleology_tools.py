@@ -25,6 +25,61 @@ def register_teleology_tools(registry, get_client) -> None:
             message = "Teleology request failed." if safe_error else f"{type(exc).__name__}: {exc}"
             return [types.TextContent(type="text", text=f"Error: {message}")]
 
+    @registry.tool(tags={"teleology", "sop"})
+    async def build_teleology_sop_context(
+        dataset_id: str,
+        room_key: str,
+        node_uid: str,
+        source_uids: list[str],
+        mindmap_context: dict,
+    ) -> list:
+        """Build read-only SOP context from the current Goal Model snapshot and supplied mind-map facts."""
+        return await request(
+            "POST",
+            "/api/v1/teleology/sop/context",
+            body={
+                "dataset_id": dataset_id,
+                "room_key": room_key,
+                "node_uid": node_uid,
+                "source_uids": source_uids,
+                "mindmap_context": mindmap_context,
+            },
+        )
+
+    @registry.tool(tags={"teleology", "sop"})
+    async def generate_sop_proposal(
+        dataset_id: str,
+        room_key: str,
+        node_uid: str,
+        source_uids: list[str],
+        mindmap_context: dict,
+    ) -> list:
+        """Return an SOP proposal; does not write Goal Model or mind-map."""
+        return await request(
+            "POST",
+            "/api/v1/teleology/sop/proposals",
+            body={
+                "dataset_id": dataset_id,
+                "room_key": room_key,
+                "node_uid": node_uid,
+                "source_uids": source_uids,
+                "mindmap_context": mindmap_context,
+            },
+        )
+
+    @registry.tool(tags={"teleology", "sop"})
+    async def validate_sop_proposal(dataset_id: str, proposal: dict, context: dict) -> list:
+        """Validate an SOP proposal against current snapshot and supplied factual context."""
+        return await request(
+            "POST",
+            "/api/v1/teleology/sop/proposals/validate",
+            body={
+                "dataset_id": dataset_id,
+                "proposal": proposal,
+                "context": context,
+            },
+        )
+
     def _goal_model_body(
         dataset_id,
         goals,

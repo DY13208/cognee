@@ -59,6 +59,9 @@ from cognee.modules.teleology.graph_annotations import (
     sync_goals_to_graph,
 )
 from cognee.modules.teleology.proposal_review import get_proposal, list_proposals
+from cognee.modules.teleology.sop_context import build_teleology_sop_context
+from cognee.modules.teleology.sop_generator import generate_sop_proposal
+from cognee.modules.teleology.sop_validator import validate_sop_proposal
 from cognee.modules.teleology.run_commit import commit_coverage_run
 from cognee.modules.teleology.purpose_analyze import analyze_goal
 from cognee.modules.teleology.purpose_layer import (
@@ -143,6 +146,24 @@ class WorkspaceGoalMove(InDTO):
 class PurposeAnalyzeRequest(InDTO):
     dataset_id: UUID
     goal_id: str = Field(min_length=1)
+
+
+class SopContextRequest(InDTO):
+    dataset_id: UUID
+    room_key: str = ""
+    node_uid: str = ""
+    source_uids: List[str] = Field(default_factory=list)
+    mindmap_context: dict = Field(default_factory=dict)
+
+
+class SopProposalRequest(SopContextRequest):
+    pass
+
+
+class SopValidationRequest(InDTO):
+    dataset_id: UUID
+    proposal: dict
+    context: dict = Field(default_factory=dict)
 
 
 class PurposeProposalCreate(InDTO):
@@ -282,6 +303,29 @@ class CoverageRunCommit(InDTO):
 
 def get_teleology_router() -> APIRouter:
     router = APIRouter()
+
+    @router.post("/sop/context", response_model=dict)
+    async def sop_context(payload: SopContextRequest, user: User = Depends(get_authenticated_user)):
+        return await build_teleology_sop_context(payload.model_dump(mode="json"), user)
+
+    @router.post("/sop/proposals", response_model=dict)
+    async def sop_proposal(
+        payload: SopProposalRequest, user: User = Depends(get_authenticated_user)
+    ):
+        context = await build_teleology_sop_context(payload.model_dump(mode="json"), user)
+        proposal = generate_sop_proposal(context)
+        proposal["validation"] = validate_sop_proposal(proposal, context)
+        return proposal
+
+    @router.post("/sop/proposals/validate", response_model=dict)
+    async def sop_validate(
+        payload: SopValidationRequest, user: User = Depends(get_authenticated_user)
+    ):
+        context = await build_teleology_sop_context(
+            {**payload.context, "dataset_id": str(payload.dataset_id)}, user
+        )
+        return validate_sop_proposal(payload.proposal, context)
+
     service = TeleologyService()
 
     @router.get("", response_model=dict)
