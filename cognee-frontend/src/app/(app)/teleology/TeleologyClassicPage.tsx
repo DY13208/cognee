@@ -128,13 +128,11 @@ export default function TeleologyClassicPage() {
   const { language } = useBusinessLanguage();
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
-  const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null);
   const [infoHost, setInfoHost] = useState<HTMLElement | null>(null);
   const [coverageOpen, setCoverageOpen] = useState(false);
   const { leftOpen, rightOpen, setLeftOpen, setRightOpen } = useSideOpen();
 
   useEffect(() => {
-    setActionsHost(document.getElementById("teleology-classic-actions"));
     setInfoHost(document.getElementById("teleology-classic-info"));
   }, []);
 
@@ -1008,133 +1006,81 @@ export default function TeleologyClassicPage() {
       <TrackPageView page="Teleology" />
 
       {/* Keep controls in the shared two-row toolbar. */}
-        {actionsHost
-          ? createPortal(
-              <>
-                <button
-                  type="button"
-                  className="teleology-classic-action is-purple"
-                  disabled={busy || !datasetId}
-                  onClick={handleSyncFromCompanyTree}
-                  title={t(
-                    language,
-                    "Read the company tree. This does not generate purpose relations.",
-                    "只同步公司树，不会生成目的关系。",
-                  )}
-                >
-                  {t(language, "Sync company tree", "同步公司树")}
-                </button>
-                <button type="button" className="teleology-classic-action" disabled={busy || !datasetId} onClick={handleSync}>
-                  {t(language, "Sync YAML goals", "同步 YAML 目标")}
-                </button>
-                <button type="button" className="teleology-classic-action is-strong" disabled={!datasetId} onClick={() => setCoverageOpen(true)}>
-                  {t(language, "Purpose coverage", "目的论覆盖分析")}
-                </button>
-                <button
-                  type="button"
-                  className="teleology-classic-action"
-                  onClick={() => {
-                    setVocabQuery("");
-                    setVocabHits([]);
-                    setVocabTotal(null);
-                    setVocabOpen(true);
-                  }}
-                >
-                  {t(language, "Manage goals", "管理目标")}
-                </button>
-              </>,
-              actionsHost,
-            )
-          : null}
-
         {infoHost ? createPortal(
-        <div className="teleology-classic-info">
-          <div className="teleology-classic-dataset">
-          <label className="teleology-classic-context-label">
-            {t(language, "Dataset", "数据集")}
-          </label>
-          <div style={{ position: "relative", minWidth: 0, flex: 1 }}>
+        <>
+          <div className="teleology-dataset-picker" style={{ position: "relative" }}>
+            <span className="teleology-dataset-label">{t(language, "Ontology", "本体")}</span>
             <button
               type="button"
-              style={{
-                ...selectStyle,
-                width: "100%",
-                minWidth: 0,
-                textAlign: "left",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-              }}
+              className="onto-select"
+              aria-expanded={datasetMenuOpen}
               onClick={() => setDatasetMenuOpen((v) => !v)}
               onBlur={() => window.setTimeout(() => setDatasetMenuOpen(false), 150)}
             >
-              <span className="teleology-classic-truncate">{selectedDataset?.name || datasets[0]?.name || t(language, "No datasets", "暂无数据集")}</span>
-              <span style={{ opacity: 0.5, fontSize: 10 }}>▾</span>
+              {selectedDataset?.name || datasets[0]?.name || t(language, "No datasets", "暂无数据集")} ▾
             </button>
-            {datasetMenuOpen ? (
-              <div
-                style={{
-                  position: "absolute",
-                  zIndex: 50,
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  marginTop: 4,
-                  maxHeight: 260,
-                  overflowY: "auto",
-                  background: "#141416",
-                  border: "1px solid rgba(255,255,255,0.14)",
-                  borderRadius: 8,
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
-                }}
-              >
+            {datasetMenuOpen && (
+              <div className="onto-search-menu">
                 {datasets.length === 0 ? (
-                  <div style={{ padding: "8px 12px", color: "rgba(237,236,234,0.45)", fontSize: 13 }}>
-                    {t(language, "No datasets", "暂无数据集")}
-                  </div>
-                ) : (
-                  datasets.map((d) => (
-                    <button
-                      key={d.id}
-                      type="button"
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "8px 12px",
-                        background: d.id === datasetId ? "rgba(188,155,255,0.18)" : "transparent",
-                        border: "none",
-                        borderTop: "1px solid rgba(255,255,255,0.06)",
-                        color: "#EDECEA",
-                        cursor: "pointer",
-                        fontSize: 13,
-                      }}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        setSelectedDataset(d);
-                        setSelectedNodeId(null);
-                        setLensGoalId("");
-                        setSelectedGoal(null);
-                        setGoalQuery("");
-                        setDatasetMenuOpen(false);
-                      }}
-                    >
-                      {d.name}
-                    </button>
-                  ))
-                )}
+                  <div className="onto-empty">{t(language, "No datasets", "暂无数据集")}</div>
+                ) : datasets.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    className={`onto-search-item${d.id === datasetId ? " is-active" : ""}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSelectedDataset(d);
+                      setSelectedNodeId(null);
+                      setLensGoalId("");
+                      setSelectedGoal(null);
+                      setGoalQuery("");
+                      setDatasetMenuOpen(false);
+                    }}
+                  >
+                    {d.name}
+                  </button>
+                ))}
               </div>
-            ) : null}
+            )}
           </div>
-
-          </div>
+          <span className="teleology-toolbar-divider" aria-hidden="true" />
+          <button
+            type="button"
+            className="onto-btn"
+            disabled={busy || !datasetId}
+            onClick={handleSyncFromCompanyTree}
+            title={t(
+              language,
+              "Read the company tree. This does not generate purpose relations.",
+              "只同步公司树，不会生成目的关系。",
+            )}
+          >
+            {t(language, "Sync company tree", "同步公司树")}
+          </button>
+          <button type="button" className="onto-btn onto-btn-code" disabled={busy || !datasetId} onClick={handleSync}>
+            {t(language, "Sync YAML goals", "同步 YAML 目标")}
+          </button>
+          <button type="button" className="onto-btn onto-btn-primary" disabled={!datasetId} onClick={() => setCoverageOpen(true)}>
+            {t(language, "Purpose coverage", "目的论覆盖分析")}
+          </button>
+          <button
+            type="button"
+            className="onto-btn"
+            onClick={() => {
+              setVocabQuery("");
+              setVocabHits([]);
+              setVocabTotal(null);
+              setVocabOpen(true);
+            }}
+          >
+            {t(language, "Manage goals", "管理目标")}
+          </button>
           <div className="teleology-classic-purpose">
           <span className="teleology-classic-purpose-value"><span>{t(language, "Current purpose", "当前目的")}:</span> {selectedGoal?.name || t(language, "Select from the goal tree", "从左侧目标树选择")}</span>
           <button
             type="button"
-            className="teleology-classic-action is-purple"
+            className="onto-btn"
             disabled={!lensGoalId}
             onClick={() => setShowRecall((v) => !v)}
           >
@@ -1149,7 +1095,7 @@ export default function TeleologyClassicPage() {
               </span>
             ))}
           </div>
-        </div>, infoHost) : null}
+        </>, infoHost) : null}
 
       {(loadError || showRecall) && <div className="teleology-classic-feedback">
 

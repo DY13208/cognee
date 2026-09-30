@@ -37,9 +37,9 @@ function edges(annotations: GraphAnnotation[]): OntologyEdge[] {
   return annotations.map((annotation) => ({ id: `${annotation.source_id}|${annotation.relationship}|${annotation.target_id}`, sourceId: annotation.source_id, targetId: annotation.target_id, sourceName: annotation.source_name, targetName: annotation.target_name, sourceType: annotation.source_type, targetType: annotation.target_type, relationship: annotation.relationship }));
 }
 
-export default function OntologyBrowser({ instance, datasets, selectedDataset, onSelectDataset, language, busy, onBusy, onHeaderCollapsedChange }: {
+export default function OntologyBrowser({ instance, datasets, selectedDataset, onSelectDataset, language, busy, onBusy }: {
   instance: CogneeInstance; datasets: DatasetOpt[]; selectedDataset: DatasetOpt | null; onSelectDataset: (dataset: DatasetOpt) => void;
-  language: "zh" | "en"; busy: boolean; onBusy: (value: boolean) => void; onHeaderCollapsedChange?: (collapsed: boolean) => void;
+  language: "zh" | "en"; busy: boolean; onBusy: (value: boolean) => void;
 }) {
   const t = (en: string, zh: string) => language === "zh" ? zh : en;
   const datasetId = selectedDataset?.id || datasets[0]?.id || "";
@@ -72,13 +72,10 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const [drawerLoading, setDrawerLoading] = useState(false);
   const { leftOpen, rightOpen, setLeftOpen, setRightOpen } = useSideOpen();
   const [dialog, setDialog] = useState<GoalDialog | null>(null);
-  const [topOpen, setTopOpen] = useState(true);
-  const [viewActionsHost, setViewActionsHost] = useState<HTMLElement | null>(null);
   const [dataActionsHost, setDataActionsHost] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    setViewActionsHost(document.getElementById("teleology-browser-view-actions"));
     setDataActionsHost(document.getElementById("teleology-browser-data-actions"));
-  }, [topOpen]);
+  }, []);
   const [datasetMenu, setDatasetMenu] = useState(false);
   const [why, setWhy] = useState<GraphNodeSummary[]>([]);
   const [constraints, setConstraints] = useState<GraphNodeSummary[]>([]);
@@ -552,10 +549,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     : undefined;
 
   return <div className="onto-root">
-    {viewActionsHost && createPortal(<>
-      <button type="button" className="onto-btn onto-collapse-btn" onClick={() => { setTopOpen(!topOpen); onHeaderCollapsedChange?.(topOpen); }}>{topOpen ? t("Collapse ↑", "收起 ↑") : t("Expand ↓", "展开 ↓")}</button>
-    </>, viewActionsHost)}
-    {topOpen && dataActionsHost && createPortal(<>
+    {dataActionsHost && createPortal(<>
         <div className="teleology-dataset-picker" style={{ position: "relative" }}><span className="teleology-dataset-label">{t("Ontology", "本体")}</span><button type="button" className="onto-select" onClick={() => setDatasetMenu(!datasetMenu)}>{selectedDataset?.name || datasets[0]?.name || t("No dataset", "暂无数据集")} ▾</button>
           {datasetMenu && <div className="onto-search-menu">{datasets.map((dataset) => <button type="button" className="onto-search-item" key={dataset.id} onClick={() => { onSelectDataset(dataset); setDatasetMenu(false); }}>{dataset.name}</button>)}</div>}
         </div>
