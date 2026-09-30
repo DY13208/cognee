@@ -123,25 +123,39 @@ def _source_text_supported(item: dict[str, Any], context: dict[str, Any]) -> boo
     expected = _canonical_source_text(item.get("text"))
     if not expected:
         return False
-    uids = set(collect_source_uids(item))
+    item_uids = set(collect_source_uids(item))
     ids = set(collect_evidence_node_ids(item))
-    if ids:
-        uids.update(
+    mapped_uids = (
+        {
             str(ref["mindmap_uid"])
             for ref in context.get("source_refs") or []
             if isinstance(ref, dict)
             and ref.get("resolution_status") == "EXACT"
             and str(ref.get("company_tree_node_id") or "") in ids
             and ref.get("mindmap_uid")
-        )
+        }
+        if ids
+        else set()
+    )
     for atom in _atoms(context):
         atom_uid = str(atom.get("source_uid") or "")
         atom_id = str(atom.get("evidence_node_id") or "")
-        if atom_uid not in uids and atom_id not in ids:
+        if item_uids and atom_uid not in item_uids:
+            continue
+        if not item_uids and ids and atom_uid not in mapped_uids and atom_id not in ids:
             continue
         if ids and atom_id and atom_id not in ids:
             continue
-        if any(_canonical_source_text(atom.get(key)) == expected for key in ("text", "raw_text")):
+        if (
+            item.get("provenance")
+            and atom.get("provenance")
+            and item["provenance"] != atom["provenance"]
+        ):
+            continue
+        factual_text = atom.get("text")
+        if not str(factual_text or "").strip():
+            factual_text = atom.get("raw_text")
+        if _canonical_source_text(factual_text) == expected:
             return True
     return False
 

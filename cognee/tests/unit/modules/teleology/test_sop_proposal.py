@@ -122,6 +122,41 @@ def test_real_p1_html_fact_is_supported_by_its_own_source():
     )
 
 
+def test_source_atom_text_takes_priority_over_raw_html():
+    context, proposal = _real_p1_context()
+    proposal["plan"][0].update(source_uid=REAL_UID, evidence_node_id=REAL_ID, provenance="target")
+    context["factual_atoms"] = [
+        {
+            "source_uid": REAL_UID,
+            "evidence_node_id": REAL_ID,
+            "provenance": "target",
+            "text": "制定项目利润目标",
+            "raw_text": "<p>P：制定项目利润目标</p>",
+        }
+    ]
+    assert validate_sop_proposal(proposal, context)["unsupported_claims"] == []
+    context["factual_atoms"][0]["text"] = "另一项业务动作"
+    assert any(
+        issue["reason"] == "SOURCE 文本未被引用事实直接支持"
+        for issue in validate_sop_proposal(proposal, context)["unsupported_claims"]
+    )
+    context["factual_atoms"][0]["text"] = ""
+    assert validate_sop_proposal(proposal, context)["unsupported_claims"] == []
+
+
+def test_exact_pair_cannot_borrow_same_text_from_another_node():
+    context, proposal = _real_p1_context()
+    proposal["plan"][0].update(source_uid=REAL_UID, evidence_node_id=REAL_ID)
+    context["factual_atoms"] = [
+        {"source_uid": REAL_UID, "evidence_node_id": REAL_ID, "text": "填写项目利润测算"},
+        {"source_uid": "other-node", "evidence_node_id": REAL_ID, "text": "制定项目利润目标"},
+    ]
+    assert any(
+        issue["reason"] == "SOURCE 文本未被引用事实直接支持"
+        for issue in validate_sop_proposal(proposal, context)["unsupported_claims"]
+    )
+
+
 def test_source_text_html_variants_and_node_scope():
     context, proposal = _real_p1_context()
     item = proposal["plan"][0]
