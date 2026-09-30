@@ -2,6 +2,7 @@ from copy import deepcopy
 
 from cognee.modules.teleology.sop_context import context_from_snapshot
 from cognee.modules.teleology.sop_generator import generate_sop_proposal
+from cognee.modules.teleology.sop_sources import normalize_mindmap_text
 from cognee.modules.teleology.sop_validator import validate_sop_proposal
 
 ROOM = "room-rujw4n4j"
@@ -332,9 +333,7 @@ def test_ambiguous_goal_preserves_factual_sections_and_shared_validation():
     snapshot = _snapshot()
     snapshot["candidates"].append(_goal("g-second", "项目利润目标", TREE_ID))
     request = _request()
-    request["mindmap_context"]["notes"] = [
-        {"uid": NODE, "text": "C：项目利润目标必须完成核对"}
-    ]
+    request["mindmap_context"]["notes"] = [{"uid": NODE, "text": "C：项目利润目标必须完成核对"}]
     context = _context(snapshot, request, [_tree(TREE_ID, ROOM, NODE)])
     assert context["primary_goal"] is None
     assert context["goal_resolution_status"] == "AMBIGUOUS"
@@ -366,4 +365,67 @@ def test_ambiguous_context_never_derives_unrelated_constraint():
     proposal = generate_sop_proposal(context)
     assert proposal["plan"]
     assert not any(item["evidence_status"] == "DERIVED" for item in proposal["checks"])
-    assert proposal["validation"]["provenance_conflicts"] == validate_sop_proposal(proposal, context)["provenance_conflicts"]
+    assert (
+        proposal["validation"]["provenance_conflicts"]
+        == validate_sop_proposal(proposal, context)["provenance_conflicts"]
+    )
+
+
+def test_mindmap_html_normalization():
+    assert normalize_mindmap_text("<p>P：制定项目利润目标</p>") == "P：制定项目利润目标"
+    assert normalize_mindmap_text("<div>P：提交审批</div>") == "P：提交审批"
+    assert normalize_mindmap_text("<strong>制定利润目标</strong>") == "制定利润目标"
+    assert normalize_mindmap_text("<p>C：确认利润率达到目标</p>") == "C：确认利润率达到目标"
+    assert (
+        normalize_mindmap_text("<p>利润率&nbsp;12%<br>R&amp;D<br/>A&lt;B&gt;</p>")
+        == "利润率 12% R&D A<B>"
+    )
+
+
+def test_real_html_target_produces_source_plan_with_ambiguous_goal():
+    raw_text = "<p>P：制定项目利润目标</p>"
+    snapshot = _snapshot()
+    snapshot["candidates"].append(_goal("g-second", "项目利润目标", TREE_ID))
+    request = _request()
+    request["mindmap_context"]["target"]["name"] = raw_text
+    context = _context(snapshot, request, [_tree(TREE_ID, ROOM, NODE)])
+    assert context["primary_goal"] is None
+    assert context["goal_resolution_status"] == "AMBIGUOUS"
+    atom = next(atom for atom in context["factual_atoms"] if atom["provenance"] == "target")
+    assert atom["raw_text"] == raw_text
+    assert atom["text"] == "制定项目利润目标"
+    assert atom["explicit_plan"] is True
+    assert atom["source_uid"] == NODE
+    proposal = generate_sop_proposal(context)
+    assert proposal["plan"]
+    assert proposal["plan"][0]["text"] == "制定项目利润目标"
+    assert proposal["plan"][0]["evidence_status"] == "SOURCE"
+    assert NODE in proposal["plan"][0]["source_uids"]
+    assert proposal["title"] == "制定项目利润目标 SOP 草案"
+
+
+def test_html_child_subtree_and_check_are_source_items():
+    request = _request()
+    mindmap = request["mindmap_context"]
+    mindmap["children"] = [{"uid": "html-child", "name": "<p>计算盈亏平衡 ROI</p>"}]
+    mindmap["subtree"] = [{"uid": "html-subtree", "name": "<div>P：复核费比红线</div>"}]
+    mindmap["notes"] = [{"uid": "html-check", "text": "<p>C：确认利润率达到目标</p>"}]
+    context = _context(request=request, nodes=[_tree(TREE_ID, ROOM, NODE)])
+    subtree = next(
+        atom for atom in context["factual_atoms"] if atom["source_uid"] == "html-subtree"
+    )
+    assert subtree["text"] == "复核费比红线"
+    assert subtree["explicit_plan"] is True
+    proposal = generate_sop_proposal(context)
+    assert any(
+        item["text"] == "计算盈亏平衡 ROI" and item["evidence_status"] == "SOURCE"
+        for item in proposal["plan"]
+    )
+    assert any(
+        item["text"] == "复核费比红线" and item["evidence_status"] == "SOURCE"
+        for item in proposal["plan"]
+    )
+    assert any(
+        item["text"] == "C：确认利润率达到目标" and item["evidence_status"] == "SOURCE"
+        for item in proposal["checks"]
+    )

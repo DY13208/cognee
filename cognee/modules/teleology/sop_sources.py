@@ -7,6 +7,7 @@ rooms stay distinct.
 from __future__ import annotations
 
 from collections import defaultdict
+from html.parser import HTMLParser
 from typing import Any
 
 from cognee.modules.company_tree.schema import make_source_key, parse_source_key
@@ -280,6 +281,34 @@ def _atom(
     }
 
 
+class _MindmapTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "br":
+            self.parts.append("\n")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"p", "div"}:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+
+def normalize_mindmap_text(raw: str) -> str:
+    """Return visible mind-map text, decoding HTML entities and removing markup."""
+    parser = _MindmapTextParser()
+    parser.feed(raw)
+    parser.close()
+    return " ".join("".join(parser.parts).replace("\xa0", " ").split())
+
+
 def _strip_plan_prefix(text: str) -> tuple[str, bool]:
     for prefix in ("P：", "P:", "计划：", "计划:", "执行：", "执行:", "步骤：", "步骤:"):
         if text.startswith(prefix):
@@ -301,18 +330,19 @@ def _append_atom(
     path: list[str],
     provenance: str,
 ) -> None:
-    raw_text = raw_text.strip()
-    if not raw_text and not source_uid:
+    original = raw_text
+    normalized_text = normalize_mindmap_text(original).strip()
+    if not normalized_text and not source_uid:
         return
-    text, explicit_plan = _strip_plan_prefix(raw_text)
+    text, explicit_plan = _strip_plan_prefix(normalized_text)
     key = (source_type, source_uid, text)
     if key in seen:
         return
     seen.add(key)
     out.append(
         _atom(
-            text=text or raw_text,
-            raw_text=raw_text,
+            text=text or normalized_text,
+            raw_text=original,
             source_type=source_type,
             source_uid=source_uid,
             evidence_node_id=evidence_node_id,
