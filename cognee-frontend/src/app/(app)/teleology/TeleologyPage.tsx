@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { TrackPageView } from "@/modules/analytics";
 import { useBusinessLanguage } from "@/modules/business/BusinessLanguageContext";
 import { useCogniInstance } from "@/modules/tenant/TenantProvider";
@@ -19,12 +20,12 @@ export default function TeleologyPage() {
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"network" | "browser" | "classic">("network");
-  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const datasetDefaulted = useRef(false);
+  const [navigationHost, setNavigationHost] = useState<HTMLElement | null>(null);
+  useEffect(() => { setNavigationHost(document.getElementById("teleology-navigation-slot")); }, []);
 
   function switchMode(next: "network" | "browser" | "classic") {
     setMode(next);
-    setToolbarCollapsed(false);
     try { window.localStorage.setItem(MODE_KEY, next); } catch { /* ignore */ }
   }
 
@@ -44,33 +45,25 @@ export default function TeleologyPage() {
   }
 
   const zh = language === "zh";
+  const navigation = (<nav className="teleology-view-navigation" aria-label={zh ? "目的论视图" : "Teleology views"}>
+        <div className="teleology-mode-tabs">
+            <button type="button" className={`teleology-mode-tab${mode === "network" ? " is-active" : ""}`} aria-pressed={mode === "network"} onClick={() => switchMode("network")}>经营网络</button>
+            <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
+            <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
+        </div>
+      </nav>);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", background: "transparent" }}>
       <TrackPageView page="teleology" />
+      {navigationHost ? createPortal(navigation, navigationHost) : navigation}
       <div className="teleology-toolbar">
-        <div className="teleology-toolbar-row teleology-toolbar-top">
-          <div className="teleology-mode-tabs">
-            <button type="button" className={`teleology-mode-tab${mode === "network" ? " is-active" : ""}`} aria-pressed={mode === "network"} onClick={() => switchMode("network")}>经营网络</button>
-            <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
-            <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
+        <div id="teleology-toolbar-data-row" className="teleology-toolbar-row teleology-toolbar-bottom">
+          <div id="teleology-toolbar-context" className="teleology-toolbar-context">
+            {mode === "network" ? <span className="network-muted">{selectedDataset?.name || "请选择数据集"} · 经营关系网络</span> : mode === "browser"
+              ? <div id="teleology-browser-data-actions" className="teleology-toolbar-data-actions" />
+              : <div id="teleology-classic-info" className="teleology-toolbar-data-actions" />}
           </div>
-          <div className="teleology-toolbar-view-actions">
-            <button
-              type="button"
-              className="onto-btn onto-collapse-btn"
-              aria-expanded={!toolbarCollapsed}
-              aria-controls="teleology-toolbar-data-row"
-              onClick={() => setToolbarCollapsed((collapsed) => !collapsed)}
-            >
-              {toolbarCollapsed ? (zh ? "展开 ↓" : "Expand ↓") : (zh ? "收起 ↑" : "Collapse ↑")}
-            </button>
-          </div>
-        </div>
-        <div id="teleology-toolbar-data-row" className="teleology-toolbar-row teleology-toolbar-bottom" style={{ display: toolbarCollapsed ? "none" : undefined }}>
-          {mode === "network" ? <span className="network-muted">{selectedDataset?.name || "请选择数据集"} · 经营关系网络</span> : mode === "browser"
-            ? <div id="teleology-browser-data-actions" className="teleology-toolbar-data-actions" />
-            : <div id="teleology-classic-info" className="teleology-toolbar-data-actions" />}
         </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>

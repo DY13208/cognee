@@ -23,11 +23,6 @@
 .network-canvas { position: relative; flex: 1; min-height: 320px; overflow: hidden; background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px); background-size: 28px 28px; }
 .network-canvas svg { display: block; width: 100%; height: 100%; position: absolute; inset: 0; touch-action: none; cursor: grab; }
 .network-canvas svg:active { cursor: grabbing; }
-.network-node-card { height: auto; min-height: 80px; overflow: visible; }
-.network-node { box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; width: 100%; height: auto; padding: 0; text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; }
-.network-node small { font-size: 10px; color: #90909d; }
-.network-node strong { font-size: 13px; line-height: 1.25; font-weight: 700; overflow-wrap: anywhere; }
-.network-node-card:hover { filter: brightness(1.08); }
 .network-edge { color: #8993b9; transition: opacity .2s; }
 .network-edge path { stroke: currentColor; fill: none; }
 .network-edge text { fill: #aeb6cc; font: 11px sans-serif; paint-order: stroke; stroke: #09090b; stroke-width: 5px; stroke-linejoin: round; }
@@ -53,6 +48,19 @@
 .network-detail-edge small { display: block; color: #777785; }
 .network-loop-card { display: flex; width: 100%; flex-direction: column; gap: 9px; padding: 14px; text-align: left; margin-bottom: 10px; }
 .network-loop-card small { font-size: 10px; color: #8c8c9e; }
+.network-panel-tabs { display: flex; gap: 4px; min-width: 0; }
+.network-panel-tabs [aria-selected=true] { background: rgba(139,112,219,.2); border-color: rgba(139,112,219,.5); color: #e5dcff; }
+.network-loop-tools { padding: 16px 0 12px; }
+.network-loop-tools input { width: 100%; box-sizing: border-box; }
+.network-loop-tool-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.network-loop-tool-row .network-scope { flex: 1; width: auto; margin: 0; }
+.network-loop-tool-row button { flex: none; }
+.network-loop-card { border: 1px solid #303039; border-radius: 6px; background: #141418; }
+.network-loop-card.is-selected { border-color: rgba(139,112,219,.6); background: rgba(139,112,219,.12); }
+.network-loop-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.network-loop-select { display: flex; flex: 1; flex-direction: column; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.network-loop-card-body { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid #303039; overflow-wrap: anywhere; }
+.network-loops summary { cursor: pointer; padding: 12px 0; font-size: 12px; color: #b3b3c4; }
 .network-loop-card strong { font-size: 14px; font-weight: 550; }
 .network-loop-card span { font-size: 11px; line-height: 1.8; color: #b1b1c1; }
 .network-loop-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 16px; background: #111116; border-bottom: 1px solid #292932; font-size: 12px; color: #b3b3c4; }
@@ -69,9 +77,8 @@
 .network-empty p { font-size: 12px; line-height: 1.7; margin: 0; }
 .network-cluster text { fill: #888897; font: 12px sans-serif; }
 .network-cluster path { stroke: #272730; fill: none; stroke-dasharray: 3 5; }
-.lod-far .network-node-card { height: auto; min-height: 56px; justify-content: center; }
-.lod-far .network-node strong { font-size: 12px; }
-.lod-near .network-node-card { height: auto; min-height: 120px; }
-.lod-near .network-node { gap: 5px; }
-.network-node-description { font-size: 10px; color: #9292a2; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+.network-cluster text[role=button] { cursor: pointer; fill: var(--onto-ink); }
+.network-cluster text[role=button]:hover { text-decoration: underline; }
+.network-cluster text[role=button]:focus { outline: 1px solid var(--onto-border); }
+
 @media (max-width: 900px) { .goal-network-root .onto-side-right { width: 240px; } .network-controls { padding: 10px; } }

@@ -2,12 +2,73 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { GoalNetworkPresentation } from "./GoalNetworkView";
 import { businessName, currentNetwork, layoutNetwork, NETWORK_TYPES, NODE_LABELS, RELATION_LABELS } from "./goalNetwork";
 import { buildDerivedGoalTree } from "./derivedGoalTree";
+import { fitCanvasBounds } from "./fitCanvas";
 import type { GoalCandidate, GoalModelView, GoalNetworkLoop, GoalTeleologyItem } from "@/modules/teleology/teleologyApi";
 
 const nodes = NETWORK_TYPES.map((node_type, i) => ({ id: `n${i}`, name: `${i ? "C2 " : "G1 "}${NODE_LABELS[node_type]}业务`, node_type, status: "confirmed", evidence: [] } as unknown as GoalCandidate));
 const edge = (relationship: string, source = "n0", target = "n2") => ({ id: relationship, relationship, source, target, status: "confirmed" } as GoalTeleologyItem);
 const model = { candidates: nodes, relations: Object.keys(RELATION_LABELS).map(r => r === "drives" ? edge(r, "n5", "n0") : r === "enables" ? edge(r, "n1", "n0") : edge(r)), hierarchy: [] } as unknown as GoalModelView;
 const loop = { loop_id: "server-loop", nodes: ["n0", "n2"], edges: [edge("advances"), edge("blocks", "n2", "n0")], negative_edge_count: 1, loop_type: "Balancing", confidence: .9, conditions: [] } as GoalNetworkLoop;
+
+test("fit centers offset cards within pixel padding across canvas aspect ratios", () => {
+  const cards = [{ x: -800, y: 500, width: 240, height: 250 }, { x: 1800, y: -500, width: 240, height: 160 }];
+  for (const canvas of [{ width: 1000, height: 700 }, { width: 500, height: 1000 }]) {
+    const fit = fitCanvasBounds(cards, canvas)!;
+    const scale = canvas.width / fit.width;
+    expect(fit.width / fit.height).toBeCloseTo(canvas.width / canvas.height);
+    for (const card of cards) {
+      expect((card.x + fit.offsetX) * scale).toBeGreaterThanOrEqual(39.99);
+      expect((card.y + fit.offsetY) * scale).toBeGreaterThanOrEqual(39.99);
+      expect((card.x + card.width + fit.offsetX) * scale).toBeLessThanOrEqual(canvas.width - 39.99);
+      expect((card.y + card.height + fit.offsetY) * scale).toBeLessThanOrEqual(canvas.height - 39.99);
+    }
+  }
+  expect(fitCanvasBounds([], { width: 1000, height: 700 })).toBeNull();
+});
+
+test("fit canvas recenters the actual dragged nodes rather than resetting zoom alone", () => {
+  const { container } = render(<GoalNetworkPresentation model={model} loops={[]} />);
+  const node = screen.getByRole("button", { name: "目标：目标业务" });
+  for (let i = 0; i < 40; i++) fireEvent.keyDown(node, { key: "ArrowLeft" });
+  const graph = container.querySelector(".network-canvas svg > g")!;
+  const before = graph.getAttribute("transform");
+  fireEvent.click(screen.getByRole("button", { name: "适应画布" }));
+  expect(graph.getAttribute("transform")).not.toBe(before);
+  expect(graph.getAttribute("transform")).not.toBe("translate(0,0) scale(1)");
+});
+
+test("modified wheel zooms only the canvas and respects zoom limits", () => {
+  const { container } = render(<GoalNetworkPresentation model={model} loops={[]} />);
+  const canvas = container.querySelector(".network-canvas")!;
+  const percentage = () => container.querySelector(".network-zoom span")!.textContent;
+  fireEvent.wheel(canvas, { deltaY: -100 });
+  expect(percentage()).toBe("100%");
+  const wheel = new WheelEvent("wheel", { deltaY: -100, ctrlKey: true, cancelable: true });
+  act(() => { canvas.dispatchEvent(wheel); });
+  expect(wheel.defaultPrevented).toBe(true);
+  expect(percentage()).toBe("122%");
+  for (let i = 0; i < 20; i++) fireEvent.wheel(canvas, { deltaY: -150, metaKey: true });
+  expect(percentage()).toBe("1000%");
+  for (let i = 0; i < 30; i++) fireEvent.wheel(canvas, { deltaY: 150, ctrlKey: true });
+  expect(percentage()).toBe("40%");
+});
+
+test.each(["提升 FULLY 项目盈利能力", "提升增长资产与市场洞察能力", "提升新品上市成功率"])("directory goal %s opens its complete scoped network", (goalName) => {
+  const aggregate = { ...nodes[0], id: "aggregate", name: "提升各品牌项目盈利能力" };
+  const project = { ...nodes[0], id: "fully", name: goalName };
+  const sales = { ...nodes[0], id: "sales", name: "FULLY销售", parent_candidate_id: "fully" };
+  const supply = { ...nodes[1], id: "supply", name: "FULLY采购", parent_candidate_id: "fully" };
+  const fixture: GoalModelView = { ...model, submission_mode: "patch", candidates: [aggregate, project, sales, supply],
+    relations: [edge("advances", "fully", "aggregate"), edge("drives", "sales", "fully"), edge("enables", "supply", "sales")] };
+  const { container } = render(<GoalNetworkPresentation model={fixture} loops={[]} />);
+  fireEvent.click(screen.getByRole("button", { name: "展开经营网络导航" }));
+  fireEvent.click(screen.getByRole("button", { name: goalName }));
+  expect(screen.getByRole("combobox", { name: "当前业务 Goal" })).toHaveValue("fully");
+  expect(screen.getByRole("combobox", { name: "网络展示范围" })).toHaveValue("business");
+  expect(screen.getByRole("checkbox", { name: "显示支撑关系" })).toBeChecked();
+  expect(container.querySelectorAll(".network-node")).toHaveLength(4);
+  expect(container.querySelectorAll(".network-edge")).toHaveLength(3);
+});
 
 test("support switch reveals endpoints and restores automatic types when disabled", () => {
   const supportModel = { ...model, candidates: [nodes[0], nodes[4]], relations: [edge("measures", "n4", "n0")] };
@@ -58,6 +119,37 @@ test("all six business node types and nine Chinese relation labels", () => {
   expect(businessName({ name: "C2 全渠道控价体系", description: "" })).toBe("全渠道控价体系");
   expect(businessName({ name: "C:陈华俊:UN项目利润分", description: "" })).toBe("C:陈华俊:UN项目利润分");
 });
+
+test("company project heading opens its business scope without changing data", () => {
+  const project = { ...nodes[0], name: "提升 UN 项目盈利能力" };
+  const fixture = { ...model, candidates: [project, nodes[2]], relations: [edge("blocks", "n2", "n0")] };
+  const before = JSON.stringify(fixture);
+  const { container } = render(<GoalNetworkPresentation model={fixture} loops={[]} />);
+  fireEvent.click(screen.getByRole("button", { name: "展开经营网络导航" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "网络展示范围" }), { target: { value: "global" } });
+  const heading = container.querySelector(".network-cluster text[role=button]")!;
+  expect(heading).toHaveTextContent("提升 UN 项目盈利能力");
+  fireEvent.click(heading);
+  expect(screen.getByRole("combobox", { name: "网络展示范围" })).toHaveValue("business");
+  expect(screen.getByRole("combobox", { name: "当前业务 Goal" })).toHaveValue("n0");
+  expect(JSON.stringify(fixture)).toBe(before);
+});
+
+test("company defaults to original card scale; fit all is an explicit action", () => {
+  const project = { ...nodes[0], name: "提升 UN 项目盈利能力" };
+  const children = Array.from({ length: 30 }, (_, i) => ({ ...nodes[0], id: `child-${i}`, name: `经营目标 ${i}`, parent_candidate_id: project.id }));
+  const fixture = { ...model, candidates: [project, ...children], relations: children.map(n => ({ ...edge("advances", n.id, project.id), id: `edge-${n.id}` })) };
+  const { container } = render(<GoalNetworkPresentation model={fixture} loops={[]} />);
+  fireEvent.click(screen.getByRole("button", { name: "展开经营网络导航" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "网络展示范围" }), { target: { value: "global" } });
+  expect(container.querySelector(".network-canvas")).toHaveAttribute("data-lod", "medium");
+  expect(container.querySelector(".network-node strong")).toHaveStyle({ fontSize: "13px" });
+  expect(container.querySelector(".network-node [data-node-type]")).toHaveStyle({ fontSize: "9px" });
+  fireEvent.click(screen.getByRole("button", { name: "适应画布" }));
+  expect(container.querySelector(".network-canvas")).toHaveAttribute("data-lod", "far");
+  fireEvent.click(screen.getByRole("group", { name: "公司分区定位" }).querySelector("button")!);
+  expect(container.querySelector(".network-canvas")).toHaveAttribute("data-lod", "medium");
+});
 test("snapshot filtering and display leave source payload unchanged", () => {
   const before = JSON.stringify(model);
   expect(currentNetwork(model).nodes).toHaveLength(6);
@@ -90,6 +182,7 @@ test("causal edges are solid and other relationships are structural", () => {
 });
 test("loop highlights only exact server edges and nodes", () => {
   const { container } = render(<GoalNetworkPresentation model={model} loops={[loop]} />);
+  fireEvent.click(screen.getByRole("tab", { name: "反馈回路（1）" }));
   fireEvent.click(screen.getAllByRole("button", { name: /Loop 01/ })[0]);
   fireEvent.click(screen.getByRole("checkbox", { name: "显示支撑关系" }));
   expect(container.querySelectorAll('.network-edge[data-loop-highlighted="true"]')).toHaveLength(1);
@@ -97,11 +190,92 @@ test("loop highlights only exact server edges and nodes", () => {
   expect(container.querySelector('.network-edge[data-relationship="serves"]')).toHaveAttribute("opacity", "0.08");
   expect(screen.getAllByText("平衡回路").length).toBeGreaterThan(0);
 });
+test("a project subgoal retains the full project context when opened from navigation", () => {
+  const project = { ...nodes[0], id: "project", name: "提升 FULLY 项目盈利能力" };
+  const child = { ...nodes[0], id: "child", name: "FULLY · 渠道回款与账期履约水平", parent_candidate_id: "project" };
+  const other = { ...nodes[2], id: "risk", parent_candidate_id: "project" };
+  const { container } = render(<GoalNetworkPresentation model={{ ...model, submission_mode: "patch", candidates: [project, child, other], relations: [edge("advances", "child", "project"), edge("blocks", "risk", "project")] }} loops={[]} />);
+  fireEvent.click(screen.getByRole("button", { name: "展开经营网络导航" }));
+  fireEvent.click(screen.getByRole("button", { name: child.name }));
+  expect(screen.getByRole("combobox", { name: "当前业务 Goal" })).toHaveValue("project");
+  expect(container.querySelectorAll(".network-node")).toHaveLength(3);
+});
+
+test("loop tab shares the right panel and excludes unrelated scopes", () => {
+  const unrelated = { ...loop, loop_id: "other-project", nodes: ["other-a", "other-b"] };
+  const { container } = render(<GoalNetworkPresentation model={model} loops={[loop, unrelated]} />);
+  expect(container.querySelector(".network-main .network-loops")).toBeNull();
+  expect(screen.getByRole("tab", { name: "节点详情" })).toHaveAttribute("aria-selected", "true");
+  expect(container.querySelector(".network-loops")).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "反馈回路（1）" }));
+  const panel = container.querySelector(".network-loops")!;
+  expect(container.querySelector("#network-details-panel")).toBeNull();
+  expect(panel.querySelectorAll(".network-loop-card")).toHaveLength(1);
+});
+
 test("frontend does not invent loops even when relations form a cycle", () => {
   render(<GoalNetworkPresentation model={{ ...model, relations: [edge("advances"), edge("blocks", "n2", "n0")] }} loops={[]} loopView />);
-  expect(screen.getAllByText("服务端未返回反馈回路").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("tab", { name: "反馈回路（0）" }));
+  expect(screen.getAllByText("当前范围没有反馈回路").length).toBeGreaterThan(0);
   expect(screen.queryByText(/Loop 01/)).not.toBeInTheDocument();
 });
+test("loop filters preserve numbering, conditions and drawer selection", () => {
+  const second = { ...loop, loop_id: "second", loop_type: "Reinforcing" as const, conditions: ["原始业务条件"], status: "CONDITIONAL" as const };
+  const before = JSON.stringify([loop, second]);
+  const { container } = render(<GoalNetworkPresentation model={model} loops={[loop, second]} />);
+  fireEvent.click(screen.getByRole("tab", { name: "反馈回路（2）" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "反馈回路类型" }), { target: { value: "Reinforcing" } });
+  expect(screen.queryByText("Loop 01")).not.toBeInTheDocument();
+  expect(screen.getByText("Loop 02")).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索反馈回路" }), { target: { value: "Loop 02" } });
+  fireEvent.click(screen.getByRole("button", { name: "展开全部" }));
+  expect(screen.getByText("条件：原始业务条件")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "收起 Loop 02" })).toHaveAttribute("aria-expanded", "true");
+  const graph = container.querySelector(".network-canvas svg > g")!;
+  const originalTransform = graph.getAttribute("transform");
+  fireEvent.click(screen.getByRole("button", { name: "Loop 02 增强回路" }));
+  expect(graph.getAttribute("transform")).not.toBe(originalTransform);
+  expect(screen.getByRole("button", { name: "Loop 02 增强回路" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "收起网络详情" }));
+  expect(container.querySelector(".onto-side-right")).toHaveClass("is-collapsed");
+  fireEvent.click(screen.getByRole("button", { name: "展开网络详情" }));
+  expect(screen.getByRole("tab", { name: "反馈回路（2）" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("button", { name: "Loop 02 增强回路" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByText("条件：原始业务条件")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "收起 Loop 02" }));
+  expect(screen.queryByText("条件：原始业务条件")).not.toBeInTheDocument();
+  expect(JSON.stringify([loop, second])).toBe(before);
+});
+
+test("canvas viewport follows drawer width changes through its existing resize observer", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(window, "ResizeObserver");
+  const observers: Array<{ callback: ResizeObserverCallback; target?: Element }> = [];
+  Object.defineProperty(window, "ResizeObserver", { configurable: true, value: class {
+    entry: { callback: ResizeObserverCallback; target?: Element };
+    constructor(callback: ResizeObserverCallback) { this.entry = { callback }; observers.push(this.entry); }
+    observe(target: Element) { this.entry.target = target; }
+    disconnect() {}
+  } });
+  try {
+    const { container } = render(<GoalNetworkPresentation model={model} loops={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "展开经营网络导航" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "网络展示范围" }), { target: { value: "global" } });
+    const canvasObserver = observers.find(observer => observer.target?.classList.contains("network-canvas"))!;
+    const resize = (width: number) => act(() => canvasObserver.callback([{ contentRect: { width, height: 700 } } as ResizeObserverEntry], {} as ResizeObserver));
+    resize(1000);
+    const svg = container.querySelector(".network-canvas svg")!;
+    expect(svg).toHaveAttribute("viewBox", "0 0 1000 700");
+    fireEvent.click(screen.getByRole("button", { name: "收起网络详情" }));
+    resize(1300);
+    expect(svg).toHaveAttribute("viewBox", "0 0 1300 700");
+    fireEvent.click(screen.getByRole("button", { name: "展开网络详情" }));
+    resize(1000);
+    expect(svg).toHaveAttribute("viewBox", "0 0 1000 700");
+  } finally {
+    if (descriptor) Object.defineProperty(window, "ResizeObserver", descriptor); else Reflect.deleteProperty(window, "ResizeObserver");
+  }
+});
+
 test("current run includes existing canonical endpoints and keeps the full snapshot accessible", () => {
   const snapshot = { ...model, run_id: "new", relations: [{ ...edge("advances"), run_id: "new" }, { ...edge("serves", "n1", "n0"), run_id: "old" }] };
   expect(currentNetwork(snapshot).nodes.map(n => n.id)).toEqual(["n0", "n2"]);
@@ -148,7 +322,7 @@ test("pointer dragging moves only the node and avoids opening details", () => {
     fireEvent.click(node);
     expect(Number(card.getAttribute("x"))).toBe(x + 60);
     expect(Number(card.getAttribute("y"))).toBe(y + 40);
-    expect(screen.queryByText("节点详情")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "经营网络" })).toBeInTheDocument();
   } finally {
     if (pointDescriptor) Object.defineProperty(window, "DOMPoint", pointDescriptor); else Reflect.deleteProperty(window, "DOMPoint");
     if (eventDescriptor) Object.defineProperty(window, "PointerEvent", eventDescriptor); else Reflect.deleteProperty(window, "PointerEvent");
@@ -183,7 +357,8 @@ test("zoom LOD removes descriptions at a distance and reveals detail when enlarg
   const { container } = render(<GoalNetworkPresentation model={model} loops={[]} />);
   for (let i = 0; i < 4; i++) fireEvent.click(screen.getByRole("button", { name: "缩小网络" }));
   expect(container.querySelector(".network-canvas")).toHaveAttribute("data-lod", "far");
-  expect(container.querySelector(".network-node small")).toBeNull();
+  expect(container.querySelectorAll(".network-node [data-node-type]")).toHaveLength(container.querySelectorAll(".network-node").length);
+  expect(container.querySelector(".network-node strong")).toHaveAttribute("title");
   expect(container.querySelector(".network-node-description")).toBeNull();
   for (let i = 0; i < 14; i++) fireEvent.click(screen.getByRole("button", { name: "放大网络" }));
   expect(container.querySelector(".network-canvas")).toHaveAttribute("data-lod", "near");

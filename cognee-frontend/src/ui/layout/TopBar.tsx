@@ -184,6 +184,8 @@ export default function TopBar() {
         ) : null}
       </div>
 
+      {pathname === "/teleology" && <div id="teleology-navigation-slot" style={{ display: "flex", justifyContent: "center", flex: 1, minWidth: 0, overflowX: "auto", marginInline: 12 }} />}
+
       {/* Right: language + profile */}
       <div className="flex items-center gap-3">
         <LanguageSwitch />

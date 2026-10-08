@@ -31,13 +31,16 @@ export function businessNetwork(model: GoalModelView, rootId: string | null): Ne
   const pilotIds = new Set(pilot.nodes.map(n => n.id));
   // A pilot has an explicit submission provenance and existing canonical endpoints.
   // Do not traverse its root's historical edges into company or other projects.
-  if (model.run_id && pilot.relations.some(e => e.run_id === model.run_id) && pilotIds.has(rootId)) {
+  if (model.submission_mode !== "patch" && model.run_id && pilot.relations.some(e => e.run_id === model.run_id) && pilotIds.has(rootId)) {
     const nodes = full.nodes.filter(n => pilotIds.has(n.id) || descendants.has(n.id));
     const ids = new Set(nodes.map(n => n.id));
     return { nodes, relations: pilot.relations.filter(e => ids.has(sourceOf(e)) && ids.has(targetOf(e))) };
   }
   const boundaries = new Set(businessGoals(model).filter(n => n.id !== rootId).map(n => n.id));
-  const eligible = new Set(full.nodes.filter(n => descendants.has(n.id) || (!parent.get(n.id) && !boundaries.has(n.id))).map(n => n.id));
+  // Explicit edges at the selected boundary are relevant even when hierarchy differs.
+  // Include their endpoints, but do not traverse the rest of another project's subtree.
+  const direct = model.submission_mode === "patch" ? neighborhood(new Set([rootId]), full.relations, 1) : new Set<string>();
+  const eligible = new Set(full.nodes.filter(n => descendants.has(n.id) || direct.has(n.id) || (!parent.get(n.id) && !boundaries.has(n.id))).map(n => n.id));
   const members = neighborhood(descendants, full.relations.filter(e => eligible.has(sourceOf(e)) && eligible.has(targetOf(e))), "all");
   const nodes = full.nodes.filter(n => members.has(n.id));
   return { nodes, relations: full.relations.filter(e => members.has(sourceOf(e)) && members.has(targetOf(e))) };
@@ -114,6 +117,71 @@ export function businessCluster(node: GoalCandidate): string {
   return "销售增长";
 }
 /** UI-only grouping by business terms; never stored as Goal Model metadata. */
+export function companyLayout(model: GoalModelView, nodes: GoalCandidate[], relations: GoalTeleologyItem[], heights: Record<string, number> = {}) {
+  const full = currentNetwork(model, false);
+  const parents = new Map(full.nodes.map(n => [n.id, n.parent_candidate_id]));
+  for (const row of model.hierarchy || []) parents.set(row.id, row.parent_candidate_id);
+  const candidates = businessGoals(model).filter(node => /项目盈利|项目利润/.test(businessName(node)) && !/各品牌项目/.test(businessName(node)));
+  const anchorIds = new Set(candidates.map(n => n.id));
+  const anchors = candidates.filter(node => {
+    let cursor = parents.get(node.id);
+    const visited = new Set([node.id]);
+    while (cursor && !visited.has(cursor)) {
+      if (anchorIds.has(cursor)) return false;
+      visited.add(cursor); cursor = parents.get(cursor);
+    }
+    return true;
+  });
+  const owners = new Map(anchors.map(n => [n.id, n.id]));
+  // Prefer explicit ancestry; shared connections never redefine project ownership.
+  for (const node of full.nodes) {
+    let cursor: string | null | undefined = node.id;
+    const visited = new Set<string>();
+    while (cursor && !visited.has(cursor)) {
+      visited.add(cursor);
+      if (owners.has(cursor)) { owners.set(node.id, owners.get(cursor)!); break; }
+      cursor = parents.get(cursor);
+    }
+    if (!owners.has(node.id) && parents.get(node.id)) owners.set(node.id, "company");
+  }
+  let frontier = [...owners.keys()].filter(id => owners.get(id) !== "company");
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const id of frontier) for (const edge of relations) {
+      const other = sourceOf(edge) === id ? targetOf(edge) : targetOf(edge) === id ? sourceOf(edge) : null;
+      if (other && !owners.has(other)) { owners.set(other, owners.get(id)!); next.push(other); }
+    }
+    frontier = next;
+  }
+  const groups = new Map<string, GoalCandidate[]>();
+  for (const node of nodes) {
+    const owner = owners.get(node.id) || "company";
+    groups.set(owner, [...(groups.get(owner) || []), node]);
+  }
+  const positions: PositionedNode[] = [];
+  const clusters: { name: string; rootId: string | null; x: number; y: number; width: number; height: number }[] = [];
+  const columns = Math.max(1, Math.ceil(Math.sqrt(groups.size)));
+  const groupWidth = 3 * (CARD_W + 36) + 40;
+  let top = 45, index = 0, rowHeight = 0;
+  const order = ["driver", "capability", "goal", "risk", "metric", "constraint"];
+  for (const [owner, members] of groups) {
+    const left = (index % columns) * (groupWidth + 50);
+    const sorted = [...members].sort((a, b) => order.indexOf(networkType(a)) - order.indexOf(networkType(b)));
+    let y = top + 40;
+    for (let start = 0; start < sorted.length; start += 3) {
+      const row = sorted.slice(start, start + 3);
+      row.forEach((node, column) => positions.push({ node, x: left + 35 + column * (CARD_W + 36), y }));
+      y += Math.max(120, ...row.map(n => heights[n.id] || 120)) + 40;
+    }
+    const height = y - top + 15;
+    clusters.push({ name: anchors.find(n => n.id === owner) ? businessName(anchors.find(n => n.id === owner)!) : "公司公共经营", rootId: owner === "company" ? null : owner, x: left + 15, y: top, width: groupWidth, height });
+    rowHeight = Math.max(rowHeight, height);
+    index++;
+    if (index % columns === 0) { top += rowHeight + 50; rowHeight = 0; }
+  }
+  return { positions, clusters };
+}
+
 export function clusteredLayout(nodes: GoalCandidate[], relations: GoalTeleologyItem[], heights: Record<string, number> = {}) {
   const positions: PositionedNode[] = [], clusters: { name: string; x: number; y: number; width: number; height: number }[] = [];
   let top = 45, column = 0, rowHeight = 0, rowLeft = 0;

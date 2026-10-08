@@ -653,6 +653,7 @@ export interface GoalTeleologyItem {
 }
 
 export interface GoalModelView {
+  submission_mode?: "replace" | "merge" | "patch";
   loop_preview?: GoalNetworkLoop[];
   loops?: GoalNetworkLoop[];
   dataset_id: string;

@@ -29,7 +29,8 @@ export function currentNetwork(model: GoalModelView, currentRunOnly = true) {
   const ids = new Set(nodes.map(n => n.id));
   const relations = (model.relations || []).filter(e => e.status !== "rejected" && e.status !== "legacy_confirmed" && ids.has(sourceOf(e)) && ids.has(targetOf(e)));
   const runRelations = relations.filter(e => e.run_id === model.run_id);
-  if (currentRunOnly && model.run_id && runRelations.length) {
+  // A patch is a cumulative snapshot; older unchanged edges remain current.
+  if (currentRunOnly && model.submission_mode !== "patch" && model.run_id && runRelations.length) {
     const members = new Set(runRelations.flatMap(e => [sourceOf(e), targetOf(e)]));
     return { nodes: nodes.filter(n => members.has(n.id) || n.run_id === model.run_id), relations: runRelations };
   }

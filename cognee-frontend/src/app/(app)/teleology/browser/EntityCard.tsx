@@ -2,9 +2,9 @@
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { KIND_STRIPE, kindLabel } from "./entityMeta";
-import { CARD_H } from "./layoutDag";
+import NodeCard from "./NodeCard";
 import type { LaidOutNode } from "./types";
-import { CardHeading, cardSurfaceStyle, typeBadgeStyle, CARD_META_STYLE } from "./cardAppearance";
+
 
 const KIND_ICON: Record<string, string> = {
   Goal: "◎",
@@ -62,38 +62,20 @@ export default function EntityCard({
     position: "absolute",
     left: node.x,
     top: node.y,
-    height: CARD_H,
     opacity: dimmed ? 0.58 : 1,
     cursor: dragging ? "grabbing" : "grab",
     zIndex: dragging ? 8 : isFocus ? 3 : selected ? 2 : 1,
-    ...cardSurfaceStyle({ focus: isFocus, selected, dragging, proposed, semantic }),
     userSelect: "none",
     touchAction: "none",
   };
 
   const meta = node.description ? node.description.slice(0, 48) : node.status || node.parentName || "";
 
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      className="onto-entity-card"
-      style={style}
-      onPointerDown={onPointerDown}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect();
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        onFocus();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onFocus();
-      }}
-    >
-      <CardHeading name={node.name} color={stripe} icon={evidence ? <EvidenceIcon /> : (KIND_ICON[node.kind] || "○")} truncate>
-        {((node.childCount && node.childCount > 0) || (node.hiddenDegree && node.hiddenDegree > 0)) &&
+  return <NodeCard name={node.name} color={stripe}
+    icon={evidence ? <EvidenceIcon /> : (KIND_ICON[node.kind] || "○")}
+    label={[node.displayType || (node.type === "Data" ? (language === "zh" ? "数据" : "Data") : node.kind === "Purpose" ? "WHY" : kindLabel(node.kind, language)), proposed ? (language === "zh" ? " · AI建议" : " · Proposal") : semantic ? (language === "zh" ? " · 已确认" : " · Confirmed") : ""].join("")}
+    meta={meta} appearance={{ focus: isFocus, selected, dragging, proposed, semantic }} style={style}
+    headerAction={((node.childCount && node.childCount > 0) || (node.hiddenDegree && node.hiddenDegree > 0)) &&
         onExpand ? (
           <button
             type="button"
@@ -119,34 +101,12 @@ export default function EntityCard({
               : `+${node.hiddenDegree}`}
           </button>
         ) : null}
-      </CardHeading>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span
-          style={typeBadgeStyle(stripe)}
-        >
-          {node.displayType || (node.type === "Data" ? (language === "zh" ? "数据" : "Data") : node.kind === "Purpose" ? "WHY" : kindLabel(node.kind, language))}
-          {proposed ? (language === "zh" ? " · AI建议" : " · Proposal") : semantic ? (language === "zh" ? " · 已确认" : " · Confirmed") : ""}
-        </span>
-      </div>
-
-      {meta ? (
-        <div
-          style={{
-            ...CARD_META_STYLE,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {meta}
-        </div>
-      ) : null}
-      <div className="onto-card-counts">
+    counts={<>
         <span>{language === "zh" ? "关系" : "Links"} {relationshipCount}</span>
         <span>{language === "zh" ? "子目标" : "Children"} {node.childCount || 0}</span>
         {evidenceCount > 0 ? <span>{language === "zh" ? "证据" : "Evidence"} {evidenceCount}</span> : null}
-      </div>
-    </div>
-  );
+    </>}
+    interactiveProps={{ onPointerDown, onClick: e => { e.stopPropagation(); onSelect(); },
+      onDoubleClick: e => { e.stopPropagation(); onFocus(); },
+      onKeyDown: e => { if (e.key === "Enter") onFocus(); } }} />;
 }
