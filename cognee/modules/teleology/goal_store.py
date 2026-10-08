@@ -742,7 +742,13 @@ def _merge_candidate_flags(
     for goal in rows:
         extra = extras.get(str(goal.get("id") or "")) or {}
         row = dict(goal)
-        for key in ("orchestrated_identity", "scope", "reason_provenance"):
+        for key in (
+            "orchestrated_identity",
+            "scope",
+            "reason_provenance",
+            "node_type",
+            "evidence_node_ids",
+        ):
             if extra.get(key) not in (None, "", [], {}):
                 row[key] = extra[key]
         if extra.get("retirement_proposed"):

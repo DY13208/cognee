@@ -14,6 +14,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from cognee.modules.teleology.goal_model import GoalBuildError
+from cognee.modules.teleology.goal_network import analyze_feedback_loops, semantic_warnings
 from cognee.modules.teleology.goal_orchestrated import (
     _CRITICAL,
     _accept_goal,
@@ -26,7 +27,9 @@ from cognee.modules.teleology.goal_orchestrated import (
     _stored_identity,
     _teleology_item,
     collect_node_ids,
+    normalize_canonical_name,
     normalize_evidence,
+    resolve_relation_endpoints,
 )
 from cognee.modules.teleology.goal_store import get_goal_store
 from cognee.modules.teleology.graph_annotations import _authorized_dataset
@@ -207,11 +210,61 @@ def compose_orchestrated_patch(
     upserted_ids: list[str] = []
     for raw in upsert_rows:
         client_id = str(raw.get("client_id") or raw.get("candidate_id") or "")
+        candidate_id = str(raw.get("candidate_id") or "")
+        existing = (
+            next(
+                (n for n in candidates if str(n.get("id")) == candidate_id and _in_snapshot(n)),
+                None,
+            )
+            if candidate_id
+            else None
+        )
+        if candidate_id and existing is None:
+            _reject(
+                "goal", client_id, "INVALID_EXISTING_CANDIDATE", rejected_counts, issues, "goals"
+            )
+            continue
+        if existing is not None:
+            defaults = {
+                key: existing.get(key)
+                for key in ("name", "description", "reason", "confidence", "scope", "node_type")
+            }
+            if not any(key in raw for key in ("evidence", "evidence_node_ids", "source_node_ids")):
+                defaults["evidence"] = existing.get("evidence") or []
+            raw = {**defaults, **raw}
+            if raw.get("node_type") is None:
+                raw["node_type"] = existing.get("node_type", "goal")
         sealed, issue = _accept_goal(dataset_id, raw, known, info, generated_by, run)
         if sealed is None:
             _reject("goal", client_id, issue or "invalid", rejected_counts, issues, "goals")
             continue
-        existing = _find_identity(candidates, str(sealed["orchestrated_identity"]))
+        collision = next(
+            (
+                n
+                for n in candidates
+                if _in_snapshot(n)
+                and n is not existing
+                and (
+                    _stored_identity(n) == str(sealed["orchestrated_identity"])
+                    or normalize_canonical_name(str(n.get("name") or ""))
+                    == normalize_canonical_name(sealed["name"])
+                )
+            ),
+            None,
+        )
+        if collision is not None and _in_snapshot(collision) and collision is not existing:
+            _reject(
+                "goal",
+                client_id,
+                "EXISTING_CANDIDATE_BINDING_REQUIRED",
+                rejected_counts,
+                issues,
+                "goals",
+            )
+            continue
+        if existing is None and any(str(n.get("id")) == str(sealed["id"]) for n in candidates):
+            # A historical deterministic id must never overwrite a retained record.
+            sealed["id"] = str(uuid4())
         if existing is None:
             sealed["status"] = "proposed"
             sealed["parent_candidate_id"] = None
@@ -290,7 +343,14 @@ def compose_orchestrated_patch(
         for client_id, candidate_id in client_to_id.items()
     }
     _apply_patch_relations(
-        list(payload.get("relations") or []),
+        resolve_relation_endpoints(
+            list(payload.get("relations") or []),
+            client_to_id,
+            candidates,
+            existing_candidate_ids={
+                str(n["id"]) for n in current.get("candidates") or [] if _in_snapshot(n)
+            },
+        ),
         relations,
         client_to_id,
         mutable,
@@ -304,6 +364,7 @@ def compose_orchestrated_patch(
         goal_names,
         relation_changes,
     )
+    warnings.extend(semantic_warnings(candidates, relations))
     changed_ids = {item["id"] for item in added + updated + retired}
     unchanged = [
         {"id": goal["id"], "name": goal.get("name")}
@@ -391,6 +452,9 @@ def compose_orchestrated_patch(
     }
     if not valid:
         summary["status"] = "validation_failed"
+    summary["resolved_client_ids"] = dict(client_to_id)
+    summary["relations_preview"] = [dict(edge) for edge in relations]
+    summary["loop_preview"] = analyze_feedback_loops(summary["relations_preview"], nodes=candidates)
     return model, summary
 
 
@@ -530,6 +594,7 @@ def _empty_summary(*, status: str, base_run_id: str) -> dict[str, Any]:
         "relation_changes": [],
         "issues": [],
         "warnings": [],
+        "loop_preview": [],
         "critical_errors": [],
         "recommend_full_replace": False,
         "committed": False,
@@ -537,23 +602,13 @@ def _empty_summary(*, status: str, base_run_id: str) -> dict[str, Any]:
     }
 
 
-def _find_identity(candidates: list[dict[str, Any]], identity: str) -> dict[str, Any] | None:
-    fallback = None
-    for goal in candidates:
-        if goal.get("status") == "rejected":
-            continue
-        if _stored_identity(goal) != identity:
-            continue
-        if _in_snapshot(goal):
-            return goal
-        fallback = goal
-    return fallback
-
-
 def _overwrite_goal_fields(
     existing: dict[str, Any], sealed: dict[str, Any], raw: dict[str, Any]
 ) -> None:
     status = _kept_status(existing, raw)
+    existing["name"] = sealed["name"]
+    existing["node_type"] = sealed.get("node_type", "goal")
+    existing["evidence_node_ids"] = list(sealed.get("evidence_node_ids") or [])
     existing["description"] = sealed.get("description") or ""
     existing["reason"] = sealed.get("reason") or ""
     existing["confidence"] = sealed.get("confidence")
@@ -875,6 +930,8 @@ def _apply_patch_relations(
                 run_id,
                 kind="relation",
                 relationship=relationship,
+                condition=raw.get("condition"),
+                evidence_node_ids=source_ids,
                 source=source_id,
                 target=target_id,
                 goal_id=source_id,
@@ -900,6 +957,9 @@ def _apply_patch_relations(
         existing["confidence"] = _confidence(raw.get("confidence"))
         existing["evidence"] = evidence
         existing["source_node_ids"] = source_ids
+        if "condition" in raw:
+            existing["condition"] = raw["condition"]
+        existing["evidence_node_ids"] = source_ids
         existing["relationship"] = relationship
         changes.append(
             {

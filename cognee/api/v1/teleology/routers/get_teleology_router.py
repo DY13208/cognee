@@ -1,12 +1,12 @@
 import asyncio
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from cognee.api.DTO import InDTO
 from cognee.exceptions import CogneeApiError
@@ -32,6 +32,8 @@ from cognee.modules.teleology.goal_build import (
     start_teleology_build,
 )
 from cognee.modules.teleology.goal_model import GoalBuildError
+from cognee.modules.teleology.goal_network import NodeType as NetworkNodeType
+from cognee.modules.teleology.goal_network import Relationship
 from cognee.modules.teleology.goal_orchestrated import submit_orchestrated_goal_model
 from cognee.modules.teleology.goal_workspace import (
     create_goal as create_workspace_goal,
@@ -59,14 +61,6 @@ from cognee.modules.teleology.graph_annotations import (
     sync_goals_to_graph,
 )
 from cognee.modules.teleology.proposal_review import get_proposal, list_proposals
-from cognee.modules.teleology.sop_context import (
-    build_teleology_sop_context,
-    mindmap_context_ready,
-    sop_source_request,
-)
-from cognee.modules.teleology.sop_generator import generate_sop_proposal
-from cognee.modules.teleology.sop_validator import validate_sop_proposal
-from cognee.modules.teleology.run_commit import commit_coverage_run
 from cognee.modules.teleology.purpose_analyze import analyze_goal
 from cognee.modules.teleology.purpose_layer import (
     ProposalCommitIncomplete,
@@ -76,6 +70,14 @@ from cognee.modules.teleology.purpose_layer import (
     propose_teleology,
     start_purpose_review,
 )
+from cognee.modules.teleology.run_commit import commit_coverage_run
+from cognee.modules.teleology.sop_context import (
+    build_teleology_sop_context,
+    mindmap_context_ready,
+    sop_source_request,
+)
+from cognee.modules.teleology.sop_generator import generate_sop_proposal
+from cognee.modules.teleology.sop_validator import validate_sop_proposal
 from cognee.modules.users.methods import get_authenticated_user
 from cognee.modules.users.models import User
 from cognee.shared.logging_utils import get_logger
@@ -227,6 +229,7 @@ class OrchestratedEvidenceIn(InDTO):
 
 
 class OrchestratedGoalIn(InDTO):
+    node_type: NetworkNodeType | None = None
     client_id: str = ""
     name: str = ""
     description: str = ""
@@ -264,10 +267,14 @@ class OrchestratedEndpointIn(InDTO):
 
 
 class OrchestratedRelationIn(InDTO):
+    model_config = ConfigDict(extra="allow")
+    source_candidate_id: str = ""
+    target_candidate_id: str = ""
+    condition: str | bool | dict | None = None
     client_id: str = ""
     source_client_id: str = ""
     target_client_id: str = ""
-    relationship: str = ""
+    relationship: Relationship | Literal[""] = ""
     reason: str = ""
     confidence: Optional[float] = None
     source_node_ids: List[str] = Field(default_factory=list)
@@ -997,7 +1004,7 @@ def get_teleology_router() -> APIRouter:
             return await submit_orchestrated_goal_model(
                 payload.dataset_id,
                 user,
-                payload.model_dump(),
+                payload.model_dump(exclude_unset=True),
             )
         except GoalBuildError as exc:
             return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
@@ -1035,6 +1042,20 @@ def get_teleology_router() -> APIRouter:
             )
         except GoalBuildError as exc:
             return JSONResponse(status_code=exc.status_code, content={"error": str(exc)})
+
+    @router.get("/goal-model/loops", response_model=dict)
+    async def get_goal_network_loops(
+        dataset_id: UUID,
+        user: Annotated[User, Depends(get_authenticated_user)],
+    ):
+        from cognee.modules.teleology.goal_network import analyze_feedback_loops
+
+        model = await read_goal_model(dataset_id, user)
+        return {
+            "loops": analyze_feedback_loops(
+                model.get("relations") or [], nodes=model.get("candidates") or []
+            )
+        }
 
     @router.get("/goal-model", response_model=dict)
     async def get_ai_goal_model(

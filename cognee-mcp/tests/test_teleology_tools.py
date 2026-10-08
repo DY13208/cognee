@@ -98,7 +98,10 @@ async def test_review_tools_omit_absent_filters():
 
     assert client.calls[0][3] == {"dataset_id": "dataset-1", "limit": 50, "offset": 0}
     assert client.calls[1][3] == {
-        "dataset_id": "dataset-1", "status": "open", "limit": 50, "offset": 0,
+        "dataset_id": "dataset-1",
+        "status": "open",
+        "limit": 50,
+        "offset": 0,
     }
     assert client.calls[2][3] == {"limit": 50, "offset": 0}
     assert client.calls[3][3] == {"limit": 50, "offset": 0}
@@ -114,8 +117,18 @@ async def test_run_commit_tools_are_scoped_to_one_run_and_preview_first():
     await registry.tools["commit_teleology_run"]("dataset-1", "run-1")
 
     assert client.calls == [
-        ("POST", "/api/v1/teleology/coverage/runs/run-1/commit-all", {"dataset_id": "dataset-1", "dry_run": True}, None),
-        ("POST", "/api/v1/teleology/coverage/runs/run-1/commit-all", {"dataset_id": "dataset-1", "dry_run": False}, None),
+        (
+            "POST",
+            "/api/v1/teleology/coverage/runs/run-1/commit-all",
+            {"dataset_id": "dataset-1", "dry_run": True},
+            None,
+        ),
+        (
+            "POST",
+            "/api/v1/teleology/coverage/runs/run-1/commit-all",
+            {"dataset_id": "dataset-1", "dry_run": False},
+            None,
+        ),
     ]
 
 
@@ -131,17 +144,39 @@ async def test_teleology_tools_route_to_api():
     await registry.tools["upload_teleology_yaml"]("goals.yaml", "goals: []")
 
     assert client.calls == [
-        ("POST", "/api/v1/teleology/nodes", {
-            "type": "goal", "name": "Ship", "status": "proposed",
-            "description": "", "keywords": [],
-        }, None),
-        ("POST", "/api/v1/teleology/annotations/sync-from-company-tree", None, {
-            "dataset_id": "dataset-1", "link_entities": False, "source_room": "room-1",
-        }),
-        ("POST", "/api/v1/teleology/annotations", {
-            "dataset_id": "dataset-1", "source_id": "source", "target_id": "goal",
-            "relationship": "serves",
-        }, None),
+        (
+            "POST",
+            "/api/v1/teleology/nodes",
+            {
+                "type": "goal",
+                "name": "Ship",
+                "status": "proposed",
+                "description": "",
+                "keywords": [],
+            },
+            None,
+        ),
+        (
+            "POST",
+            "/api/v1/teleology/annotations/sync-from-company-tree",
+            None,
+            {
+                "dataset_id": "dataset-1",
+                "link_entities": False,
+                "source_room": "room-1",
+            },
+        ),
+        (
+            "POST",
+            "/api/v1/teleology/annotations",
+            {
+                "dataset_id": "dataset-1",
+                "source_id": "source",
+                "target_id": "goal",
+                "relationship": "serves",
+            },
+            None,
+        ),
         ("UPLOAD", "goals.yaml", "goals: []"),
     ]
 
@@ -156,3 +191,84 @@ async def test_update_rejects_non_object_payload():
 
     assert result[0].text.startswith("Error:")
     assert client.calls == []
+
+
+@pytest.mark.asyncio
+async def test_goal_network_fields_pass_through_and_loop_read_is_get():
+    registry = FakeRegistry()
+    client = FakeClient()
+    register_teleology_tools(registry, lambda: client)
+    goals = [
+        {
+            "client_id": "d",
+            "name": "driver",
+            "node_type": "driver",
+            "reason": "mechanism",
+            "confidence": 0.8,
+            "evidence_node_ids": ["doc"],
+        }
+    ]
+    relations = [
+        {
+            "source_client_id": "d",
+            "target_client_id": "g",
+            "relationship": "amplifies",
+            "condition": {"status": "inactive"},
+            "reason": "risk",
+            "confidence": 0.7,
+            "evidence_node_ids": ["doc"],
+        }
+    ]
+    for tool in ["validate_teleology_goal_model", "propose_teleology_goal_model"]:
+        await registry.tools[tool]("dataset", goals, relations=relations)
+        body = client.calls[-1][2]
+        assert body["goals"] == goals
+        assert body["relations"] == relations
+    await registry.tools["get_teleology_goal_network_loops"]("dataset")
+    assert client.calls[-1] == (
+        "GET",
+        "/api/v1/teleology/goal-model/loops",
+        None,
+        {"dataset_id": "dataset"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_patch_candidate_endpoints_and_loop_preview_pass_through():
+    class PreviewClient(FakeClient):
+        async def api_request(self, method, path, *, json_body=None, params=None):
+            await super().api_request(method, path, json_body=json_body, params=params)
+            return {
+                "saved": False,
+                "loop_preview": [
+                    {
+                        "loop_type": "Reinforcing",
+                        "nodes": ["canonical", "new"],
+                        "conditions": [],
+                        "confidence": 0.8,
+                    }
+                ],
+            }
+
+    registry = FakeRegistry()
+    client = PreviewClient()
+    register_teleology_tools(registry, lambda: client)
+    relations = [
+        {"source_candidate_id": "canonical", "target_client_id": "new", "relationship": "drives"}
+    ]
+    upsert = [{"candidate_id": "canonical"}, {"client_id": "new", "node_type": "driver"}]
+    output = await registry.tools["validate_teleology_goal_model"](
+        "dataset",
+        [],
+        submission_mode="patch",
+        base_run_id="base",
+        upsert_goals=upsert,
+        relations=relations,
+    )
+    body = client.calls[-1][2]
+    assert body["dry_run"] is True
+    assert body["upsert_goals"] == upsert
+    assert body["relations"] == relations
+    result = json.loads(output[0].text)
+    assert result["saved"] is False
+    assert result["loop_preview"][0]["loop_type"] == "Reinforcing"

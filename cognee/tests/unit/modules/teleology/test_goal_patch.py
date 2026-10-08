@@ -42,6 +42,7 @@ def _names(view: dict) -> dict[str, dict]:
 def _upsert(goal: dict, **changes) -> dict:
     return {
         "client_id": goal["id"],
+        "candidate_id": goal["id"],
         "name": goal["name"],
         "description": changes.get("description", goal.get("description") or goal["name"]),
         "reason": changes.get("reason", goal["reason"]),

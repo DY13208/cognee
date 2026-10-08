@@ -498,6 +498,19 @@ def register_teleology_tools(registry, get_client) -> None:
     ) -> list:
         """Validate one AI Goal Model snapshot and write nothing.
 
+        Patch existing nodes by candidate_id from get_teleology_goal_model; names
+        never bind an existing canonical node. New nodes use client_id.
+        Relation endpoints use source_client_id/target_client_id for proposal
+        nodes, or source_candidate_id/target_candidate_id for current canonical
+        nodes. Exactly one field per side; source/target/id/ref aliases are invalid.
+        Validation returns loop_preview from this proposal, including CONDITIONAL
+        status for unresolved conditions. Invalid endpoints return
+        INVALID_RELATION_ENDPOINT. No current snapshot is written by validation.
+        Network nodes use node_type: goal, capability, risk, constraint, metric, driver.
+        Relations use the server's Enterprise Goal Network specification: advances,
+        drives, amplifies, blocks, enables, serves, constrains, measures, sets.
+        condition accepts text (unresolved), boolean, or an object with expression
+        and status (active/inactive/unresolved). Preserve reason and confidence.
         Goal, purpose, constraint, and relation items accept any one of:
         evidence objects, evidence_node_ids, or source_node_ids.
         evidence_node_ids alone is enough. The server hydrates node id, name,
@@ -572,6 +585,11 @@ def register_teleology_tools(registry, get_client) -> None:
         This does not confirm, commit, write the company tree, or write the formal graph.
         submission_mode=patch updates only upsert_goals, remove_goal_ids, and the
         hierarchy, purpose, constraint, and relation rows whose goals are affected.
+        Existing patch nodes require candidate_id; names do not bind canonical nodes.
+        New nodes use client_id. Relations use source_client_id/target_client_id
+        or source_candidate_id/target_candidate_id, exactly one per side.
+        source/target/id/ref aliases are invalid: INVALID_RELATION_ENDPOINT.
+        dry_run returns loop_preview for the proposed network and saves nothing.
         base_run_id must be the current model run. A mismatch returns stale_base
         and writes nothing. An identical retry returns the earlier run.
         """
@@ -648,6 +666,17 @@ def register_teleology_tools(registry, get_client) -> None:
         if status and str(status).strip():
             params["status"] = str(status).strip()
         return await request("GET", "/api/v1/teleology/goal-model/runs", params=params)
+
+    @registry.tool(tags={"teleology"})
+    async def get_teleology_goal_network_loops(dataset_id: str) -> list:
+        """Read causal-only feedback loops in the current canonical snapshot.
+
+        Unresolved conditions are CONDITIONAL; inactive edges are excluded.
+        Polarity indicates change direction, including positive amplifies.
+        """
+        return await request(
+            "GET", "/api/v1/teleology/goal-model/loops", params={"dataset_id": dataset_id}
+        )
 
     @registry.tool(tags={"teleology"})
     async def get_teleology_goal_model(dataset_id: str) -> list:

@@ -21,11 +21,19 @@ from cognee.modules.teleology.goal_model import (
     _teleology_item,
     classify_semantics,
 )
+from cognee.modules.teleology.goal_network import (
+    NODE_TYPES,
+    RELATIONS,
+    analyze_feedback_loops,
+    condition_state,
+    semantic_warnings,
+)
 from cognee.modules.teleology.goal_store import get_goal_store
 from cognee.modules.teleology.graph_annotations import _authorized_dataset
 
 _NAMESPACE = uuid5(NAMESPACE_URL, "cognee:teleology:orchestrated-goal")
-_RELATIONS = frozenset({"serves", "advances", "blocks"})
+
+_RELATIONS = RELATIONS
 _OUTCOME = ("提升", "提高", "达成", "实现", "改善")
 _POSITIVE_OUTCOME = ("提升", "改善", "维护", "保障", "优化")
 _CONSTRAINT_NAME = ("不得超过", "不得高于", "上限", "费比", "约束", "限制")
@@ -37,6 +45,12 @@ _CRITICAL = frozenset(
         "cycle",
         "multiple_parents",
         "invalid_evidence",
+        "invalid_node_type",
+        "invalid_condition",
+        "invalid_relationship",
+        "INVALID_RELATION_ENDPOINT",
+        "INVALID_EXISTING_CANDIDATE",
+        "EXISTING_CANDIDATE_BINDING_REQUIRED",
     }
 )
 _EMPTY_COUNTS = {
@@ -277,7 +291,17 @@ def compose_orchestrated_proposal(
     }
     warnings: list[dict[str, Any]] = []
     _apply_relations(
-        list(payload.get("relations") or []),
+        resolve_relation_endpoints(
+            list(payload.get("relations") or []),
+            client_to_id,
+            candidates,
+            existing_candidate_ids={
+                str(n["id"])
+                for n in prior
+                if n.get("status") not in {"rejected", "legacy_confirmed"}
+                and not n.get("outside_current_snapshot")
+            },
+        ),
         relations,
         client_to_id,
         known,
@@ -290,6 +314,7 @@ def compose_orchestrated_proposal(
         warnings,
         goal_names,
     )
+    warnings.extend(semantic_warnings(candidates, relations))
     if mode == "replace":
         _attach_legacy_confirmed(candidates, confirmed, by_identity)
         _drop_dangling_parents(candidates)
@@ -341,6 +366,7 @@ def compose_orchestrated_proposal(
         "classifications": _classifications(active),
         "summary": summary,
     }
+    summary["loop_preview"] = analyze_feedback_loops(summary["relations_preview"], nodes=candidates)
     return model, summary
 
 
@@ -492,7 +518,10 @@ def _accept_goal(
     if confidence is None:
         return None, "invalid_confidence"
     evidence, source_ids, evidence_issue = normalize_evidence(raw, known, catalog)
-    blocked = _blocked_goal(name, evidence)
+    node_type = str(raw.get("node_type") or "goal").lower()
+    if node_type not in NODE_TYPES:
+        return None, "invalid_node_type"
+    blocked = _blocked_goal(name, evidence) if node_type == "goal" else ""
     if blocked:
         return None, blocked
     if evidence_issue:
@@ -511,6 +540,8 @@ def _accept_goal(
     sealed["semantic_hash"] = orchestrated_semantic_hash(name, scope)
     sealed["orchestrated_identity"] = orchestrated_goal_identity(name, scope)
     sealed["scope"] = scope
+    sealed["node_type"] = node_type
+    sealed["evidence_node_ids"] = source_ids
     sealed["run_id"] = run_id
     sealed["status"] = "proposed"
     sealed["confidence"] = confidence
@@ -535,6 +566,7 @@ def _merge_duplicate(existing: dict[str, Any], incoming: dict[str, Any]) -> None
             source_ids.append(node_id)
     existing["evidence"] = evidence
     existing["source_node_ids"] = source_ids
+    existing["evidence_node_ids"] = list(source_ids)
     existing["confidence"] = max(
         float(existing.get("confidence") or 0), float(incoming.get("confidence") or 0)
     )
@@ -549,9 +581,12 @@ def _merge_duplicate(existing: dict[str, Any], incoming: dict[str, Any]) -> None
 
 
 def _same_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
-    return _stored_identity(left) == _stored_identity(right) and normalize_canonical_name(
-        str(left.get("name") or "")
-    ) == normalize_canonical_name(str(right.get("name") or ""))
+    return (
+        (left.get("node_type", "goal") == right.get("node_type", "goal"))
+        and _stored_identity(left) == _stored_identity(right)
+        and normalize_canonical_name(str(left.get("name") or ""))
+        == normalize_canonical_name(str(right.get("name") or ""))
+    )
 
 
 def _stored_identity(goal: dict[str, Any]) -> str:
@@ -783,6 +818,8 @@ def _apply_relations(
             run_id,
             kind="relation",
             relationship=relationship,
+            condition=raw.get("condition"),
+            evidence_node_ids=source_ids,
             source=source_id,
             target=target_id,
             goal_id=source_id,
@@ -816,24 +853,82 @@ def _apply_relations(
                 "source_client_id": raw.get("source_client_id"),
                 "target_client_id": raw.get("target_client_id"),
                 "relationship": relationship,
+                "source_id": source_id,
+                "target_id": target_id,
+                "source_candidate_id": raw.get("source_candidate_id"),
+                "target_candidate_id": raw.get("target_candidate_id"),
+                "condition": item.get("condition"),
+                "evidence_node_ids": source_ids,
+                "source_node_ids": source_ids,
+                "confidence": item.get("confidence"),
+                "evidence": item.get("evidence"),
+                "relation_reason": item.get("reason"),
                 "id": item["id"],
                 "status": "accepted",
-                "reason": "",
+                "reason": item.get("reason"),
+                "validation_reason": "",
                 "warning": warning,
             }
         )
+
+
+def resolve_relation_endpoints(
+    rows: list[dict[str, Any]],
+    client_to_id: dict[str, str],
+    candidates: list[dict[str, Any]],
+    existing_candidate_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Explicit proposal-client or current-canonical endpoints; never bind by name."""
+    canonical = {
+        str(n["id"]): n
+        for n in candidates
+        if n.get("status") not in {"rejected", "legacy_confirmed"}
+        and not n.get("outside_current_snapshot")
+    }
+    result = []
+    for original in rows:
+        row = dict(original)
+        for side in ("source", "target"):
+            client = str(row.get(f"{side}_client_id") or "")
+            candidate = str(row.get(f"{side}_candidate_id") or "")
+            aliases = (side, f"{side}_id", f"{side}_ref", f"{side}Id", f"{side}Ref")
+            if any(key in row for key in aliases) or bool(client) == bool(candidate):
+                row["_endpoint_error"] = True
+                continue
+            if candidate:
+                if candidate not in canonical or (
+                    existing_candidate_ids is not None and candidate not in existing_candidate_ids
+                ):
+                    row["_endpoint_error"] = True
+                    continue
+                token = f"canonical:{candidate}"
+                if token in client_to_id and client_to_id[token] != candidate:
+                    row["_endpoint_error"] = True
+                    continue
+                client_to_id[token] = candidate
+                row[f"{side}_client_id"] = token
+            elif client not in client_to_id or client_to_id[client] not in canonical:
+                row["_endpoint_error"] = True
+        result.append(row)
+    return result
 
 
 def _relation_issue(raw: dict[str, Any], client_to_id: dict[str, str], evidence_issue: str) -> str:
     relationship = str(raw.get("relationship") or "").strip().lower()
     source_client = str(raw.get("source_client_id") or "")
     target_client = str(raw.get("target_client_id") or "")
+    if raw.get("_endpoint_error") or not source_client or not target_client:
+        return "INVALID_RELATION_ENDPOINT"
+    if source_client not in client_to_id or target_client not in client_to_id:
+        return "INVALID_RELATION_ENDPOINT"
+    if client_to_id[source_client] == client_to_id[target_client]:
+        return "self_loop"
+    try:
+        condition_state(raw.get("condition"))
+    except ValueError:
+        return "invalid_condition"
     if relationship not in _RELATIONS:
         return "invalid_relationship" if relationship != "has_subgoal" else "structural_copy"
-    if source_client == target_client:
-        return "self_loop"
-    if source_client not in client_to_id or target_client not in client_to_id:
-        return "missing_endpoint"
     if not str(raw.get("reason") or "").strip():
         return "missing_reason"
     if _confidence(raw.get("confidence")) is None:
@@ -924,6 +1019,8 @@ def _summary(
             {
                 "id": goal.get("id"),
                 "name": goal.get("name"),
+                "node_type": goal.get("node_type", "goal"),
+                "evidence_node_ids": list(goal.get("evidence_node_ids") or []),
                 "description": goal.get("description"),
                 "reason": goal.get("reason"),
                 "confidence": goal.get("confidence"),
