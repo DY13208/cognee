@@ -6,16 +6,18 @@ from fastapi.security import OAuth2PasswordRequestForm
 from cognee.modules.users.authentication.default.default_transport import default_transport
 from cognee.modules.users.authentication.get_client_auth_backend import get_client_auth_backend
 from cognee.modules.users.authentication.methods.authenticate_user import authenticate_user
-from cognee.modules.users.authentication.session_settings import codebuddy_enabled
+from cognee.modules.users.authentication.session_settings import secure_login_enabled
 from cognee.modules.users.methods import get_authenticated_user
 from cognee.modules.users.models import User
 
 from .get_codebuddy_router import get_codebuddy_router
+from .get_mind_map_sso_router import get_mind_map_sso_router
 
 
 def get_auth_router():
     router = APIRouter()
     router.include_router(get_codebuddy_router())
+    router.include_router(get_mind_map_sso_router())
 
     @router.post("/login")
     async def login(
@@ -37,8 +39,8 @@ def get_auth_router():
             value=token,
             max_age=strategy.lifetime_seconds,
             path=default_transport.cookie_path,
-            domain=None if codebuddy_enabled() else default_transport.cookie_domain,
-            secure=codebuddy_enabled() or default_transport.cookie_secure,
+            domain=None if secure_login_enabled() else default_transport.cookie_domain,
+            secure=secure_login_enabled() or default_transport.cookie_secure,
             httponly=default_transport.cookie_httponly,
             samesite=default_transport.cookie_samesite,
         )
@@ -50,7 +52,7 @@ def get_auth_router():
         """Logout — POST /api/v1/auth/logout."""
         response.delete_cookie(
             key=default_transport.cookie_name,
-            domain=None if codebuddy_enabled() else default_transport.cookie_domain,
+            domain=None if secure_login_enabled() else default_transport.cookie_domain,
             path="/",
         )
 

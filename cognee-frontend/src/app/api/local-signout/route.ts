@@ -27,5 +27,6 @@ export async function GET(request: Request) {
     response.cookies.set(name, "", { maxAge: 0, path: "/" });
   }
   response.cookies.set("codebuddy_oauth_state", "", { maxAge: 0, path: "/oauth" });
+  response.cookies.set("cognee_mind_map_state", "", { maxAge: 0, path: "/sso/mind-map" });
   return response;
 }

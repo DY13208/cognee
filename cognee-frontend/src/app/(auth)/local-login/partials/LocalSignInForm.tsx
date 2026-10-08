@@ -16,9 +16,15 @@ const ERRORS: Record<string, string> = {
   invalid_profile: "未能获取 WorkBuddy 用户身份，请联系管理员。",
   account_disabled: "此账号已被停用，请联系管理员。",
   account_failed: "暂时无法创建账号，请重试。",
+  sso_not_configured: "企业微信单点登录尚未配置完成，请联系管理员。",
+  sso_unavailable: "暂时无法连接企业微信登录服务，请稍后重试。",
+  sso_invalid_grant: "企业微信登录凭证已过期或已使用，请重新登录。",
+  sso_invalid_profile: "未能获取企业微信成员身份，请联系管理员。",
 };
 
-export default function LocalSignInForm({ errorCode }: { errorCode?: string }) {
+export default function LocalSignInForm({ errorCode, mindMapSsoEnabled = false }: {
+  errorCode?: string; mindMapSsoEnabled?: boolean;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -55,7 +61,7 @@ export default function LocalSignInForm({ errorCode }: { errorCode?: string }) {
           登录知识库
         </Title>
         <Text size="sm" className="!text-[#EDECEA]/85 !font-light !text-center">
-          使用邮箱密码或 WorkBuddy 账号登录
+          {mindMapSsoEnabled ? "使用企业微信、邮箱密码或 WorkBuddy 账号登录" : "使用邮箱密码或 WorkBuddy 账号登录"}
         </Text>
       </Flex>
       {error && (
@@ -63,6 +69,18 @@ export default function LocalSignInForm({ errorCode }: { errorCode?: string }) {
           style={{ color: "#FCA5A5", backgroundColor: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)" }}>
           {error}
         </Text>
+      )}
+      {mindMapSsoEnabled && (
+        <Flex className="w-full flex-col gap-2">
+          <Button component="a" href="/sso/mind-map/login" fullWidth h="2.75rem" radius="md"
+            className="!bg-[#BC9BFF] !text-[#1e1e1c] hover:!bg-[#A87CFF]">
+            企业微信登录
+          </Button>
+          <Text size="xs" className="!text-[#EDECEA]/65 !text-center">
+            已登录思维导图可直接进入，首次使用请扫码登录
+          </Text>
+          <Divider label="其他登录方式" className="w-full" />
+        </Flex>
       )}
       <form onSubmit={handleSubmit} className="w-full flex flex-col gap-3">
         <TextInput label="邮箱" type="email" autoComplete="username" required

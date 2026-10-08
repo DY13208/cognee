@@ -6,7 +6,7 @@ import { getServerBackendUrl } from "@/modules/config/serverRuntimeConfig";
 
 export default async function getLocalUser(): Promise<CogneeUser | null> {
   try {
-    const response = await fetch(`${getServerBackendUrl()}/api/v1/auth/codebuddy/me`, {
+    const response = await fetch(`${getServerBackendUrl()}/api/v1/auth/mind-map/me`, {
       headers: { cookie: (await cookies()).toString() },
       cache: "no-store",
       signal: AbortSignal.timeout(10_000),
