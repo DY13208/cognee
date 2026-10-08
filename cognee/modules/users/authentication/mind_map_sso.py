@@ -267,8 +267,13 @@ async def prepare_qr(config: SsoConfig, browser_cookie: str) -> tuple[dict, str,
         cookies.load(value)
     if MIND_MAP_BROWSER_COOKIE not in cookies:
         raise SsoError("sso_unavailable")
+    # The official iframe loads this public stylesheet through its supported
+    # href option. Only presentation changes; state and the original callback stay intact.
+    qr_query["style"] = ["black"]
+    qr_query["href"] = [config.origin + "/wecom-qr.css?v=1"]
+    login_url = qr_url._replace(query=urlencode(qr_query, doseq=True)).geturl()
     return (
-        {"loginUrl": data["loginUrl"], "expiresIn": STATE_TTL},
+        {"loginUrl": login_url, "expiresIn": STATE_TTL},
         state_cookie,
         cookies[MIND_MAP_BROWSER_COOKIE].value,
     )

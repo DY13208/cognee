@@ -38,6 +38,8 @@ MIND_MAP_SSO_SESSION_LIFETIME_SECONDS=604800
 
 内嵌二维码通过 mind-map 现有 `/api/auth/qr` 生成，原企业微信回调仍是 `https://xx.stillgroup.net:8989/api/auth/wecom/callback`。两端需要使用同一 HTTPS 主机名，端口可以不同，以便浏览器状态 Cookie 在原回调中保持有效。二维码初始化失败时可以刷新、使用已有登录状态或切换账号密码；状态到期会自动刷新。
 
+登录页使用纯黑背景。企业微信 iframe 通过官方 `href` 样式参数加载 Cognee 的公开 `/wecom-qr.css?v=1`，隐藏二维码下方的应用名称、调整深色背景和扫码状态布局；二维码本身保留白底以保证可扫描。此 CSS 不需要登录即可访问，无需增加环境变量或修改 mind-map 配置。iframe 最宽 320 像素、高 420 像素，窄屏自适应宽度，由 iframe 内部样式缩小二维码并保留提示文字大小；页面超出屏幕高度时可正常滚动，密码及 WorkBuddy 按钮不会被裁掉。
+
 ## 更新服务
 
 先部署两个仓库的新代码并备份各自 `.env`。mind-map 按原有部署方式重建、更新 app 服务；使用带 Wiki 的部署时必须保留 `.secrets/wiki.env` 注入，不能用缺少该配置的 Compose 命令重建 app。认证初始化会自动创建独立的 `auth_cognee_codes` 表，不改写已有账号或会话。

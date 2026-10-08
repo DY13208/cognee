@@ -5,14 +5,14 @@ import { Button, Flex, Loader, Text } from "@mantine/core";
 import { wecomCallbackFromMessage } from "@/modules/users/wecomQrMessage";
 
 type QrLogin = { loginUrl: string; expiresIn: number };
+// Leave room for the provider's scanned/cancelled status as well as the QR.
+const FRAME_HEIGHT = 420;
 
 export default function WecomQrLogin() {
   const [qr, setQr] = useState<QrLogin | null>(null);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
-  const [scale, setScale] = useState(1);
   const frame = useRef<HTMLIFrameElement>(null);
-  const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,13 +49,6 @@ export default function WecomQrLogin() {
     return () => window.removeEventListener("message", receive);
   }, [qr]);
 
-  useEffect(() => {
-    if (!container.current) return;
-    const observer = new ResizeObserver(([entry]) => setScale(Math.min(entry.contentRect.width / 300, 1)));
-    observer.observe(container.current);
-    return () => observer.disconnect();
-  }, []);
-
   function refresh() {
     setError(false);
     setQr(null);
@@ -63,22 +56,21 @@ export default function WecomQrLogin() {
   }
 
   return (
-    <Flex className="w-full flex-col items-center gap-3">
-      <div ref={container} className="relative w-full max-w-[300px] overflow-hidden rounded-lg bg-white"
-        style={{ aspectRatio: "3 / 4" }} aria-label="企业微信登录二维码">
+    <Flex className="w-full flex-col items-center gap-2">
+      <div className="relative w-full max-w-[320px] rounded-lg bg-[#0b0b0b]"
+        style={{ height: FRAME_HEIGHT }} aria-label="企业微信登录二维码">
         {qr ? (
           <iframe ref={frame} title="企业微信扫码登录" src={qr.loginUrl} scrolling="no"
             referrerPolicy="no-referrer" className="absolute left-0 top-0 border-0"
-            style={{ width: 300, height: 400, transform: `scale(${scale})`, transformOrigin: "top left" }}
+            style={{ width: "100%", height: FRAME_HEIGHT }}
             onLoad={() => frame.current?.contentWindow?.postMessage("ask_usePostMessage", new URL(qr.loginUrl).origin)} />
         ) : (
           <Flex className="absolute inset-0 flex-col items-center justify-center gap-3 p-4">
-            {error ? <Text role="alert" size="sm" c="dark" ta="center">二维码加载失败，请刷新或切换账号密码登录。</Text>
-              : <><Loader size="sm" /><Text size="sm" c="dark">正在加载二维码…</Text></>}
+            {error ? <Text role="alert" size="sm" c="#EDECEA" ta="center">二维码加载失败，请刷新或切换账号密码登录。</Text>
+              : <><Loader size="sm" /><Text size="sm" c="#EDECEA">正在加载二维码…</Text></>}
           </Flex>
         )}
       </div>
-      <Text size="sm" className="!text-[#EDECEA]/85 !text-center">使用企业微信扫码登录</Text>
       <Flex className="w-full justify-center gap-2 flex-wrap">
         <Button variant="subtle" size="xs" className="!text-[#BC9BFF] hover:!bg-white/10" onClick={refresh}>刷新二维码</Button>
         <Button component="a" href="/sso/mind-map/login" variant="subtle" size="xs" className="!text-[#BC9BFF] hover:!bg-white/10">使用已有登录状态</Button>

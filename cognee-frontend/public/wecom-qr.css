@@ -1,0 +1,103 @@
+/* Loaded inside the official WeCom iframe via its href option. */
+html,
+body {
+  margin: 0 !important;
+  min-height: 100%;
+  background: #0b0b0b !important;
+  color: #edecea !important;
+}
+
+body {
+  box-sizing: border-box;
+  padding: 12px 0 !important;
+}
+
+.impowerBox {
+  width: 100% !important;
+  text-align: center !important;
+}
+
+.loginPanel {
+  box-sizing: border-box;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.impowerBox .title {
+  margin: 0 auto !important;
+  color: #edecea !important;
+}
+
+.impowerBox .wrp_code {
+  margin-top: 12px !important;
+}
+
+.impowerBox .qrcode {
+  box-sizing: content-box;
+  display: block !important;
+  width: 260px !important;
+  max-width: calc(100vw - 48px);
+  height: auto !important;
+  aspect-ratio: 1;
+  margin: 0 auto !important;
+  background: #fff;
+  border: 8px solid #fff;
+  border-radius: 10px;
+}
+
+.impowerBox .info {
+  box-sizing: border-box;
+  width: 100% !important;
+  max-width: 296px;
+  min-height: 76px;
+  margin: 0 auto !important;
+  padding: 0 8px;
+}
+
+.impowerBox .status {
+  margin: 12px auto 0 !important;
+  text-align: center !important;
+  color: #d4d4d4 !important;
+}
+
+/* Hide only the application name; keep all login state and error messages. */
+.status_browser > p:nth-of-type(2) {
+  display: none !important;
+}
+
+.impowerBox .status_txt {
+  max-width: calc(100% - 56px);
+  vertical-align: middle;
+}
+
+.impowerBox .status_txt h4 {
+  font-size: 16px !important;
+  line-height: 24px !important;
+}
+
+.impowerBox .status_txt p {
+  position: static !important;
+  line-height: 20px !important;
+  color: #d4d4d4 !important;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.impowerBox .result_text,
+.wrp_code_rl_info {
+  color: #edecea !important;
+}
+
+.wrp_code_rl_mask {
+  background: #0b0b0b !important;
+}
+
+.wrp_code_rl_btn {
+  background: #272727 !important;
+  border-color: #737373 !important;
+  color: #edecea !important;
+}

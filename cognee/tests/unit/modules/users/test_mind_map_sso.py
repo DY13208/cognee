@@ -269,6 +269,11 @@ async def test_qr_uses_original_callback_and_preserves_browser_binding(config, m
     )
     data, state, browser = await sso.prepare_qr(config, "original-browser")
     assert data["expiresIn"] == sso.STATE_TTL and browser == "original-browser"
+    query = parse_qs(urlsplit(data["loginUrl"]).query)
+    assert query["style"] == ["black"]
+    assert query["href"] == [config.origin + "/wecom-qr.css?v=1"]
+    assert query["state"] == ["issuer-state"]
+    assert query["redirect_uri"] == [config.issuer_origin + "/api/auth/wecom/callback"]
     secret, _ = session_settings()
     claims = jwt.decode(state, secret, algorithms=["HS256"], audience="cognee-mind-map-sso")
     assert claims["redirect_uri"] == config.redirect_uri

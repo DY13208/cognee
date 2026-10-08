@@ -58,7 +58,7 @@ export default function LocalSignInForm({ errorCode, mindMapSsoEnabled = false }
   }
   const error = loginError || (errorCode ? ERRORS[errorCode] || "登录失败，请重新登录。" : null);
   return (
-    <AuthCard>
+    <AuthCard compact>
       <Flex className="flex-col gap-[0.75rem] items-center">
         <Title order={2} className="!text-[2.5rem] !font-light !leading-[1.1] !tracking-[-0.04em] !text-[#EDECEA]"
           style={{ fontFamily: '"TWKLausanne", sans-serif' }}>
