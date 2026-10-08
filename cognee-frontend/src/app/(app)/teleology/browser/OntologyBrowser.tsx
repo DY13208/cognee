@@ -4,19 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CogneeInstance } from "@/modules/instances/types";
 import { analyzePurpose, createGraphAnnotation, createWorkspaceGoal, deleteWorkspaceGoal, getGoalDetail, getGoalModel, getGoalPath, getGoalRelations, getGraphAnnotations, getPurposeContext, getLatestOpenGoalProposal, moveGoalCandidate, moveWorkspaceGoal, reviewGoalCandidate, syncTeleologyFromCompanyTree, syncTeleologyGoals, updateWorkspaceGoal, type GoalModelView, type GraphAnnotation, type GraphNodeSummary, type ProposalItem, type TeleologyProposal } from "@/modules/teleology/teleologyApi";
-import { buildDerivedGoalTree, isCurrentGoal, parseDataNodeId, resolveFocusTarget, type DerivedGoalTree } from "./derivedGoalTree";
+import { isCurrentGoal, parseDataNodeId, resolveFocusTarget, type DerivedGoalTree } from "./derivedGoalTree";
 import { confirmGoalCandidates } from "./confirmGoalCandidates";
 import { notifications } from "@mantine/notifications";
 import NavPanel, { type GoalMovePlacement, type GoalPage } from "./NavPanel";
 import OntologyCanvas from "./OntologyCanvas";
 import GoalFocusDetail from "./GoalFocusDetail";
-import { buildPurposeNeighborhood } from "./purposeCanvas";
 import PurposeReview from "./PurposeReview";
 import AppDialog from "./AppDialog";
 import SideRail from "./SideRail";
 import { useSideOpen } from "./useSideOpen";
 import { displayName } from "./entityMeta";
 import type { OntologyEdge, OntologyEntity } from "./types";
+import { buildGoalHierarchyTree, projectGoalFocus } from "./goalFocusProjection";
 import "./ontology.css";
 
 type DatasetOpt = { id: string; name: string };
@@ -48,6 +48,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const [pages, setPages] = useState<Record<string, GoalPage>>({});
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
+  const [focusMode, setFocusMode] = useState<"hierarchy" | "context">("hierarchy");
+  const [sourceToView, setSourceToView] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -100,6 +102,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
 
   const enter = useCallback(async (id: string, preview?: GraphNodeSummary) => {
     if (!datasetId) return;
+    if (id.startsWith("ui:brands:")) setFocusMode("hierarchy");
+    setSourceToView(null);
     const dataNode = parseDataNodeId(id);
     const resolved = resolveFocusTarget(derivedRef.current, id);
     const derived = resolved.candidateId ? derivedRef.current?.focus(resolved.candidateId) : null;
@@ -185,7 +189,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     setLoading(true); setError(null);
     try {
       const model = await getGoalModel(instance, datasetId);
-      const tree = buildDerivedGoalTree(model, language);
+      const tree = buildGoalHierarchyTree(model, language);
       derivedRef.current = tree;
       setGoalModel(model);
       setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
@@ -253,8 +257,9 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
 
   const neighborhood = useMemo(() => {
     if (!focus) return { entities: [], edges: [] };
-    return buildPurposeNeighborhood({ focus, parent, purposes: why, constraints, relations, proposal, children });
-  }, [focus, parent, why, constraints, relations, proposal, children]);
+    if (goalModel && derivedRef.current) return projectGoalFocus(goalModel, derivedRef.current, focus.id, focusMode);
+    return { entities: [], edges: [] };
+  }, [focus, goalModel, focusMode]);
 
   const focusPreset = useMemo(() => (
     focus ? { goal: focus, purposes: why, constraints, relations, counts: relationCounts, proposal, children, childTotal } : null
@@ -294,12 +299,14 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
   const proposedGoalIds = goalModel?.candidates.filter((candidate) => isCurrentGoal(candidate) && candidate.status === "proposed").map((candidate) => candidate.id) || [];
 
   const selectedEntity = useMemo(() => {
+    const projected = neighborhood.entities.find(node => node.id === selectedId);
+    if (projected) return projected;
     const found = [focus, parent, ...why, ...children, ...path, ...roots].find((goal) => goal?.id === selectedId);
     if (found) return entity(found);
     const relation = relations.find((edge) => edge.sourceId === selectedId || edge.targetId === selectedId);
     if (!relation || !selectedId) return null;
     return { id: selectedId, name: relation.sourceId === selectedId ? relation.sourceName : relation.targetName, type: "Goal", kind: "Goal" as const };
-  }, [focus, parent, why, children, path, roots, selectedId, relations]);
+  }, [focus, parent, why, children, path, roots, selectedId, relations, neighborhood]);
 
   async function viewSelectedPath(id = selectedId) {
     try {
@@ -338,7 +345,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     try {
       await reviewGoalCandidate(instance, datasetId, candidateId, status);
       const model = await getGoalModel(instance, datasetId);
-      const tree = buildDerivedGoalTree(model, language);
+      const tree = buildGoalHierarchyTree(model, language);
       derivedRef.current = tree;
       setGoalModel(model);
       setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
@@ -361,7 +368,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     try {
       const result = await confirmGoalCandidates(instance, datasetId, ids, setBatchProgress);
       const model = await getGoalModel(instance, datasetId);
-      const tree = buildDerivedGoalTree(model, language);
+      const tree = buildGoalHierarchyTree(model, language);
       derivedRef.current = tree;
       setGoalModel(model);
       setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
@@ -406,7 +413,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
     try {
       await moveGoalCandidate(instance, datasetId, move.sourceId, { target_id: move.targetId, placement: move.placement });
       const model = await getGoalModel(instance, datasetId);
-      const tree = buildDerivedGoalTree(model, language);
+      const tree = buildGoalHierarchyTree(model, language);
       derivedRef.current = tree;
       setGoalModel(model);
       setRoots(tree.roots); setPages(tree.pages); setNavStatuses(tree.statuses); setRootTotal(tree.roots.length);
@@ -563,15 +570,23 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
         <NavPanel language={language} roots={roots} pages={pages} focusId={pendingId || focusId} pathIds={path.map((goal) => goal.id)} loading={loading} statuses={navStatuses} emptyLabel={t("No derived goals yet. The company tree stays as data and is not listed as goals.", "还没有派生目标。公司树留在数据层，不会被列成目标。")} onPick={(id, goal) => void enter(id, goal)} onExpand={expand} onSearch={search} onMoveGoal={requestGoalMove} onClose={() => setLeftOpen(false)} hasMoreRoots={rootTotal > roots.length} onLoadMoreRoots={() => { void getGraphAnnotations(instance, datasetId, { parentId: "_roots", goalsLimit: PAGE, goalsOffset: roots.length }).then((result) => setRoots((old) => [...old, ...result.goals])); }} />
       </SideRail>
       <main className="onto-main onto-focus-main">
+        <div className="onto-breadcrumb" role="group" aria-label="Goal Focus 模式">
+          <button type="button" className="onto-btn" aria-pressed={focusMode === "hierarchy"} onClick={() => setFocusMode("hierarchy")}>层级</button>
+          <button type="button" className="onto-btn" aria-pressed={focusMode === "context"} disabled={focusId?.startsWith("ui:brands:")} onClick={() => setFocusMode("context")}>目标上下文</button>
+        </div>
         {error && <div className="onto-focus-error" role="alert">{error}</div>}
         <div className="onto-breadcrumb">{path.map((goal, index) => <span key={goal.id}><button type="button" onClick={() => void enter(goal.id)}>{goal.name}</button>{index < path.length - 1 && <b>›</b>}</span>)}</div>
-        <OntologyCanvas
+        {focusMode === "context" && "hasContext" in neighborhood && !neighborhood.hasContext ? <div className="onto-detail-empty" role="status">
+          <p>该目标暂未建立经营影响关系</p>
+          <button type="button" className="onto-btn" onClick={() => setFocusMode("hierarchy")}>查看层级</button>
+        </div> : <OntologyCanvas
           focusId={focus?.id || null}
           entities={neighborhood.entities}
           edges={neighborhood.edges}
           selectedId={selectedId}
-          viewMode="relation"
-          hopDepth={2}
+          viewMode={focusMode === "hierarchy" ? "hierarchy" : "relation"}
+          positions={"positions" in neighborhood ? neighborhood.positions : undefined}
+          hopDepth={focusMode === "hierarchy" ? Math.max(2, path.length + 1) : 2}
           relatedOnly={false}
           hiddenRels={hiddenRels}
           hoverId={hoverId}
@@ -581,6 +596,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
           onSelect={(id) => {
             setSelectedId(id);
             if (!id) return;
+            const candidate = goalModel?.candidates.find(node => node.id === id);
+            if (id !== focusId && (id.startsWith("ui:brands:") || (candidate && (!candidate.node_type || candidate.node_type === "goal")))) void enter(id);
             setRightOpen(true);
             setSelectedProposalItem(proposal?.items.find((item) => item.id === id) || null);
           }}
@@ -588,7 +605,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
           onExpand={(id) => void enter(id)}
           onCanvasClick={() => { setSelectedId(null); setSelectedProposalItem(null); }}
           onHover={setHoverId}
-        />
+        />}
         <div className="onto-canvas-toolbar">
           <div className="onto-zoom-group">
             <button type="button" onClick={() => setZoom((value) => Math.max(0.5, Math.round((value - 0.1) * 10) / 10))}>−</button>
@@ -611,6 +628,22 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
           </div>
           {pendingId && pendingId !== focusId ? <div className="onto-detail-empty">{t("Loading confirmed relations…", "正在载入已确认关系…")}</div> : detailGoalId && focus ? <>
             {selectedCandidate && <section className="teleology-goal-review" aria-label={t("Review AI goal", "审核 AI 目标")}>
+              <p><strong>标准 Goal：</strong>{selectedCandidate.name}</p>
+              {/项目盈利能力$/.test(selectedCandidate.name) && <p><strong>业务对象：</strong>{derivedRef.current?.byId.get(selectedCandidate.id)?.name || selectedCandidate.name} 项目利润</p>}
+              <p><strong>类型：</strong>{/项目盈利能力$/.test(selectedCandidate.name) ? "BRAND C_GOAL" : (selectedCandidate.node_type || "goal").toUpperCase()}</p>
+              <p><strong>Parent：</strong>{derivedRef.current?.byId.get(selectedCandidate.parent_candidate_id || "")?.name || "无"}</p>
+              <p><strong>Confidence：</strong>{Math.round(selectedCandidate.confidence * 100)}%</p>
+              <p><strong>Evidence：</strong>{selectedCandidate.evidence.length}</p>
+              <p><strong>Source node：</strong>{selectedCandidate.source_node_ids.join("、") || "未提供"}</p>
+              {selectedCandidate.evidence.map(entry => {
+                const raw = entry as unknown as Record<string, unknown>;
+                return <div key={`source:${entry.node_id}`}>
+                  <p><strong>来源 C：</strong>{entry.name}</p>
+                  <p><strong>Source room：</strong>{String(raw.source_room || raw.room_id || "未提供")}</p>
+                  <button type="button" className="onto-btn" onClick={() => setSourceToView(sourceToView === entry.node_id ? null : entry.node_id)}>查看来源</button>
+                  {sourceToView === entry.node_id && <div><p>{entry.node_id}</p><p>{entry.text || entry.name}</p></div>}
+                </div>;
+              })}
               <div className="teleology-goal-review-status">{selectedCandidate.status === "confirmed" ? t("Confirmed goal", "目标已确认") : t("Goal awaiting confirmation", "目标待确认")}</div>
               {selectedCandidate.reason && <p><strong>{t("Reason", "生成理由")}</strong>{selectedCandidate.reason}</p>}
               {selectedCandidate.evidence.length > 0 && <div><strong>{t("Evidence", "来源证据")}</strong><ul>{selectedCandidate.evidence.map((entry) => <li key={entry.node_id}>{entry.name}{entry.text ? ` · ${entry.text}` : ""}</li>)}</ul></div>}
@@ -620,6 +653,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
               </div>
               <small>{t("Review changes the derived goal only. It does not edit the company tree or commit purpose relations.", "审核只改变派生目标状态，不修改公司树，也不提交目的关系。")}</small>
             </section>}
+            {!detailGoalId.startsWith("ui:brands:") && <>
             <div className="teleology-detail-actions">
               <button type="button" disabled={detailGoalId === focusId} onClick={() => void enter(detailGoalId)}>{t("Set as center", "设为中心")}</button>
               <button type="button" onClick={() => relateGoal(detailGoalId)}>{t("Link", "关联")}</button>
@@ -631,7 +665,7 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
               <button type="button" onClick={() => exportGoal(detailGoalId)}>{t("Export", "导出")}</button>
               <button type="button" onClick={() => removeGoal(detailGoalId)}>{t("Delete", "删除")}</button>
             </div>
-            <GoalFocusDetail
+            {(!selectedCandidate?.node_type || selectedCandidate.node_type === "goal") && <GoalFocusDetail
               instance={instance}
               datasetId={datasetId}
               goalId={detailGoalId}
@@ -643,7 +677,8 @@ export default function OntologyBrowser({ instance, datasets, selectedDataset, o
               onAnalyze={detailGoalId === focus.id ? () => void analyzeCurrentGoal() : undefined}
               onReviewProposal={(next) => setReview(next)}
               onShowChildren={detailGoalId === focus.id ? () => { setDrawerOffset(0); setDrawerQuery(""); setDrawer("children"); } : undefined}
-            />
+            />}
+            </>}
           </> : <div className="onto-detail-empty">{t("Click a node on the canvas to inspect its purpose.", "在画布上点一个节点，查看它的目的。")}</div>}
         </aside>
         <div className="teleology-detail-legend" aria-label={t("Relation legend", "关系图例")}>

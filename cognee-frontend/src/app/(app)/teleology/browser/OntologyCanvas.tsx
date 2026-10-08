@@ -1,5 +1,8 @@
 "use client";
 
+import { connectionPath, EDGE_STROKE_WIDTH, EDGE_HIGHLIGHT_WIDTH, EDGE_LABEL_STYLE } from "./edgeAppearance";
+
+
 import {
   useMemo,
   useRef,
@@ -75,6 +78,7 @@ export default function OntologyCanvas({
   onExpand,
   onCanvasClick,
   onHover,
+  positions,
 }: {
   focusId: string | null;
   entities: OntologyEntity[];
@@ -88,6 +92,7 @@ export default function OntologyCanvas({
   language: "zh" | "en";
   loading?: boolean;
   zoom?: number;
+  positions?: Record<string, { x: number; y: number }>;
   onSelect: (id: string | null) => void;
   onSetFocus: (id: string) => void;
   onExpand: (id: string) => void;
@@ -150,7 +155,7 @@ export default function OntologyCanvas({
 
   const computed = useMemo(() => {
     if (!focusId) return null;
-    return layoutNeighborhood({
+    const result = layoutNeighborhood({
       focusId,
       entities,
       edges: filteredEdges,
@@ -158,7 +163,11 @@ export default function OntologyCanvas({
       canvasWidth: size.w,
       hopDepth,
     });
-  }, [focusId, entities, filteredEdges, viewMode, size.w, hopDepth]);
+    if (!positions) return result;
+    const nodes: LaidOutNode[] = entities.map(node => ({ ...node, column: node.id === focusId ? "focus" : "upstream", ...positions[node.id] }));
+    const laidEdges = filteredEdges.map(edge => ({ ...edge, x1: 0, y1: 0, x2: 0, y2: 0 }));
+    return { ...result, nodes, edges: laidEdges, width: Math.max(size.w, ...nodes.map(node => node.x + CARD_W + 60)), height: Math.max(560, ...nodes.map(node => node.y + CARD_H + 60)) };
+  }, [focusId, entities, filteredEdges, viewMode, size.w, hopDepth, positions]);
 
   // Keep previous neighbourhood painted while the next focus is loading,
   // so the canvas doesn't flash empty / toggle scrollbars.
@@ -217,12 +226,12 @@ export default function OntologyCanvas({
   const relationCountById = useMemo(() => {
     const counts = new Map<string, number>();
     for (const edge of filteredEdges) {
-      if (!["serves", "advances", "blocks"].includes(edge.relationship)) continue;
+      if (!positions && !["serves", "advances", "blocks"].includes(edge.relationship)) continue;
       counts.set(edge.sourceId, (counts.get(edge.sourceId) || 0) + 1);
       counts.set(edge.targetId, (counts.get(edge.targetId) || 0) + 1);
     }
     return counts;
-  }, [filteredEdges]);
+  }, [filteredEdges, positions]);
 
   const evidenceCountById = useMemo(() => {
     const counts = new Map<string, number>();
@@ -530,20 +539,17 @@ export default function OntologyCanvas({
               return (
                 <g key={e.id} opacity={muted ? 0.15 : hi && activeChain.size ? 1 : 0.55}>
                   <path
-                    d={
-                      viewMode === "hierarchy"
-                        ? `M ${e.x1} ${e.y1} C ${e.x1} ${e.y1 + 28}, ${e.x2} ${e.y2 - 28}, ${e.x2} ${e.y2}`
-                        : `M ${e.x1} ${e.y1} C ${e.x1 + 40} ${e.y1}, ${e.x2 - 40} ${e.y2}, ${e.x2} ${e.y2}`
-                    }
+                    d={connectionPath(e.x1, e.y1, e.x2, e.y2, viewMode === "hierarchy")}
                     fill="none"
                     stroke={proposed ? "#b1a3f4" : color}
-                    strokeWidth={proposed || (hi && activeChain.size) ? 1.6 : 1.25}
+                    strokeWidth={proposed || (hi && activeChain.size) ? EDGE_HIGHLIGHT_WIDTH : EDGE_STROKE_WIDTH}
                     strokeDasharray={proposed ? "6 4" : undefined}
                     markerEnd={hi && activeChain.size ? "url(#onto-arrow-hi)" : "url(#onto-arrow)"}
                   />
                   <foreignObject x={midX - 36} y={midY - 9} width={72} height={18}>
                     <div
                       style={{
+                        ...EDGE_LABEL_STYLE,
                         fontSize: 9,
                         fontWeight: 600,
                         letterSpacing: "0.02em",

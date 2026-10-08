@@ -8,6 +8,7 @@ import { useFilter } from "@/ui/layout/FilterContext";
 import PageLoading from "@/ui/elements/PageLoading";
 import OntologyBrowser from "./browser/OntologyBrowser";
 import TeleologyClassicPage from "./TeleologyClassicPage";
+import GoalNetworkView from "./browser/GoalNetworkView";
 import "./browser/ontology.css";
 
 const MODE_KEY = "cognee.teleology.uiMode";
@@ -17,15 +18,11 @@ export default function TeleologyPage() {
   const { cogniInstance, isInitializing } = useCogniInstance();
   const { datasets, selectedDataset, setSelectedDataset, loading: datasetsLoading } = useFilter();
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"browser" | "classic">("browser");
+  const [mode, setMode] = useState<"network" | "browser" | "classic">("network");
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const datasetDefaulted = useRef(false);
 
-  useEffect(() => {
-    try { if (window.localStorage.getItem(MODE_KEY) === "classic") setMode("classic"); } catch { /* ignore */ }
-  }, []);
-
-  function switchMode(next: "browser" | "classic") {
+  function switchMode(next: "network" | "browser" | "classic") {
     setMode(next);
     setToolbarCollapsed(false);
     try { window.localStorage.setItem(MODE_KEY, next); } catch { /* ignore */ }
@@ -54,6 +51,7 @@ export default function TeleologyPage() {
       <div className="teleology-toolbar">
         <div className="teleology-toolbar-row teleology-toolbar-top">
           <div className="teleology-mode-tabs">
+            <button type="button" className={`teleology-mode-tab${mode === "network" ? " is-active" : ""}`} aria-pressed={mode === "network"} onClick={() => switchMode("network")}>经营网络</button>
             <button type="button" className={`teleology-mode-tab${mode === "browser" ? " is-active" : ""}`} aria-pressed={mode === "browser"} onClick={() => switchMode("browser")}>{zh ? "目标层级" : "Goal hierarchy"}</button>
             <button type="button" className={`teleology-mode-tab${mode === "classic" ? " is-active" : ""}`} aria-pressed={mode === "classic"} onClick={() => switchMode("classic")}>{zh ? "目的关系" : "Purpose relations"}</button>
           </div>
@@ -70,13 +68,13 @@ export default function TeleologyPage() {
           </div>
         </div>
         <div id="teleology-toolbar-data-row" className="teleology-toolbar-row teleology-toolbar-bottom" style={{ display: toolbarCollapsed ? "none" : undefined }}>
-          {mode === "browser"
+          {mode === "network" ? <span className="network-muted">{selectedDataset?.name || "请选择数据集"} · 经营关系网络</span> : mode === "browser"
             ? <div id="teleology-browser-data-actions" className="teleology-toolbar-data-actions" />
             : <div id="teleology-classic-info" className="teleology-toolbar-data-actions" />}
         </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        {mode === "browser" ? (
+        {mode === "network" ? <GoalNetworkView onShowHierarchy={() => switchMode("browser")} instance={cogniInstance} datasetId={selectedDataset?.id || datasets[0]?.id || ""} /> : mode === "browser" ? (
           <OntologyBrowser
             instance={cogniInstance}
             datasets={datasets.map((d) => ({ id: d.id, name: d.name }))}

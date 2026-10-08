@@ -39,6 +39,38 @@ class FakeClient:
 
 
 @pytest.mark.asyncio
+async def test_hierarchy_patch_fields_pass_through_without_loss():
+    registry = FakeRegistry()
+    client = FakeClient()
+    register_teleology_tools(registry, lambda: client)
+    upserts = [
+        {"candidate_id": "child", "parent_candidate_id": "parent"},
+        {"client_id": "new", "parent_id": "parent"},
+    ]
+    links = [
+        {
+            "child_candidate_id": "child",
+            "parent_candidate_id": "parent",
+            "reason": "ownership",
+            "evidence_node_ids": ["doc"],
+        }
+    ]
+    for tool in ("validate_teleology_goal_model", "propose_teleology_goal_model"):
+        await registry.tools[tool](
+            "dataset",
+            [],
+            submission_mode="patch",
+            base_run_id="base",
+            upsert_goals=upserts,
+            hierarchy=links,
+        )
+        body = client.calls[-1][2]
+        assert body["upsert_goals"] == upserts
+        assert body["hierarchy"] == links
+        assert body["dry_run"] is (tool == "validate_teleology_goal_model")
+
+
+@pytest.mark.asyncio
 async def test_proposal_review_tools_only_issue_get_requests():
     registry = FakeRegistry()
     client = FakeClient()

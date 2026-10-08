@@ -15,6 +15,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from cognee.context_global_variables import set_database_global_context_variables
 from cognee.infrastructure.databases.graph import get_graph_engine
+from cognee.modules.teleology.goal_hierarchy import inline_parent_link, resolve_hierarchy_endpoints
 from cognee.modules.teleology.goal_model import (
     GoalBuildError,
     _seal,
@@ -51,6 +52,7 @@ _CRITICAL = frozenset(
         "INVALID_RELATION_ENDPOINT",
         "INVALID_EXISTING_CANDIDATE",
         "EXISTING_CANDIDATE_BINDING_REQUIRED",
+        "INVALID_HIERARCHY_ENDPOINT",
     }
 )
 _EMPTY_COUNTS = {
@@ -224,8 +226,14 @@ def compose_orchestrated_proposal(
             if goal.get("status") != "legacy_confirmed":
                 goal["parent_candidate_id"] = None
 
+    inline_links = [
+        link
+        for raw in goals
+        if (child_id := client_to_id.get(str(raw.get("client_id") or "")))
+        and (link := inline_parent_link(raw, child_id)) is not None
+    ]
     _apply_hierarchy(
-        list(payload.get("hierarchy") or []),
+        inline_links + list(payload.get("hierarchy") or []),
         candidates,
         client_to_id,
         known,
@@ -644,11 +652,25 @@ def _apply_hierarchy(
         if goal.get("parent_candidate_id")
     }
     for raw in links:
-        parent_client = str(raw.get("parent_client_id") or "")
-        child_client = str(raw.get("child_client_id") or "")
-        reason = _hierarchy_issue(raw, parent_client, child_client, client_to_id, known, catalog)
-        parent_id = client_to_id.get(parent_client)
-        child_id = client_to_id.get(child_client)
+        endpoints, reason = resolve_hierarchy_endpoints(raw, client_to_id, set(by_id))
+        reason = raw.get("endpoint_error") or reason
+        parent_id = endpoints.get("resolved_parent_candidate_id")
+        child_id = endpoints.get("resolved_child_candidate_id")
+        parent_client = parent_id or str(
+            raw.get("parent_client_id") or raw.get("parent_candidate_id") or ""
+        )
+        child_client = child_id or str(
+            raw.get("child_client_id") or raw.get("child_candidate_id") or ""
+        )
+        if not reason:
+            reason = _hierarchy_issue(
+                raw,
+                parent_client,
+                child_client,
+                {**client_to_id, **{key: key for key in by_id}},
+                known,
+                catalog,
+            )
         if reason == "" and parent_id and child_id and parent_id == child_id:
             reason = "self_parent"
         if reason == "" and child_id in parents:

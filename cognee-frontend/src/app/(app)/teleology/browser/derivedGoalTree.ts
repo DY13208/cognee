@@ -60,7 +60,7 @@ export function isCurrentGoal(goal: GoalCandidate): boolean {
 
 export function buildDerivedGoalTree(model: GoalModelView, language: "zh" | "en"): DerivedGoalTree {
   const zh = language === "zh";
-  const goals = (model.candidates || []).filter(isCurrentGoal);
+  const goals = (model.candidates || []).filter(goal => isCurrentGoal(goal) && (!goal.node_type || goal.node_type === "goal"));
   const byGoal = new Map(goals.map((goal) => [goal.id, goal]));
   const hierarchyParent = new Map((model.hierarchy || []).map((row) => [row.id, row.parent_candidate_id || null]));
   const parentOf = (goal: GoalCandidate) => hierarchyParent.has(goal.id) ? hierarchyParent.get(goal.id) || null : goal.parent_candidate_id || null;

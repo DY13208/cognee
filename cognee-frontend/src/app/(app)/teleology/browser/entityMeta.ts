@@ -42,6 +42,11 @@ export const KIND_LABEL_ZH: Record<EntityKind, string> = {
 };
 
 export const REL_LABEL_ZH: Record<string, string> = {
+  drives: "驱动",
+  amplifies: "放大",
+  enables: "支撑",
+  measures: "衡量",
+  sets: "设定",
   serves: "服务于",
   evidence: "证据",
   advances: "推进",

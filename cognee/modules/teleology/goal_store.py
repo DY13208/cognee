@@ -17,6 +17,15 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _patch_parent_changes(result: dict[str, Any]) -> set[str]:
+    if result.get("submission_mode") != "patch":
+        return set()
+    return {
+        str(change["child_id"])
+        for change in (result.get("summary") or {}).get("hierarchy_changes", [])
+    }
+
+
 def _uuid(value: Any) -> UUID | None:
     try:
         return UUID(str(value))
@@ -145,7 +154,8 @@ class MemoryGoalRunStore:
         for goal in candidates:
             prior = previous.get(str(goal["id"])) or {}
             goal["sort_order"] = prior.get("sort_order")
-            goal["parent_override"] = bool(prior.get("parent_override"))
+            explicit_parent = str(goal["id"]) in _patch_parent_changes(result)
+            goal["parent_override"] = bool(prior.get("parent_override")) and not explicit_parent
             if goal["parent_override"] and (
                 not prior.get("parent_candidate_id")
                 or str(prior["parent_candidate_id"]) in current_ids
@@ -415,13 +425,20 @@ class SqlGoalModelStore:
                 current.source_node_ids = json.dumps(goal.get("source_node_ids") or [])
                 current.evidence = json.dumps(goal.get("evidence") or [], ensure_ascii=False)
                 kept_order = current.sort_order
-                if current.parent_override and (
-                    not current.parent_candidate_id or str(current.parent_candidate_id) in kept
+                explicit_parent = str(goal["id"]) in _patch_parent_changes(result)
+                if (
+                    current.parent_override
+                    and not explicit_parent
+                    and (
+                        not current.parent_candidate_id or str(current.parent_candidate_id) in kept
+                    )
                 ):
                     pass
                 else:
                     current.parent_candidate_id = goal.get("parent_candidate_id")
-                    current.parent_override = bool(goal.get("parent_override"))
+                    current.parent_override = (
+                        bool(goal.get("parent_override")) and not explicit_parent
+                    )
                 if kept_order is not None:
                     current.sort_order = kept_order
                 elif goal.get("sort_order") is not None:

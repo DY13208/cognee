@@ -229,6 +229,9 @@ class OrchestratedEvidenceIn(InDTO):
 
 
 class OrchestratedGoalIn(InDTO):
+    model_config = ConfigDict(extra="forbid")
+    parent_candidate_id: Optional[str] = None
+    parent_id: Optional[str] = None
     node_type: NetworkNodeType | None = None
     client_id: str = ""
     name: str = ""
@@ -246,11 +249,16 @@ class OrchestratedGoalIn(InDTO):
 
 
 class OrchestratedHierarchyIn(InDTO):
+    model_config = ConfigDict(extra="forbid")
+    parent_candidate_id: str = ""
+    child_candidate_id: str = ""
     parent_client_id: str = ""
     child_client_id: str = ""
     reason: str = ""
     confidence: Optional[float] = None
     evidence_node_ids: List[str] = Field(default_factory=list)
+    source_node_ids: List[str] = Field(default_factory=list)
+    evidence: List[OrchestratedEvidenceIn] = Field(default_factory=list)
     relationship: Optional[str] = None
     origin: Optional[str] = None
 
@@ -283,6 +291,7 @@ class OrchestratedRelationIn(InDTO):
 
 
 class OrchestratedGoalModelProposal(InDTO):
+    model_config = ConfigDict(extra="forbid")
     dataset_id: UUID
     generated_by: str = "workbuddy_orchestrated"
     dry_run: bool = False

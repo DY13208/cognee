@@ -523,6 +523,11 @@ def register_teleology_tools(registry, get_client) -> None:
         critical_errors is empty.
         submission_mode=patch validates an incremental update against base_run_id.
         Patch payloads use upsert_goals, remove_goal_ids, and affected_goal_ids.
+        Upserts accept parent_candidate_id (alias parent_id) for a current canonical
+        parent. Hierarchy accepts child_client_id/parent_client_id (client refs or
+        canonical IDs), or child_candidate_id/parent_candidate_id (canonical IDs).
+        Use exactly one endpoint field per side, with reason and evidence.
+        Validation reports hierarchy_changes with child, old parent and new parent.
         Goals omitted from a patch stay unchanged. dry_run still writes nothing.
         """
         return await request(

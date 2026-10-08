@@ -613,6 +613,7 @@ export interface GoalEvidence {
 }
 
 export interface GoalCandidate {
+  node_type?: "goal" | "capability" | "risk" | "constraint" | "metric" | "driver";
   id: string;
   candidate_id?: string | null;
   graph_id?: string | null;
@@ -633,6 +634,10 @@ export interface GoalCandidate {
 }
 
 export interface GoalTeleologyItem {
+  run_id?: string;
+  source_id?: string | null;
+  target_id?: string | null;
+  condition?: string | boolean | { expression?: string; status?: string; active?: boolean } | null;
   id: string;
   kind: string;
   name: string;
@@ -648,6 +653,8 @@ export interface GoalTeleologyItem {
 }
 
 export interface GoalModelView {
+  loop_preview?: GoalNetworkLoop[];
+  loops?: GoalNetworkLoop[];
   dataset_id: string;
   run_id: string | null;
   status: string;
@@ -682,6 +689,26 @@ export interface GoalModelView {
     layer?: string;
     classification_reason?: string;
   }[];
+}
+
+export interface GoalNetworkLoop {
+  loop_id: string;
+  nodes: string[];
+  edges: GoalTeleologyItem[];
+  negative_edge_count: number;
+  loop_type: "Reinforcing" | "Balancing";
+  confidence: number;
+  conditions: unknown[];
+  status?: "ACTIVE" | "CONDITIONAL";
+}
+
+/** Read server-computed loops; the UI never detects cycles or infers polarity. */
+export async function getGoalNetworkLoops(instance: CogneeInstance, datasetId: string): Promise<GoalNetworkLoop[]> {
+  const params = new URLSearchParams({ dataset_id: datasetId });
+  const resp = await instance.fetch(`/v1/teleology/goal-model/loops?${params}`);
+  if (!resp.ok) throw new Error(await readError(resp));
+  const result = await resp.json();
+  return result.loops || result.loop_preview || [];
 }
 
 export async function getGoalModel(instance: CogneeInstance, datasetId: string): Promise<GoalModelView> {

@@ -13,6 +13,7 @@ import json
 from typing import Any
 from uuid import UUID, uuid4
 
+from cognee.modules.teleology.goal_hierarchy import inline_parent_link, resolve_hierarchy_endpoints
 from cognee.modules.teleology.goal_model import GoalBuildError
 from cognee.modules.teleology.goal_network import analyze_feedback_loops, semantic_warnings
 from cognee.modules.teleology.goal_orchestrated import (
@@ -208,7 +209,9 @@ def compose_orchestrated_patch(
     if not upsert_rows:
         upsert_rows = list(payload.get("goals") or [])
     upserted_ids: list[str] = []
+    parent_links: list[dict[str, Any]] = []
     for raw in upsert_rows:
+        supplied_fields = set(raw)
         client_id = str(raw.get("client_id") or raw.get("candidate_id") or "")
         candidate_id = str(raw.get("candidate_id") or "")
         existing = (
@@ -274,8 +277,30 @@ def compose_orchestrated_patch(
                 client_to_id[client_id] = str(sealed["id"])
             upserted_ids.append(str(sealed["id"]))
             added.append({"id": sealed["id"], "name": sealed["name"]})
+            if link := inline_parent_link(raw, str(sealed["id"])):
+                parent_links.append(link)
             continue
-        _overwrite_goal_fields(existing, sealed, raw)
+        if supplied_fields - {"candidate_id", "client_id", "parent_candidate_id", "parent_id"}:
+            before_update = copy.deepcopy(existing)
+            _overwrite_goal_fields(existing, sealed, raw)
+            if "parent_candidate_id" in supplied_fields or "parent_id" in supplied_fields:
+                preserved = {
+                    "name",
+                    "node_type",
+                    "description",
+                    "reason",
+                    "confidence",
+                    "scope",
+                } - supplied_fields
+                if not supplied_fields & {"evidence", "evidence_node_ids", "source_node_ids"}:
+                    preserved.update({"evidence", "evidence_node_ids", "source_node_ids"})
+                for key in preserved:
+                    if key in before_update:
+                        existing[key] = before_update[key]
+                    else:
+                        existing.pop(key, None)
+        if link := inline_parent_link(raw, str(existing["id"])):
+            parent_links.append(link)
         if client_id:
             client_to_id[client_id] = str(existing["id"])
         client_to_id[str(existing["id"])] = str(existing["id"])
@@ -298,7 +323,7 @@ def compose_orchestrated_patch(
         payload, impact, candidates, upserted_ids, removed_ids, client_to_id
     )
     _apply_patch_hierarchy(
-        list(payload.get("hierarchy") or []),
+        parent_links + list(payload.get("hierarchy") or []),
         candidates,
         client_to_id,
         mutable,
@@ -753,11 +778,20 @@ def _apply_patch_hierarchy(
     }
     assigned: set[str] = set()
     for raw in links:
-        parent_client = str(raw.get("parent_client_id") or "")
-        child_client = str(raw.get("child_client_id") or "")
-        reason = _hierarchy_issue(raw, parent_client, child_client, client_to_id, known, catalog)
-        parent_id = client_to_id.get(parent_client)
-        child_id = client_to_id.get(child_client)
+        endpoints, endpoint_error = resolve_hierarchy_endpoints(raw, client_to_id, set(by_id))
+        parent_id = endpoints.get("resolved_parent_candidate_id")
+        child_id = endpoints.get("resolved_child_candidate_id")
+        parent_client = parent_id or str(
+            raw.get("parent_client_id") or raw.get("parent_candidate_id") or ""
+        )
+        child_client = child_id or str(
+            raw.get("child_client_id") or raw.get("child_candidate_id") or ""
+        )
+        reason = raw.get("endpoint_error") or endpoint_error
+        if not reason:
+            reason = _hierarchy_issue(
+                raw, parent_client, child_client, client_to_id, known, catalog
+            )
         if reason == "" and (
             not parent_id or not child_id or parent_id not in by_id or child_id not in by_id
         ):
@@ -795,13 +829,14 @@ def _apply_patch_hierarchy(
         parents[child_id] = parent_id
         assigned.add(child_id)
         if previous != parent_id:
-            changes.append(
-                {
-                    "child_id": child_id,
-                    "previous_parent_id": previous,
-                    "parent_id": parent_id,
-                }
-            )
+            change = {
+                "child_id": child_id,
+                "previous_parent_id": previous,
+                "parent_id": parent_id,
+            }
+            if raw.get("inline_parent"):
+                change["reason"] = raw["reason"]
+            changes.append(change)
 
 
 def _apply_patch_bound(

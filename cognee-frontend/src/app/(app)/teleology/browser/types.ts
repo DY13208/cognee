@@ -15,6 +15,7 @@ export type EntityKind =
 export type ReviewStatus = "proposed" | "confirmed";
 
 export interface OntologyEntity {
+  displayType?: string;
   id: string;
   name: string;
   type: string;

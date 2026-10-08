@@ -74,7 +74,7 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
       <div
         className={`onto-file-row${focusId === goal.id ? " is-selected" : ""}${draggingId === goal.id ? " is-dragging" : ""}${dropHint?.id === goal.id ? ` is-drop-${dropHint.placement}` : ""}`}
         style={{ paddingLeft: depth * 16 + 8 }}
-        draggable={Boolean(onMoveGoal && goal.source === "derived_goal")}
+        draggable={Boolean(onMoveGoal && goal.source === "derived_goal" && !goal.id.startsWith("ui:brands:"))}
         onDragStart={(event) => {
           if (!onMoveGoal || goal.source !== "derived_goal") return;
           event.dataTransfer.effectAllowed = "move";
@@ -82,13 +82,13 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
           setDraggingId(goal.id);
         }}
         onDragOver={(event) => {
-          if (!onMoveGoal || !draggingId || draggingId === goal.id || goal.source !== "derived_goal") return;
+          if (!onMoveGoal || !draggingId || draggingId === goal.id || goal.source !== "derived_goal" || goal.id.startsWith("ui:brands:")) return;
           event.preventDefault(); event.stopPropagation();
           event.dataTransfer.dropEffect = "move";
           setDropHint({ id: goal.id, placement: placementAt(event) });
         }}
         onDrop={(event) => {
-          if (!onMoveGoal || !draggingId || goal.source !== "derived_goal") return;
+          if (!onMoveGoal || !draggingId || goal.source !== "derived_goal" || goal.id.startsWith("ui:brands:")) return;
           event.preventDefault(); event.stopPropagation();
           if (draggingId !== goal.id) onMoveGoal(draggingId, goal.id, placementAt(event));
           setDraggingId(null); setDropHint(null);
@@ -105,7 +105,10 @@ export default function NavPanel({ language, roots, pages, focusId, pathIds, loa
           </button>
         ) : <span className="onto-file-chevron" aria-hidden />}
         <span className="onto-file-icon" aria-hidden><GoalMark depth={depth} /></span>
-        <button type="button" className="onto-file-name" title={goal.name} onClick={() => onPick(goal.id, goal)}>{goal.name}</button>
+        <button type="button" className="onto-file-name" title={goal.name} onClick={() => {
+          if (goal.id.startsWith("ui:brands:")) setOpen(old => new Set(old).add(goal.id));
+          onPick(goal.id, goal);
+        }}>{goal.name}</button>
         <span className="teleology-nav-status">{statuses[goal.id] || (goal.confirmed_count ? t(`Confirmed ${goal.confirmed_count}`, `已确认 ${goal.confirmed_count}`) : t("Not analyzed", "未分析"))}</span>
       </div>
       {expanded && <div role="group" className="onto-nav-branch">
