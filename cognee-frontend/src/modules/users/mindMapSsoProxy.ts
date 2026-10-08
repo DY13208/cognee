@@ -18,7 +18,7 @@ export async function proxyMindMapSso(request: Request, action: "login" | "callb
   const payload: Record<string, string> = {};
   if (action === "callback") {
     const incoming = new URL(request.url);
-    for (const key of ["code", "state"]) {
+    for (const key of ["code", "state", "error"]) {
       const value = incoming.searchParams.get(key);
       if (value) payload[key] = value;
     }
@@ -41,5 +41,6 @@ export async function proxyMindMapSso(request: Request, action: "login" | "callb
   } catch {
     headers.set("Location", "/local-login?error=sso_unavailable");
   }
+  headers.append("Set-Cookie", "cognee_mind_map_state=; Path=/sso/mind-map; Max-Age=0; HttpOnly; Secure; SameSite=Lax");
   return new Response(null, { status: 303, headers });
 }

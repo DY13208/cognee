@@ -39,6 +39,18 @@ describe("mind-map SSO proxy", () => {
     const response = await proxyMindMapSso(new Request("https://xx.stillgroup.net:3030/sso/mind-map/login"), "login");
     expect(response.headers.get("location")).toBe(`/local-login?error=${status === 503 ? "sso_not_configured" : "sso_unavailable"}`);
     expect(await response.text()).toBe("");
+    expect(response.headers.get("set-cookie")).toContain("cognee_mind_map_state=;");
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("forwards a WeCom failure and state without arbitrary redirect parameters", async () => {
+    const upstream = new Response(null, { status: 303, headers: { location: "/local-login?error=sso_wecom_failed" } });
+    Object.defineProperty(upstream.headers, "getSetCookie", { value: () => [] });
+    const spy = jest.spyOn(global, "fetch").mockResolvedValue(upstream);
+    await proxyMindMapSso(new Request(
+      "https://xx.stillgroup.net:3030/sso/mind-map/callback?error=wecom_login_failed&state=browser&next=https://evil.invalid",
+    ), "callback");
+    expect(JSON.parse(spy.mock.calls[0][1]?.body as string)).toEqual({ error: "wecom_login_failed", state: "browser" });
   });
 
   it("shows SSO only when backend says enabled, and fails safely on an outage", async () => {
@@ -48,5 +60,7 @@ describe("mind-map SSO proxy", () => {
     expect(await isMindMapSsoEnabled()).toBe(false);
     const response = await proxyMindMapSso(new Request("https://xx.stillgroup.net:3030/sso/mind-map/login"), "login");
     expect(response.headers.get("location")).toBe("/local-login?error=sso_unavailable");
+    expect(response.headers.get("set-cookie")).toContain("cognee_mind_map_state=;");
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });
 });

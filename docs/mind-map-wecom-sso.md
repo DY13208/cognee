@@ -52,6 +52,8 @@ docker compose --profile ui --profile https restart codebuddy-https
 
 Cognee 生成浏览器绑定的 10 分钟 HttpOnly/Secure 状态 Cookie 和 S256 PKCE；mind-map 验证固定回调并检查已有登录会话，签发 90 秒授权码。只存授权码哈希，兑换时在 PostgreSQL 中原子删除。Cognee 后端凭独立共享密钥和 PKCE 校验码兑换企业微信成员身份，再签发自己的 HttpOnly/Secure 会话。浏览器收不到企业微信 Secret、共享密钥或企业微信访问令牌。
 
+企业微信登录失败时，mind-map 将失败结果和原状态返回 Cognee，显示重试页面，避免再次自动发起扫码。兑换、数据库或会话签发失败时不创建登录会话，清除本次状态；用户从登录页重新开始。授权码消费后不自动重试兑换。
+
 账号按 `企业 CorpID + 企业微信 UserID` 稳定映射为普通 Cognee 用户，首次登录创建独立非管理员账号。不同企业的同名 UserID 不会合并。已有邮箱、WorkBuddy 账号和知识库数据保留；不按姓名、邮箱或管理员权限自动合并账号，也不自动授予原账号的知识库权限。如需访问原知识库，由其所有者通过已有 ACL 分享，或另行完成经过确认的账号绑定。
 
 退出 Cognee 会清理 Cognee 会话和未完成的 SSO 状态，mind-map 会话继续独立有效；再次点击企业微信登录可重新进入。mind-map 退出不会主动撤销已经签发的 Cognee 会话。
@@ -80,5 +82,13 @@ node test/cogneeSso.test.js
 node test/cogneeSso.pg.test.js
 npm run test:auth
 ```
+
+完整协议联调需要已安装依赖的 sibling `mind-map` 仓库和测试 PostgreSQL 的 `PGHOST`、`PGPORT`、`PGDATABASE`、`PGUSER`、`PGPASSWORD`。在 Cognee 仓库运行：
+
+```bash
+MIND_MAP_SSO_INTEGRATION=1 uv run pytest cognee/tests/integration/users/test_mind_map_sso_protocol.py -q
+```
+
+该测试使用验证证书的真实 HTTPS 请求、mind-map 原登录/回调/会话逻辑、随机 PostgreSQL schema、临时 SQLite 用户库及 Cognee 原生 JWT 认证；覆盖重启、重复登录、成员隔离、过期、重放、退出和企业微信成功/失败回跳。外部企业微信接口使用测试响应，线上真实扫码仍需要部署后验收。
 
 禁用时设置 `MIND_MAP_SSO_ENABLED=false` 并重启 Cognee 后端，页面会隐藏企业微信入口。若同时关闭 WorkBuddy，会话密钥配置变化可能使当前会话失效，原账号与知识库仍保留。

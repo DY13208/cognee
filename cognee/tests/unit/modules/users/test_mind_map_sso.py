@@ -226,3 +226,78 @@ def test_disabled_sso_returns_503_without_provider_requests(monkeypatch):
     with TestClient(app) as client:
         assert client.get("/api/v1/auth/mind-map/config").json() == {"enabled": False}
         assert client.get("/api/v1/auth/mind-map/login").status_code == 503
+
+
+@pytest.mark.parametrize("failure", ["provider", "database", "session"])
+def test_callback_failures_return_retry_page_and_clear_state(config, monkeypatch, failure):
+    app = FastAPI()
+    app.include_router(routes.get_mind_map_sso_router(), prefix="/api/v1/auth")
+    exchange = AsyncMock(return_value={"sub": "test"})
+    resolve = AsyncMock(return_value=SimpleNamespace(id="user-1"))
+    monkeypatch.setattr(routes, "exchange_code", exchange)
+    monkeypatch.setattr(routes, "resolve_user", resolve)
+    if failure == "database":
+        resolve.side_effect = RuntimeError("sensitive database details")
+    if failure == "session":
+        monkeypatch.setattr(
+            routes,
+            "get_client_auth_backend",
+            lambda: SimpleNamespace(
+                get_strategy=lambda: SimpleNamespace(
+                    write_token=AsyncMock(side_effect=RuntimeError("sensitive session details"))
+                )
+            ),
+        )
+    with TestClient(app, base_url=config.origin) as client:
+        start = client.get("/api/v1/auth/mind-map/login", follow_redirects=False)
+        cookie = start.headers["set-cookie"].split(";", 1)[0]
+        state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
+        payload = {"code": "code", "state": state}
+        if failure == "provider":
+            payload["error"] = "wecom_login_failed"
+            bad_state = client.post(
+                "/api/v1/auth/mind-map/callback",
+                json={**payload, "state": "bad"},
+                headers={"Cookie": cookie},
+                follow_redirects=False,
+            )
+            assert "invalid_state" in bad_state.headers["location"]
+        result = client.post(
+            "/api/v1/auth/mind-map/callback",
+            json=payload,
+            headers={"Cookie": cookie},
+            follow_redirects=False,
+        )
+        error = "sso_wecom_failed" if failure == "provider" else "sso_unavailable"
+        assert result.status_code == 303
+        assert result.headers["location"] == config.origin + "/local-login?error=" + error
+        cookies = result.headers.get_list("set-cookie")
+        assert any(c.startswith(sso.STATE_COOKIE + "=") and "Max-Age=0" in c for c in cookies)
+        assert not any(c.startswith("auth_token=") for c in cookies)
+        if failure == "provider":
+            exchange.assert_not_awaited()
+            resolve.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status,body,error",
+    [
+        (400, {}, "sso_invalid_grant"),
+        (401, {}, "sso_unavailable"),
+        (503, {}, "sso_unavailable"),
+        (200, [], "sso_invalid_profile"),
+        (200, {"sub": "wrong", "corp_id": "corp", "wecom_userid": "member"}, "sso_invalid_profile"),
+    ],
+)
+async def test_exchange_failures_are_fixed_errors(config, monkeypatch, status, body, error):
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        sso.httpx,
+        "AsyncClient",
+        lambda **kw: real_client(
+            transport=httpx.MockTransport(lambda request: httpx.Response(status, json=body)), **kw
+        ),
+    )
+    with pytest.raises(sso.SsoError, match=error):
+        await sso.exchange_code(config, "code", "verifier")

@@ -20,6 +20,7 @@ const ERRORS: Record<string, string> = {
   sso_unavailable: "暂时无法连接企业微信登录服务，请稍后重试。",
   sso_invalid_grant: "企业微信登录凭证已过期或已使用，请重新登录。",
   sso_invalid_profile: "未能获取企业微信成员身份，请联系管理员。",
+  sso_wecom_failed: "企业微信登录未完成或暂时不可用，请重新登录。",
 };
 
 export default function LocalSignInForm({ errorCode, mindMapSsoEnabled = false }: {

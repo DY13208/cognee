@@ -23,11 +23,15 @@ from cognee.modules.users.authentication.mind_map_sso import (
 from cognee.modules.users.authentication.session_settings import mind_map_sso_enabled
 from cognee.modules.users.methods.get_authenticated_user import get_authenticated_user
 from cognee.modules.users.models import OAuthIdentity, User
+from cognee.shared.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class SsoCallback(BaseModel):
     code: str = Field(default="", max_length=128)
     state: str = Field(default="", max_length=128)
+    error: str = Field(default="", max_length=255)
 
 
 def private_response(response):
@@ -70,6 +74,8 @@ def get_mind_map_sso_router() -> APIRouter:
             return private_response(JSONResponse({"detail": "sso_not_configured"}, status_code=503))
         try:
             verifier = verify_state(config, request.cookies.get(STATE_COOKIE, ""), payload.state)
+            if payload.error:
+                raise SsoError("sso_wecom_failed")
             if not payload.code:
                 raise SsoError("sso_invalid_grant")
             user = await resolve_user(await exchange_code(config, payload.code, verifier))
@@ -88,6 +94,13 @@ def get_mind_map_sso_router() -> APIRouter:
         except SsoError as error:
             response = RedirectResponse(
                 config.origin + "/local-login?error=" + str(error), status_code=303
+            )
+        except Exception as error:  # noqa: BLE001 -- Clear state at the login failure boundary.
+            # A consumed code must not be retried after a DB/session failure.
+            # Keep the error and all credentials out of logs and return a retry page.
+            logger.warning("Mind-map SSO callback failed: error_type=%s", type(error).__name__)
+            response = RedirectResponse(
+                config.origin + "/local-login?error=sso_unavailable", status_code=303
             )
         response.delete_cookie(
             STATE_COOKIE, path=STATE_PATH, secure=True, httponly=True, samesite="lax"
