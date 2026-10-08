@@ -63,4 +63,31 @@ describe("mind-map SSO proxy", () => {
     expect(response.headers.get("set-cookie")).toContain("cognee_mind_map_state=;");
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });
+
+  it("returns QR metadata and both browser cookies without exposing internal fields", async () => {
+    const upstream = new Response(JSON.stringify({ loginUrl: "https://open.work.weixin.qq.com/wwopen/sso/qrConnect?state=test", expiresIn: 600, verifier: "never-send" }));
+    Object.defineProperty(upstream.headers, "getSetCookie", { value: () => [
+      "cognee_mind_map_state=nonce; Path=/sso/mind-map; Secure; HttpOnly",
+      "mind_map_oauth_browser=browser; Path=/; Secure; HttpOnly",
+    ] });
+    const spy = jest.spyOn(global, "fetch").mockResolvedValue(upstream);
+    const response = await proxyMindMapSso(new Request("https://xx.stillgroup.net:3030/sso/mind-map/qr"), "qr");
+    expect(spy.mock.calls[0][0]).toBe("http://cognee:8000/api/v1/auth/mind-map/qr");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ loginUrl: "https://open.work.weixin.qq.com/wwopen/sso/qrConnect?state=test", expiresIn: 600 });
+    expect(response.headers.get("set-cookie")).toContain("cognee_mind_map_state=nonce");
+    expect(response.headers.get("set-cookie")).toContain("mind_map_oauth_browser=browser");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it.each([503, 500])("returns a JSON QR failure for HTTP %s and clears the stale nonce", async (status) => {
+    const upstream = new Response("private upstream error", { status });
+    Object.defineProperty(upstream.headers, "getSetCookie", { value: () => [] });
+    jest.spyOn(global, "fetch").mockResolvedValue(upstream);
+    const response = await proxyMindMapSso(new Request("https://xx.stillgroup.net:3030/sso/mind-map/qr"), "qr");
+    expect(response.status).toBe(503);
+    expect(response.headers.get("location")).toBeNull();
+    expect(await response.json()).toEqual({ detail: "sso_unavailable" });
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
 });

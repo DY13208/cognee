@@ -6,13 +6,12 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
-from urllib.parse import urlencode, urlsplit
-from uuid import uuid4
+from http.cookies import SimpleCookie
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 import jwt
-from fastapi_users.password import PasswordHelper
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from cognee.infrastructure.databases.relational import get_relational_engine
@@ -26,6 +25,7 @@ STATE_COOKIE = "cognee_mind_map_state"
 STATE_PATH = "/sso/mind-map"
 STATE_TTL = 600
 PROVIDER = "mind-map-wecom"
+MIND_MAP_BROWSER_COOKIE = "mind_map_oauth_browser"
 
 
 class SsoError(Exception):
@@ -37,6 +37,7 @@ class SsoConfig:
     issuer_origin: str
     redirect_uri: str
     client_secret: str
+    account_email: str = "izw99s@hotmail.com"
 
     @property
     def origin(self) -> str:
@@ -51,6 +52,7 @@ def get_config() -> SsoConfig:
         issuer_origin=os.getenv("MIND_MAP_SSO_ORIGIN", "").rstrip("/"),
         redirect_uri=os.getenv("MIND_MAP_SSO_REDIRECT_URI", ""),
         client_secret=os.getenv("MIND_MAP_COGNEE_SSO_SECRET", ""),
+        account_email=os.getenv("MIND_MAP_SSO_ACCOUNT_EMAIL", "izw99s@hotmail.com").strip().lower(),
     )
     for url in (config.issuer_origin, config.redirect_uri):
         parts = urlsplit(url)
@@ -68,6 +70,12 @@ def get_config() -> SsoConfig:
     ):
         raise SsoError("sso_not_configured")
     if len(config.client_secret) < 32:
+        raise SsoError("sso_not_configured")
+    if (
+        not config.account_email
+        or len(config.account_email) > 320
+        or "@" not in config.account_email
+    ):
         raise SsoError("sso_not_configured")
     if os.getenv("ENABLE_BACKEND_ACCESS_CONTROL", "true").lower() != "true":
         raise SsoError("access_control_required")
@@ -176,35 +184,91 @@ async def exchange_code(config: SsoConfig, code: str, verifier: str) -> dict:
 
 async def resolve_user(profile: dict) -> User:
     subject = profile_subject(profile)
+    email = get_config().account_email
     async with get_relational_engine().get_async_session() as session:
+        user_query = select(User).where(func.lower(User.email) == email)
+        user = (await session.execute(user_query)).scalar_one_or_none()
+        if user is None:
+            raise SsoError("sso_account_missing")
+        if not user.is_active:
+            raise SsoError("account_disabled")
         query = select(OAuthIdentity).where(
             OAuthIdentity.provider == PROVIDER, OAuthIdentity.subject == subject
         )
         identity = (await session.execute(query)).scalar_one_or_none()
         if identity is None:
-            user = User(
-                id=uuid4(),
-                email=f"wecom-{hashlib.sha256(subject.encode()).hexdigest()[:40]}@mind-map.example.com",
-                hashed_password=PasswordHelper().hash(secrets.token_urlsafe(48)),
-                is_active=True,
-                is_verified=True,
-                is_superuser=False,
-            )
             identity = OAuthIdentity(user_id=user.id, provider=PROVIDER, subject=subject, email="")
-            session.add(user)
+            session.add(identity)
             try:
-                await session.flush()
-                session.add(identity)
                 await session.flush()
             except IntegrityError:
                 await session.rollback()
                 identity = (await session.execute(query)).scalar_one_or_none()
+                user = (await session.execute(user_query)).scalar_one_or_none()
                 if identity is None:
                     raise SsoError("account_failed") from None
-        user = await session.get(User, identity.user_id)
+        # All verified WeCom members intentionally use the configured existing account.
+        # Rebind legacy SSO identities without copying or changing either user's data.
         if user is None or not user.is_active:
             raise SsoError("account_disabled")
+        identity.user_id = user.id
         identity.name = str(profile.get("name") or "企业微信用户")[:255]
+        identity.email = user.email
         await session.commit()
         await session.refresh(user)
         return user
+
+
+async def prepare_qr(config: SsoConfig, browser_cookie: str) -> tuple[dict, str, str]:
+    # Both apps use the same HTTPS hostname on different ports. Cookie scope
+    # deliberately matches mind-map's original OAuth callback, with no new callback.
+    if urlsplit(config.issuer_origin).hostname != urlsplit(config.origin).hostname:
+        raise SsoError("sso_qr_host_mismatch")
+    authorization_url, state_cookie = begin_authorization(config)
+    parts = urlsplit(authorization_url)
+    return_to = parts.path + "?" + parts.query
+    headers = {}
+    if browser_cookie:
+        cookies = SimpleCookie()
+        cookies[MIND_MAP_BROWSER_COOKIE] = browser_cookie
+        headers["Cookie"] = cookies.output(header="").strip()
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
+            response = await client.get(
+                config.issuer_origin + "/api/auth/qr",
+                params={"return_to": return_to},
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+    except (httpx.HTTPError, ValueError) as error:
+        raise SsoError("sso_unavailable") from error
+    if not isinstance(data, dict) or not isinstance(data.get("loginUrl"), str):
+        raise SsoError("sso_unavailable")
+    qr_url = urlsplit(data["loginUrl"])
+    qr_query = parse_qs(qr_url.query)
+    callback = qr_query.get("redirect_uri", [""])[0]
+    if (
+        qr_url.scheme != "https"
+        or qr_url.username
+        or qr_url.password
+        or qr_url.fragment
+        or qr_url.path != "/wwopen/sso/qrConnect"
+        or f"{qr_url.scheme}://{qr_url.netloc}"
+        not in ("https://open.work.weixin.qq.com", config.issuer_origin)
+        or callback != config.issuer_origin + "/api/auth/wecom/callback"
+        or not isinstance(data.get("state"), str)
+        or not data["state"]
+        or qr_query.get("state") != [data["state"]]
+    ):
+        raise SsoError("sso_unavailable")
+    cookies = SimpleCookie()
+    for value in response.headers.get_list("set-cookie"):
+        cookies.load(value)
+    if MIND_MAP_BROWSER_COOKIE not in cookies:
+        raise SsoError("sso_unavailable")
+    return (
+        {"loginUrl": data["loginUrl"], "expiresIn": STATE_TTL},
+        state_cookie,
+        cookies[MIND_MAP_BROWSER_COOKIE].value,
+    )

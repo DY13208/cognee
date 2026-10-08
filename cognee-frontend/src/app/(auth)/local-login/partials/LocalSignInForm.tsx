@@ -4,6 +4,7 @@ import { useState } from "react";
 import { getLocalApiUrl } from "@/modules/users/getLocalApiUrl";
 import { Flex, Text, Title, Button, TextInput, PasswordInput, Divider } from "@mantine/core";
 import AuthCard from "@/ui/elements/Auth/AuthCard";
+import WecomQrLogin from "./WecomQrLogin";
 
 const ERRORS: Record<string, string> = {
   invalid_state: "登录请求已过期或不匹配，请重新点击登录。",
@@ -21,6 +22,7 @@ const ERRORS: Record<string, string> = {
   sso_invalid_grant: "企业微信登录凭证已过期或已使用，请重新登录。",
   sso_invalid_profile: "未能获取企业微信成员身份，请联系管理员。",
   sso_wecom_failed: "企业微信登录未完成或暂时不可用，请重新登录。",
+  sso_account_missing: "管理员指定的知识库账号不存在，请联系管理员。",
 };
 
 export default function LocalSignInForm({ errorCode, mindMapSsoEnabled = false }: {
@@ -30,6 +32,7 @@ export default function LocalSignInForm({ errorCode, mindMapSsoEnabled = false }
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"qr" | "password">(mindMapSsoEnabled ? "qr" : "password");
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setLoginError(null);
@@ -62,7 +65,7 @@ export default function LocalSignInForm({ errorCode, mindMapSsoEnabled = false }
           登录知识库
         </Title>
         <Text size="sm" className="!text-[#EDECEA]/85 !font-light !text-center">
-          {mindMapSsoEnabled ? "使用企业微信、邮箱密码或 WorkBuddy 账号登录" : "使用邮箱密码或 WorkBuddy 账号登录"}
+          {mindMapSsoEnabled && mode === "qr" ? "企业微信扫码登录" : "使用邮箱密码或 WorkBuddy 账号登录"}
         </Text>
       </Flex>
       {error && (
@@ -71,18 +74,10 @@ export default function LocalSignInForm({ errorCode, mindMapSsoEnabled = false }
           {error}
         </Text>
       )}
-      {mindMapSsoEnabled && (
-        <Flex className="w-full flex-col gap-2">
-          <Button component="a" href="/sso/mind-map/login" fullWidth h="2.75rem" radius="md"
-            className="!bg-[#BC9BFF] !text-[#1e1e1c] hover:!bg-[#A87CFF]">
-            企业微信登录
-          </Button>
-          <Text size="xs" className="!text-[#EDECEA]/65 !text-center">
-            已登录思维导图可直接进入，首次使用请扫码登录
-          </Text>
-          <Divider label="其他登录方式" className="w-full" />
-        </Flex>
-      )}
+      {mindMapSsoEnabled && mode === "qr" ? <>
+        <WecomQrLogin />
+        <Button fullWidth variant="outline" h="2.75rem" radius="md" className="!text-[#BC9BFF] !border-[#BC9BFF]/50 hover:!bg-white/10" onClick={() => setMode("password")}>账号密码登录</Button>
+      </> : <>
       <form onSubmit={handleSubmit} className="w-full flex flex-col gap-3">
         <TextInput label="邮箱" type="email" autoComplete="username" required
           classNames={{ label: "!text-[#EDECEA]/85", input: "!bg-white/[0.06] !border-white/15 !text-[#EDECEA]" }}
@@ -95,6 +90,10 @@ export default function LocalSignInForm({ errorCode, mindMapSsoEnabled = false }
           账号密码登录
         </Button>
       </form>
+      {mindMapSsoEnabled && <Button fullWidth variant="outline" h="2.75rem" radius="md" className="!text-[#BC9BFF] !border-[#BC9BFF]/50 hover:!bg-white/10" disabled={loading} onClick={() => {
+        setLoginError(null); setMode("qr");
+      }}>返回企业微信扫码</Button>}
+      </>}
       <Divider label="或" className="w-full" />
       <Button component="a" href="/oauth/login" fullWidth h="2.75rem" radius="md" mt="xs"
         className="!bg-[#BC9BFF] !text-[#1e1e1c] hover:!bg-[#A87CFF] !transition-colors !border-none">

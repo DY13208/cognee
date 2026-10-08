@@ -13,7 +13,7 @@ export async function isMindMapSsoEnabled(): Promise<boolean> {
 }
 
 /** Codes are forwarded in the body; provider secrets and PKCE stay on the servers. */
-export async function proxyMindMapSso(request: Request, action: "login" | "callback") {
+export async function proxyMindMapSso(request: Request, action: "login" | "callback" | "qr") {
   const target = `${getServerBackendUrl()}/api/v1/auth/mind-map/${action}`;
   const payload: Record<string, string> = {};
   if (action === "callback") {
@@ -32,6 +32,11 @@ export async function proxyMindMapSso(request: Request, action: "login" | "callb
       cache: "no-store", redirect: "manual", signal: AbortSignal.timeout(30_000),
     });
     for (const cookie of upstream.headers.getSetCookie()) headers.append("Set-Cookie", cookie);
+    if (action === "qr" && upstream.ok) {
+      const data = await upstream.json();
+      headers.set("Content-Type", "application/json");
+      return new Response(JSON.stringify({ loginUrl: data.loginUrl, expiresIn: data.expiresIn }), { headers });
+    }
     const location = upstream.headers.get("location");
     if (location && upstream.status >= 300 && upstream.status < 400) {
       headers.set("Location", location);
@@ -42,5 +47,10 @@ export async function proxyMindMapSso(request: Request, action: "login" | "callb
     headers.set("Location", "/local-login?error=sso_unavailable");
   }
   headers.append("Set-Cookie", "cognee_mind_map_state=; Path=/sso/mind-map; Max-Age=0; HttpOnly; Secure; SameSite=Lax");
+  if (action === "qr") {
+    headers.delete("Location");
+    headers.set("Content-Type", "application/json");
+    return new Response(JSON.stringify({ detail: "sso_unavailable" }), { status: 503, headers });
+  }
   return new Response(null, { status: 303, headers });
 }

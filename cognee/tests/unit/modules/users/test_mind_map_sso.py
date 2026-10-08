@@ -4,7 +4,8 @@ import json
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
+from uuid import uuid4
 
 import httpx
 import jwt
@@ -39,6 +40,7 @@ def config(monkeypatch):
         "MIND_MAP_SSO_SESSION_SECRET": "test-session-secret-" * 3,
         "MIND_MAP_SSO_SESSION_LIFETIME_SECONDS": "604800",
         "ENABLE_BACKEND_ACCESS_CONTROL": "true",
+        "MIND_MAP_SSO_ACCOUNT_EMAIL": "izw99s@hotmail.com",
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
@@ -81,6 +83,7 @@ def test_state_is_browser_bound_and_uses_pkce(config):
         ("MIND_MAP_SSO_SESSION_SECRET", "short"),
         ("MIND_MAP_SSO_SESSION_SECRET", "test-exchange-secret-" * 3),
         ("ENABLE_BACKEND_ACCESS_CONTROL", "false"),
+        ("MIND_MAP_SSO_ACCOUNT_EMAIL", ""),
     ],
 )
 def test_bad_configuration_fails_closed(config, monkeypatch, key, value):
@@ -136,7 +139,7 @@ async def test_exchange_is_backend_only_and_validates_subject(config, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_users_persist_are_non_admin_and_isolated_by_corporation(monkeypatch):
+async def test_members_reuse_existing_account_without_changing_permissions(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         for table in (Principal.__table__, User.__table__, OAuthIdentity.__table__):
@@ -155,14 +158,50 @@ async def test_users_persist_are_non_admin_and_isolated_by_corporation(monkeypat
         }
 
     try:
+        shared_id, legacy_id = uuid4(), uuid4()
+        async with sessions() as session:
+            session.add_all(
+                [
+                    User(
+                        id=shared_id,
+                        email="izw99s@hotmail.com",
+                        hashed_password="existing-hash",
+                        is_active=True,
+                        is_verified=False,
+                        is_superuser=True,
+                    ),
+                    User(
+                        id=legacy_id,
+                        email="legacy@example.com",
+                        hashed_password="legacy-hash",
+                        is_active=True,
+                        is_verified=True,
+                        is_superuser=False,
+                    ),
+                ]
+            )
+            await session.flush()
+            session.add(
+                OAuthIdentity(
+                    user_id=legacy_id,
+                    provider=sso.PROVIDER,
+                    subject="wecom:ww-one:member",
+                    email="",
+                )
+            )
+            await session.commit()
         first = await sso.resolve_user(profile("ww-one"))
         again = await sso.resolve_user(profile("ww-one"))
         other = await sso.resolve_user(profile("ww-two"))
-        assert first.id == again.id and first.id != other.id
-        assert first.is_active and first.is_verified and not first.is_superuser
+        assert first.id == again.id == other.id == shared_id
+        assert first.is_active and not first.is_verified and first.is_superuser
+        assert first.hashed_password == "existing-hash"
         assert first.tenant_id is None
         async with sessions() as session:
             assert await session.scalar(select(func.count()).select_from(User)) == 2
+            identities = (await session.scalars(select(OAuthIdentity))).all()
+            assert len(identities) == 2 and all(i.user_id == shared_id for i in identities)
+            assert (await session.get(User, legacy_id)).hashed_password == "legacy-hash"
             user = await session.get(User, first.id)
             user.is_active = False
             await session.commit()
@@ -170,6 +209,70 @@ async def test_users_persist_are_non_admin_and_isolated_by_corporation(monkeypat
             await sso.resolve_user(profile("ww-one"))
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_missing_shared_account_does_not_create_or_fallback(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        for table in (Principal.__table__, User.__table__, OAuthIdentity.__table__):
+            await conn.run_sync(table.create)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(
+        sso, "get_relational_engine", lambda: SimpleNamespace(get_async_session=sessions)
+    )
+    try:
+        with pytest.raises(sso.SsoError, match="sso_account_missing"):
+            await sso.resolve_user(
+                {"sub": "wecom:corp:member", "corp_id": "corp", "wecom_userid": "member"}
+            )
+        async with sessions() as session:
+            assert await session.scalar(select(func.count()).select_from(User)) == 0
+            assert await session.scalar(select(func.count()).select_from(OAuthIdentity)) == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_qr_uses_original_callback_and_preserves_browser_binding(config, monkeypatch):
+    def issuer(request):
+        assert request.url.path == "/api/auth/qr"
+        assert request.headers["cookie"] == "mind_map_oauth_browser=original-browser"
+        return_to = request.url.params["return_to"]
+        query = parse_qs(urlsplit(return_to).query)
+        assert query["redirect_uri"] == [config.redirect_uri]
+        assert query["code_challenge_method"] == ["S256"]
+        qr_query = urlencode(
+            {
+                "redirect_uri": config.issuer_origin + "/api/auth/wecom/callback",
+                "state": "issuer-state",
+                "appid": "corp",
+                "agentid": "1000002",
+            }
+        )
+        return httpx.Response(
+            200,
+            json={
+                "loginUrl": "https://open.work.weixin.qq.com/wwopen/sso/qrConnect?" + qr_query,
+                "state": "issuer-state",
+            },
+            headers={
+                "set-cookie": "mind_map_oauth_browser=original-browser; Path=/; HttpOnly; Secure"
+            },
+        )
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        sso.httpx,
+        "AsyncClient",
+        lambda **kw: real_client(transport=httpx.MockTransport(issuer), **kw),
+    )
+    data, state, browser = await sso.prepare_qr(config, "original-browser")
+    assert data["expiresIn"] == sso.STATE_TTL and browser == "original-browser"
+    secret, _ = session_settings()
+    claims = jwt.decode(state, secret, algorithms=["HS256"], audience="cognee-mind-map-sso")
+    assert claims["redirect_uri"] == config.redirect_uri
+    assert "verifier" not in data and config.client_secret not in json.dumps(data)
 
 
 def test_callback_issues_secure_cookie_only_after_valid_state(config, monkeypatch):

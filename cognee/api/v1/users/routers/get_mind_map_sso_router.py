@@ -9,6 +9,7 @@ from cognee.infrastructure.databases.relational import get_relational_engine
 from cognee.modules.users.authentication.default import default_transport
 from cognee.modules.users.authentication.get_client_auth_backend import get_client_auth_backend
 from cognee.modules.users.authentication.mind_map_sso import (
+    MIND_MAP_BROWSER_COOKIE,
     PROVIDER,
     STATE_COOKIE,
     STATE_PATH,
@@ -17,6 +18,7 @@ from cognee.modules.users.authentication.mind_map_sso import (
     begin_authorization,
     exchange_code,
     get_config,
+    prepare_qr,
     resolve_user,
     verify_state,
 )
@@ -107,6 +109,36 @@ def get_mind_map_sso_router() -> APIRouter:
         )
         return private_response(response)
 
+    @router.get("/qr")
+    async def qr(request: Request):
+        try:
+            config = get_config()
+            data, state_cookie, browser_cookie = await prepare_qr(
+                config, request.cookies.get(MIND_MAP_BROWSER_COOKIE, "")
+            )
+        except (SsoError, ValueError):
+            return private_response(JSONResponse({"detail": "sso_unavailable"}, status_code=503))
+        response = JSONResponse(data)
+        response.set_cookie(
+            STATE_COOKIE,
+            state_cookie,
+            max_age=STATE_TTL,
+            path=STATE_PATH,
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+        response.set_cookie(
+            MIND_MAP_BROWSER_COOKIE,
+            browser_cookie,
+            max_age=STATE_TTL,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+        return private_response(response)
+
     @router.get("/me")
     async def me(user: Annotated[User, Depends(get_authenticated_user)]):
         async with get_relational_engine().get_async_session() as session:
@@ -128,7 +160,9 @@ def get_mind_map_sso_router() -> APIRouter:
                 JSONResponse(
                     {
                         "id": str(user.id),
-                        "name": identity.name if identity else user.email,
+                        "name": user.email
+                        if identity and identity.provider == PROVIDER
+                        else (identity.name if identity else user.email),
                         "email": (identity.email or user.email) if identity else user.email,
                         "picture": "",
                     }
