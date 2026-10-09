@@ -6,7 +6,7 @@ import { getGoalModel, getGoalNetworkLoops, type GoalModelView, type GoalNetwork
 import SideRail from "./SideRail";
 import { businessName, CAUSAL_RELATIONS, currentNetwork, DEFAULT_TYPES, edgeKey, NETWORK_TYPES, NODE_COLORS, NODE_LABELS, networkType, RELATION_LABELS, sourceOf, targetOf, type NetworkType } from "./goalNetwork";
 import "./goalNetwork.css";
-import { businessGoals, businessNetwork, canvasProjection, clusteredLayout, companyLayout, connectionAvailability, defaultBusinessGoal, supportingNodes, SUPPORT_TYPES, type NetworkScope } from "./networkProjection";
+import { businessGoals, businessNetwork, canvasProjection, clusteredLayout, companyLayout, connectionAvailability, defaultBusinessGoal, overviewNetwork, supportingNodes, SUPPORT_TYPES, type NetworkScope } from "./networkProjection";
 import NodeCard from "./NodeCard";
 import { connectionPath, EDGE_STROKE_WIDTH, EDGE_HIGHLIGHT_WIDTH, EDGE_LABEL_STYLE } from "./edgeAppearance";
 import { REL_PILL } from "./entityMeta";
@@ -55,6 +55,8 @@ export function GoalNetworkPresentation({ model, loops, loopError, onShowHierarc
   const [showSupport, setShowSupport] = useState(model.submission_mode === "patch");
   const supportAutoTypes = useRef(new Set<NetworkType>());
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(() => new Set());
+  const [completeView, setCompleteView] = useState(false);
+  const [overviewExpanded, setOverviewExpanded] = useState<Set<string>>(() => new Set());
   const [zoom, setZoom] = useState(1);
   const [fitCompany, setFitCompany] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -114,9 +116,12 @@ export function GoalNetworkPresentation({ model, loops, loopError, onShowHierarc
   });
   const loopNodes = useMemo(() => new Set(selectedLoop?.nodes || []), [selectedLoop]);
   const loopEdges = useMemo(() => new Set((selectedLoop?.edges || []).map(edgeKey)), [selectedLoop]);
-  const projection = useMemo(() => canvasProjection(network, { types, showSupport, expandedGoals, focusId: scope === "focus" ? focusId : null, hops, loopNodes, loopEdges }), [network, types, showSupport, expandedGoals, scope, focusId, hops, loopNodes, loopEdges]);
+  const largeBusiness = scope === "business" && network.nodes.length > 60;
+  const isOverview = largeBusiness && !completeView;
+  const displayNetwork = useMemo(() => isOverview ? overviewNetwork(network, businessGoalId, new Set([...overviewExpanded, ...loopNodes])) : network, [isOverview, network, businessGoalId, overviewExpanded, loopNodes]);
+  const projection = useMemo(() => canvasProjection(displayNetwork, { types, showSupport, expandedGoals, focusId: scope === "focus" ? focusId : null, hops, loopNodes, loopEdges }), [displayNetwork, types, showSupport, expandedGoals, scope, focusId, hops, loopNodes, loopEdges]);
   const visible = projection.nodes;
-  const layout = useMemo(() => scope === "global" ? companyLayout(model, visible, projection.relations, layoutHeights) : clusteredLayout(visible, projection.relations, layoutHeights), [scope, model, visible, projection.relations, layoutHeights]);
+  const layout = useMemo(() => scope === "global" || (largeBusiness && completeView) ? companyLayout(model, visible, projection.relations, layoutHeights) : clusteredLayout(visible, projection.relations, layoutHeights), [scope, largeBusiness, completeView, model, visible, projection.relations, layoutHeights]);
   const basePositions = layout.positions;
   const positioned = useMemo(() => basePositions.map(p => ({ ...p, x: p.x + (nodeOffsets[p.node.id]?.x || 0), y: p.y + (nodeOffsets[p.node.id]?.y || 0) })), [basePositions, nodeOffsets]);
   const byId = new Map(positioned.map(position => [position.node.id, position]));
@@ -152,6 +157,7 @@ export function GoalNetworkPresentation({ model, loops, loopError, onShowHierarc
     setSelectedId(id); setRightOpen(true); setSelectedLoopId(null);
     const node = directory.nodes.find(n => n.id === id);
     if (fromDirectory && node && networkType(node) === "goal") {
+      setCompleteView(false); setOverviewExpanded(new Set()); setFitCompany(false);
       const parent = directory.nodes.find(candidate => candidate.id === node.parent_candidate_id);
       const rootId = parent && /^提升 .+ 项目盈利能力$/.test(businessName(parent)) ? parent.id : id;
       setBusinessGoalId(rootId); setContextScope("business"); setScope("business"); setFocusId(null);
@@ -167,6 +173,7 @@ export function GoalNetworkPresentation({ model, loops, loopError, onShowHierarc
     setFocusId(id); setScope("focus"); setHops(1); setZoom(1); setPan({ x: 0, y: 0 });
   }
   function changeScope(next: NetworkScope) {
+    setCompleteView(false); setOverviewExpanded(new Set());
     setScope(next); setFitCompany(false); setSelectedLoopId(null); setExpandedGoals(new Set()); setZoom(1); setPan({ x: 0, y: 0 });
     if (next !== "focus") { setContextScope(next); setFocusId(null); setSelectedId(null); }
     else setFocusId(selectedId || businessGoalId);
@@ -198,9 +205,9 @@ export function GoalNetworkPresentation({ model, loops, loopError, onShowHierarc
 
   return <div className="onto-root goal-network-root">
     <div className="onto-body">
-      <SideRail side="left" open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel="展开经营网络导航">
-        <aside className="onto-nav network-nav">
-          <div className="network-panel-header onto-detail-head"><strong>经营网络导航</strong><button className="onto-panel-close" onClick={() => setLeftOpen(false)} aria-label="收起经营网络导航">×</button></div>
+      <SideRail side="left" hideCollapsedRail open={leftOpen} onOpen={() => setLeftOpen(true)} expandLabel="展开经营网络导航">
+        <aside id="network-navigation-panel" className="onto-nav network-nav">
+          <div className="network-panel-header onto-detail-head"><strong>经营网络导航</strong><button className="onto-panel-close" onClick={() => setLeftOpen(false)} aria-label="关闭经营网络导航">×</button></div>
           <p className="network-muted">完整目录 · {directory.nodes.length} 个节点</p>
           <select aria-label="网络展示范围" value={scope} onChange={e => changeScope(e.target.value as NetworkScope)} className="network-scope"><option value="global">公司全局</option><option value="business">当前业务 Goal</option><option value="pilot">当前 Network Pilot</option><option value="focus">当前选中节点 Focus</option></select>
           <select aria-label="当前业务 Goal" value={businessGoalId || ""} onChange={e => pickNode(e.target.value, true)} className="network-scope">{anchors.length ? [...new Map([...anchors, ...directory.nodes.filter(node => node.id === businessGoalId)].map(node => [node.id, node])).values()].map(node => <option key={node.id} value={node.id}>{businessName(node)}</option>) : <option value={businessGoalId || ""}>{businessGoalId ? nameOf(businessGoalId) : "暂无业务 Goal"}</option>}</select>
@@ -217,8 +224,18 @@ export function GoalNetworkPresentation({ model, loops, loopError, onShowHierarc
         </aside>
       </SideRail>
       <main className="onto-canvas-shell network-main">
-        <div className="network-controls"><div className="network-type-filters" role="group" aria-label="画布节点类型筛选">{NETWORK_TYPES.map(type => <button key={type} aria-pressed={types.has(type)} className={`onto-btn${types.has(type) ? " is-active" : ""}`} onClick={() => toggle(type)}><i style={{ background: NODE_COLORS[type] }} />{NODE_LABELS[type]}</button>)}</div><span className="network-muted">显示 {visible.length} / {network.nodes.length}</span></div>
-        <div className="network-context-bar"><span>{contextScope === "business" ? `当前业务范围 · ${nameOf(businessGoalId || "")}` : contextScope === "pilot" ? "当前 Network Pilot" : "公司全局"} · {relations.length} 条可见关系</span><label><input type="checkbox" checked={showSupport} onChange={e => toggleSupport(e.target.checked)} />显示支撑关系</label>{scope === "focus" && <><strong>Focus · {nameOf(focusId || "")}</strong><div role="group" aria-label="Focus 跳数">{([1, 2, "all"] as const).map(hop => <button className="onto-btn" key={hop} aria-pressed={hops === hop} onClick={() => setHops(hop)}>{hop === "all" ? "全部" : `${hop}跳`}</button>)}</div><button className="onto-btn" onClick={() => changeScope(contextScope)}>退出 Focus</button></>}</div>
+        <div className="network-controls">
+          <button className="onto-btn network-panel-toggle" aria-label={leftOpen ? "收起经营网络导航" : "展开经营网络导航"} aria-expanded={leftOpen} aria-controls="network-navigation-panel" aria-pressed={leftOpen} onClick={() => setLeftOpen(open => !open)}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" /><path d="M7 4v12" stroke="currentColor" /></svg>导航
+          </button><div className="network-type-filters" role="group" aria-label="画布节点类型筛选">{NETWORK_TYPES.map(type => <button key={type} aria-pressed={types.has(type)} className={`onto-btn${types.has(type) ? " is-active" : ""}`} onClick={() => toggle(type)}><i style={{ background: NODE_COLORS[type] }} />{NODE_LABELS[type]}</button>)}</div><span className="network-muted">显示 {visible.length} / {network.nodes.length}</span><button className="onto-btn network-panel-toggle" aria-label={rightOpen ? "收起网络详情" : "展开网络详情"} aria-expanded={rightOpen} aria-controls="network-right-panel" aria-pressed={rightOpen} onClick={() => setRightOpen(open => !open)}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" /><path d="M13 4v12" stroke="currentColor" /></svg>详情
+          </button></div>
+        <div className="network-context-bar">
+          {largeBusiness && <div className="network-overview-controls" role="group" aria-label="大型经营网络视图">
+            <button className="onto-btn" aria-pressed={isOverview} onClick={() => { setCompleteView(false); setOverviewExpanded(new Set()); setSelectedLoopId(null); setFitCompany(false); setZoom(1); setPan({ x: 0, y: 0 }); }}>核心概览</button>
+            <button className="onto-btn" aria-pressed={completeView} onClick={() => { setCompleteView(true); setFitCompany(true); setZoom(1); setPan({ x: 0, y: 0 }); }}>完整网络</button>
+            {isOverview && <span>已显示 {visible.length} / {network.nodes.length} 个节点 · 其余按需展开</span>}
+          </div>}<span>{contextScope === "business" ? `当前业务范围 · ${nameOf(businessGoalId || "")}` : contextScope === "pilot" ? "当前 Network Pilot" : "公司全局"} · {relations.length} 条可见关系</span><label><input type="checkbox" checked={showSupport} onChange={e => toggleSupport(e.target.checked)} />显示支撑关系</label>{scope === "focus" && <><strong>Focus · {nameOf(focusId || "")}</strong><div role="group" aria-label="Focus 跳数">{([1, 2, "all"] as const).map(hop => <button className="onto-btn" key={hop} aria-pressed={hops === hop} onClick={() => setHops(hop)}>{hop === "all" ? "全部" : `${hop}跳`}</button>)}</div><button className="onto-btn" onClick={() => changeScope(contextScope)}>退出 Focus</button></>}</div>
         {loopError && <p role="alert" className="network-error">反馈回路暂时无法载入：{loopError}</p>}
         {scope === "global" && <div className="network-loop-strip" role="group" aria-label="公司分区定位"><strong>定位分区</strong>{layout.clusters.map(cluster => <button className="onto-btn" key={cluster.name} onClick={() => { setFitCompany(false); setZoom(1); setPan({ x: 20 - cluster.x, y: 20 - cluster.y }); }}>{cluster.name}</button>)}<span className="network-muted">默认原比例 · 拖动画布查看 · 适应画布查看全图</span></div>}
         <div ref={canvasRef} className={`network-canvas lod-${lod}`} data-lod={lod} title="Ctrl + 鼠标滚轮缩放（Mac：⌘ + 滚轮）">
@@ -285,7 +302,7 @@ export function GoalNetworkPresentation({ model, loops, loopError, onShowHierarc
                     setNodeOffsets(old => ({ ...old, [node.id]: { x: (old[node.id]?.x || 0) + dx, y: (old[node.id]?.y || 0) + dy } }));
                   },
                   onClick: () => { if (nodeMoved.current) { nodeMoved.current = false; return; } pickNode(node.id); }, onKeyUp: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickNode(node.id); } }, title: "点击进入 Focus，拖动移动节点；方向键微调位置", "aria-label": `${NODE_LABELS[networkType(node)]}：${businessName(node)}` }}
-                  footer={lod !== "far" && networkType(node) === "goal" && <div className="network-support-badges">{SUPPORT_TYPES.map(type => { const count = supportingNodes(node.id, network, type).length; return count ? <button className="onto-btn" key={type} aria-label={`${businessName(node)}展开附属${NODE_LABELS[type]}`} aria-pressed={expandedGoals.has(`${node.id}|${type}`)} onPointerDown={e => e.stopPropagation()} onClick={() => setExpandedGoals(old => { const next = new Set(old); const key = `${node.id}|${type}`; if (next.has(key)) next.delete(key); else next.add(key); return next; })}>{NODE_LABELS[type]} {count}</button> : null; })}</div>} />
+                  footer={isOverview ? <button className="onto-btn" aria-label={`${businessName(node)}${overviewExpanded.has(node.id) ? "收起关联" : "展开关联"}`} aria-expanded={overviewExpanded.has(node.id)} onPointerDown={e => e.stopPropagation()} onClick={() => { setOverviewExpanded(old => { const next = new Set(old); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next; }); setFitCompany(true); setZoom(1); setPan({ x: 0, y: 0 }); }}>{overviewExpanded.has(node.id) ? "收起关联" : "展开关联"}</button> : lod !== "far" && networkType(node) === "goal" && <div className="network-support-badges">{SUPPORT_TYPES.map(type => { const count = supportingNodes(node.id, network, type).length; return count ? <button className="onto-btn" key={type} aria-label={`${businessName(node)}展开附属${NODE_LABELS[type]}`} aria-pressed={expandedGoals.has(`${node.id}|${type}`)} onPointerDown={e => e.stopPropagation()} onClick={() => setExpandedGoals(old => { const next = new Set(old); const key = `${node.id}|${type}`; if (next.has(key)) next.delete(key); else next.add(key); return next; })}>{NODE_LABELS[type]} {count}</button> : null; })}</div>} />
                 </MeasuredNetworkCard>
               </foreignObject>)}
             </g>
@@ -299,14 +316,14 @@ export function GoalNetworkPresentation({ model, loops, loopError, onShowHierarc
         </div>
         <footer className="network-legend"><span><i />因果关系</span><span><i className="is-structural" />非因果关系</span><span>拖动节点调整位置 · 拖动画布平移 · 点击节点查看详情</span></footer>
       </main>
-      <SideRail side="right" open={rightOpen} onOpen={() => setRightOpen(true)} expandLabel="展开网络详情">
-        <aside className="onto-detail network-detail">
+      <SideRail side="right" hideCollapsedRail open={rightOpen} onOpen={() => setRightOpen(true)} expandLabel="展开网络详情">
+        <aside id="network-right-panel" className="onto-detail network-detail">
           <div className="network-panel-header onto-detail-head">
             <div className="network-panel-tabs" role="tablist" aria-label="网络右侧面板">
               <button id="network-details-tab" role="tab" className="onto-btn" aria-selected={rightTab === "details"} aria-controls="network-details-panel" onClick={() => setRightTab("details")}>节点详情</button>
               <button id="network-loops-tab" role="tab" className="onto-btn" aria-selected={rightTab === "loops"} aria-controls="network-loops-panel" onClick={() => setRightTab("loops")}>反馈回路（{loopError ? "未载入" : relevantLoops.length}）</button>
             </div>
-            <button className="onto-panel-close" onClick={() => setRightOpen(false)} aria-label="收起网络详情">×</button>
+            <button className="onto-panel-close" onClick={() => setRightOpen(false)} aria-label="关闭网络详情">×</button>
           </div>
           {rightTab === "details" ? <div id="network-details-panel" role="tabpanel" aria-labelledby="network-details-tab">
 

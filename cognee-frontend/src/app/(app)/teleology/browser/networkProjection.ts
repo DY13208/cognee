@@ -61,6 +61,12 @@ export function neighborhood(seeds: Set<string>, relations: GoalTeleologyItem[],
   }
   return visited;
 }
+/** Progressive display only: retain original edges and never derive hierarchy links. */
+export function overviewNetwork(network: Network, rootId: string | null, expanded: Set<string>): Network {
+  if (!rootId) return network;
+  const ids = neighborhood(new Set([rootId, ...expanded]), network.relations, 1);
+  return { nodes: network.nodes.filter(node => ids.has(node.id)), relations: network.relations.filter(edge => ids.has(sourceOf(edge)) && ids.has(targetOf(edge))) };
+}
 export function supportingNodes(goalId: string, network: Network, type: NetworkType) {
   const ids = new Set(network.relations.flatMap(e => sourceOf(e) === goalId ? [targetOf(e)] : targetOf(e) === goalId ? [sourceOf(e)] : []));
   return network.nodes.filter(n => networkType(n) === type && ids.has(n.id));

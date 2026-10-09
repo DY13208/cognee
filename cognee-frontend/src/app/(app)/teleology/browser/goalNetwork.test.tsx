@@ -37,6 +37,42 @@ test("fit canvas recenters the actual dragged nodes rather than resetting zoom a
   expect(graph.getAttribute("transform")).not.toBe("translate(0,0) scale(1)");
 });
 
+test("toolbar panel controls hide collapsed rails and show the open state", () => {
+  const { container } = render(<GoalNetworkPresentation model={model} loops={[]} />);
+  const navigation = screen.getByRole("button", { name: "展开经营网络导航" });
+  expect(navigation.closest(".network-controls")).not.toBeNull();
+  expect(container.querySelector(".onto-side-left")).not.toBeVisible();
+  fireEvent.click(navigation);
+  expect(screen.getByRole("button", { name: "收起经营网络导航" })).toHaveAttribute("aria-expanded", "true");
+  expect(container.querySelector(".onto-side-left")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "收起经营网络导航" }));
+  expect(container.querySelector(".onto-side-left")).not.toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "收起网络详情" }));
+  expect(container.querySelector(".onto-side-right")).not.toBeVisible();
+  expect(screen.getByRole("button", { name: "展开网络详情" }).closest(".network-controls")).not.toBeNull();
+});
+
+test("large company goals progressively reveal real edges and retain the complete network", () => {
+  const root = { ...nodes[0], id: "company-root", name: "实现公司长期可持续经营与利润最大化" };
+  const members = Array.from({ length: 63 }, (_, i) => ({ ...nodes[0], id: `company-${i}`, name: `经营目标${i}`, parent_candidate_id: root.id }));
+  const relations = members.map((member, i) => edge("advances", member.id, i % 21 === 0 ? root.id : members[i - 1].id));
+  const fixture = { ...model, submission_mode: "patch" as const, candidates: [root, ...members], relations };
+  const original = JSON.stringify(fixture);
+  const { container } = render(<GoalNetworkPresentation model={fixture} loops={[]} />);
+  expect(screen.getByRole("button", { name: "核心概览" })).toHaveAttribute("aria-pressed", "true");
+  expect(container.querySelectorAll(".network-node")).toHaveLength(4);
+  expect(container.querySelectorAll(".network-edge")).toHaveLength(3);
+  fireEvent.click(screen.getByRole("button", { name: "经营目标0展开关联" }));
+  expect(container.querySelectorAll(".network-node")).toHaveLength(5);
+  expect(container.querySelectorAll(".network-edge")).toHaveLength(4);
+  fireEvent.click(screen.getByRole("button", { name: "完整网络" }));
+  expect(container.querySelectorAll(".network-node")).toHaveLength(64);
+  expect(container.querySelectorAll(".network-edge")).toHaveLength(63);
+  fireEvent.click(screen.getByRole("button", { name: "核心概览" }));
+  expect(container.querySelectorAll(".network-node")).toHaveLength(4);
+  expect(JSON.stringify(fixture)).toBe(original);
+});
+
 test("modified wheel zooms only the canvas and respects zoom limits", () => {
   const { container } = render(<GoalNetworkPresentation model={model} loops={[]} />);
   const canvas = container.querySelector(".network-canvas")!;

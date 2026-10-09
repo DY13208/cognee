@@ -1,5 +1,7 @@
 .goal-network-root { flex: 1; min-height: 0; }
 .goal-network-root .network-nav, .goal-network-root .network-detail { display: block; overflow: auto; }
+.goal-network-root .network-nav, .goal-network-root .network-detail { scrollbar-width: none; }
+.goal-network-root .network-nav::-webkit-scrollbar, .goal-network-root .network-detail::-webkit-scrollbar { display: none; }
 .network-scope { width: 100%; padding: 8px; margin-bottom: 12px; color: #aaaab6; background: #141418; border: 1px solid #303039; border-radius: 6px; font-size: 11px; }
 .goal-network-root .onto-body { flex: 1; min-height: 0; }
 .network-nav, .network-detail { overflow: auto; padding: 18px 16px; height: 100%; box-sizing: border-box; }
@@ -18,6 +20,9 @@
 .network-main { min-width: 0; background: #09090b; }
 .network-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.06); flex-wrap: wrap; }
 .network-type-filters { display: flex; gap: 5px; flex-wrap: wrap; }
+.network-controls .network-type-filters { flex: 1; }
+.network-panel-toggle { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.goal-network-root .network-panel-toggle[aria-pressed=true] { color: #e5dcff; border-color: rgba(139,112,219,.5); background: rgba(139,112,219,.2); }
 .network-type-filters button { display: inline-flex; align-items: center; gap: 6px; }
 .goal-network-root .onto-btn[aria-pressed=true] { border-color: rgba(232,231,228,.55); background: rgba(255,255,255,.08); color: var(--onto-ink); }
 .network-canvas { position: relative; flex: 1; min-height: 320px; overflow: hidden; background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px); background-size: 28px 28px; }

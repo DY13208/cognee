@@ -13,6 +13,7 @@ export default function SideRail({
   onOpen,
   expandLabel,
   resizeLabel,
+  hideCollapsedRail = false,
   children,
 }: {
   side: "left" | "right";
@@ -20,6 +21,7 @@ export default function SideRail({
   onOpen: () => void;
   expandLabel: string;
   resizeLabel?: string;
+  hideCollapsedRail?: boolean;
   children: ReactNode;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
@@ -80,7 +82,7 @@ export default function SideRail({
   }
 
   return (
-    <div ref={railRef} className={`onto-side-container onto-side-${side}${open ? "" : " is-collapsed"}${resizing ? " is-resizing" : ""}`} style={side === "left" && open ? { width } : undefined}>
+    <div ref={railRef} hidden={!open && hideCollapsedRail} className={`onto-side-container onto-side-${side}${open ? "" : " is-collapsed"}${resizing ? " is-resizing" : ""}`} style={!open && hideCollapsedRail ? { display: "none" } : side === "left" && open ? { width } : undefined}>
       {open ? (
         <>
           {children}
